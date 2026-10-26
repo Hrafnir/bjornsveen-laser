@@ -279,7 +279,16 @@ export function buildXcsProjectString(shapes, {
 } = {}) {
   const cfg = laserSettings || getDefaultLaserSettings();
   const canvasId = makeUuidV4();
-  const isF2 = machineKey === 'xtool-f2';
+  const presetMachine = LASER_MATERIAL_PRESETS[cfg.presetKey]?.machine;
+  const isF2 = machineKey === 'xtool-f2' || presetMachine === 'xtool-f2';
+
+  // Official xTool Studio extId / deviceCode / mode identifiers (from xTool Studio ext.json & app.asar)
+  const extId = isF2 ? 'GS009-CLASS-4' : 'P3';
+  const extName = isF2 ? 'F2 Ultra UV' : 'P3';
+  const deviceCode = isF2 ? 'GS009-CLASS-4' : 'ZY015';
+  const deviceId = isF2 ? 'GS009-CLASS-4' : 'P3';
+  const devicePower = isF2 ? [5] : [80, 5, 0];
+  const activeMode = isF2 ? 'LASER_PLANE' : 'LIFTING_PLATFORM_PROCESS';
 
   const displays = [];
   const groupData = {};
@@ -294,11 +303,136 @@ export function buildXcsProjectString(shapes, {
 
   let zOrder = 1;
 
+  const buildCutCustomize = (power, speed, repeat) => isF2
+    ? {
+        power,
+        speed,
+        repeat,
+        frequency: 40,
+        wobbleEnable: false,
+        wobbleDiameter: 0.05,
+        wobbleSpacing: 0.015,
+        enableKerf: false,
+        kerfDistance: 0
+      }
+    : {
+        power,
+        speed,
+        repeat,
+        cuttingDrop: false,
+        sinkingMethod: 'one',
+        firstCuttingDropValue: 1,
+        cuttingDropValue: 1,
+        descentIntervalDescent: 1,
+        descentPerStep: 1,
+        enableBreakPoint: false,
+        breakPointGenMode: 'auto',
+        breakPointSize: 0.5,
+        breakPointMode: 'count',
+        breakPointCount: 2,
+        breakPointDistance: 100,
+        breakPointPower: 0,
+        enableKerf: false,
+        kerfDistance: 0,
+        laser: 'LASER',
+        processHead: 'LASER',
+        enableOverCut: false,
+        overCutDistance: 0.5,
+        airPump: 100,
+        powerCutoff: 'FOLLOW_ACTUALLY_POWER',
+        powerCutoffValue: 20
+      };
+
+  const buildScoreCustomize = (power, speed, repeat) => isF2
+    ? {
+        power,
+        speed,
+        repeat,
+        defocus: false,
+        defocus_distance: 1,
+        frequency: 40,
+        enableKerf: false,
+        kerfDistance: 0
+      }
+    : {
+        power,
+        speed,
+        repeat,
+        defocus: false,
+        defocus_distance: 8,
+        enableKerf: false,
+        kerfDistance: 0,
+        laser: 'LASER',
+        processHead: 'LASER',
+        airPump: 25
+      };
+
+  const buildEngraveCustomize = (power, speed, repeat, density) => isF2
+    ? {
+        bitmapEngraveMode: 'normal',
+        power,
+        speed,
+        repeat,
+        density,
+        dpi: 500,
+        dotDuration: 100,
+        defocus: false,
+        defocus_distance: 1,
+        bitmapScanMode: 'zMode',
+        frequency: 40,
+        scanAngle: 0,
+        crossAngle: false,
+        enableDelayPerLine: false,
+        delayPerLine: 0.3,
+        outlineTrace: false,
+        needGapNumDensity: true
+      }
+    : {
+        power,
+        speed,
+        repeat,
+        density,
+        defocus: false,
+        defocus_distance: 8,
+        laser: 'LASER',
+        bitmapScanMode: 'zMode',
+        processHead: 'LASER',
+        airPump: 25,
+        enableKerf: false,
+        kerfDistance: 0
+      };
+
+  const buildBitmapCustomize = (power, speed, dpi, bitmapMode) => isF2
+    ? {
+        power,
+        powerMinMaxRange: [1, power],
+        speed,
+        repeat: 1,
+        bitmapMode: bitmapMode || 'grayscale',
+        dpi,
+        bitmapScanMode: 'zMode',
+        bitmapEngraveMode: 'dot',
+        dotDuration: 200,
+        frequency: 40
+      }
+    : {
+        power,
+        speed,
+        repeat: 1,
+        bitmapMode: bitmapMode === 'jarvis' ? 'Jarvis' : (bitmapMode || 'grayscale'),
+        density: dpi,
+        dpi,
+        laser: 'LASER',
+        bitmapScanMode: 'zMode',
+        processHead: 'LASER',
+        airPump: 25
+      };
+
   const convertShapeToDisplay = (s, groupTag = null) => {
     if (!s || s.hidden || s.laserMode === 'guide') return null;
 
     if (s.type === 'group' && Array.isArray(s.children)) {
-      const grpUuid = makeUuidV4();
+      const grpUuid = `g-${makeUuidV4()}`;
       const childIds = [];
       for (const child of s.children) {
         const cid = convertShapeToDisplay(child, grpUuid);
@@ -308,6 +442,10 @@ export function buildXcsProjectString(shapes, {
         groupData[grpUuid] = {
           groupName: s.name || 'Gruppe',
           groupTag: grpUuid,
+          visible: true,
+          enableTransform: true,
+          zOrder: zOrder++,
+          rotation: 0,
           containEls: childIds
         };
       }
@@ -325,6 +463,21 @@ export function buildXcsProjectString(shapes, {
       const w = roundMm(Math.max(1, Number(s.width) || 50), 3);
       const h = roundMm(Math.max(1, Number(s.height) || 50), 3);
       const angle = roundMm(Number(s.rotation) || 0, 2);
+
+      const bmpPower = clamp(Number(cfg.bitmap?.power) || 32, 1, 100);
+      const bmpSpeed = clamp(Number(cfg.bitmap?.speed) || 300, 1, 2000);
+      const bmpDpi = clamp(Number(cfg.bitmap?.dpi) || 254, 50, 1000);
+      const bmpMode = meta.filter === 'dither' ? 'jarvis' : (cfg.bitmap?.bitmapMode || 'grayscale');
+
+      const bitmapDataBlock = {
+        BITMAP_ENGRAVING: {
+          materialType: 'customize',
+          planType: 'official',
+          parameter: {
+            customize: buildBitmapCustomize(bmpPower, bmpSpeed, bmpDpi, bmpMode)
+          }
+        }
+      };
 
       const dispObj = {
         id: dispId,
@@ -346,10 +499,12 @@ export function buildXcsProjectString(shapes, {
         lockRatio: true,
         isClose: true,
         isFill: false,
+        layerTag: layerColors.engrave,
         layerColor: layerColors.engrave,
         visible: true,
         zOrder: zOrder++,
         groupTag: groupTag || '',
+        groupTags: groupTag ? [groupTag] : [],
         base64,
         originWidth: meta.originWidthPx || Math.round(w * 10),
         originHeight: meta.originHeightPx || Math.round(h * 10),
@@ -358,30 +513,20 @@ export function buildXcsProjectString(shapes, {
         contrast: Number(meta.contrast) || 0,
         sharpness: 50,
         invert: Boolean(meta.invert),
+        processingType: 'BITMAP_ENGRAVING',
+        processIgnore: false,
+        data: bitmapDataBlock,
         bjornsveenShape: s
       };
       displays.push(dispObj);
 
       deviceDisplaysMap[dispId] = {
+        type: 'BITMAP',
+        isFill: false,
         isWhiteModel: true,
         processingType: 'BITMAP_ENGRAVING',
-        data: {
-          BITMAP_ENGRAVING: {
-            materialType: 'customize',
-            planType: 'official',
-            parameter: {
-              customize: {
-                bitmapScanMode: 'zMode',
-                power: clamp(Number(cfg.bitmap?.power) || 32, 1, 100),
-                speed: clamp(Number(cfg.bitmap?.speed) || 300, 1, 2000),
-                repeat: 1,
-                dpi: clamp(Number(cfg.bitmap?.dpi) || 254, 50, 1000),
-                density: clamp(Number(cfg.bitmap?.dpi) || 254, 50, 1000),
-                bitmapMode: cfg.bitmap?.bitmapMode || 'grayscale'
-              }
-            }
-          }
-        }
+        processIgnore: false,
+        data: bitmapDataBlock
       };
       return dispId;
     }
@@ -399,6 +544,43 @@ export function buildXcsProjectString(shapes, {
     const procType = mode === 'engrave'
       ? 'FILL_VECTOR_ENGRAVING'
       : (mode === 'score' ? 'VECTOR_ENGRAVING' : 'VECTOR_CUTTING');
+
+    const cutPower = clamp(Number(cfg.cut?.power) || 85, 1, 100);
+    const cutSpeed = clamp(Number(cfg.cut?.speed) || 18, 1, 2000);
+    const cutRepeat = clamp(Number(cfg.cut?.repeat) || 1, 1, 10);
+
+    const scorePower = clamp(Number(cfg.score?.power) || 18, 1, 100);
+    const scoreSpeed = clamp(Number(cfg.score?.speed) || 160, 1, 2000);
+    const scoreRepeat = clamp(Number(cfg.score?.repeat) || 1, 1, 10);
+
+    const engPower = clamp(Number(cfg.engrave?.power) || 30, 1, 100);
+    const engSpeed = clamp(Number(cfg.engrave?.speed) || 350, 1, 2000);
+    const engRepeat = clamp(Number(cfg.engrave?.repeat) || 1, 1, 10);
+    const engDensity = clamp(Number(cfg.engrave?.density) || 100, 20, 400);
+
+    const vectorDataBlock = {
+      VECTOR_CUTTING: {
+        materialType: 'customize',
+        planType: 'official',
+        parameter: {
+          customize: buildCutCustomize(cutPower, cutSpeed, cutRepeat)
+        }
+      },
+      VECTOR_ENGRAVING: {
+        materialType: 'customize',
+        planType: 'official',
+        parameter: {
+          customize: buildScoreCustomize(scorePower, scoreSpeed, scoreRepeat)
+        }
+      },
+      FILL_VECTOR_ENGRAVING: {
+        materialType: 'customize',
+        planType: 'official',
+        parameter: {
+          customize: buildEngraveCustomize(engPower, engSpeed, engRepeat, engDensity)
+        }
+      }
+    };
 
     const dispObj = {
       id: dispId,
@@ -423,66 +605,29 @@ export function buildXcsProjectString(shapes, {
       lineColor: layerColor,
       strokeColor: layerColor,
       fillColor: isFill ? layerColor : '#000000',
+      layerTag: layerColor,
       layerColor,
       visible: true,
       zOrder: zOrder++,
       groupTag: groupTag || '',
+      groupTags: groupTag ? [groupTag] : [],
       dPath,
       points: [],
+      processingType: procType,
+      processIgnore: false,
+      data: vectorDataBlock,
       bjornsveenShape: s
     };
     displays.push(dispObj);
 
-    const modeCfg = mode === 'engrave' ? cfg.engrave : (mode === 'score' ? cfg.score : cfg.cut);
     deviceDisplaysMap[dispId] = {
+      type: 'PATH',
+      isFill,
       isWhiteModel: true,
       processingType: procType,
-      data: {
-        VECTOR_CUTTING: {
-          materialType: 'customize',
-          planType: 'official',
-          parameter: {
-            customize: {
-              power: clamp(Number(cfg.cut?.power) || 85, 1, 100),
-              speed: clamp(Number(cfg.cut?.speed) || 18, 1, 2000),
-              repeat: clamp(Number(cfg.cut?.repeat) || 1, 1, 10)
-            }
-          }
-        },
-        VECTOR_ENGRAVING: {
-          materialType: 'customize',
-          planType: 'official',
-          parameter: {
-            customize: {
-              power: clamp(Number(cfg.score?.power) || 18, 1, 100),
-              speed: clamp(Number(cfg.score?.speed) || 160, 1, 2000),
-              repeat: clamp(Number(cfg.score?.repeat) || 1, 1, 10)
-            }
-          }
-        },
-        FILL_VECTOR_ENGRAVING: {
-          materialType: 'customize',
-          planType: 'official',
-          parameter: {
-            customize: {
-              power: clamp(Number(cfg.engrave?.power) || 30, 1, 100),
-              speed: clamp(Number(cfg.engrave?.speed) || 350, 1, 2000),
-              repeat: clamp(Number(cfg.engrave?.repeat) || 1, 1, 10),
-              density: clamp(Number(cfg.engrave?.density) || 100, 20, 400),
-              bitmapScanMode: 'zMode'
-            }
-          }
-        }
-      }
+      processIgnore: false,
+      data: vectorDataBlock
     };
-    // Ensure active mode parameter reflects modeCfg
-    if (modeCfg && deviceDisplaysMap[dispId].data[procType]) {
-      Object.assign(deviceDisplaysMap[dispId].data[procType].parameter.customize, {
-        power: clamp(Number(modeCfg.power) || 50, 1, 100),
-        speed: clamp(Number(modeCfg.speed) || 100, 1, 2000),
-        repeat: clamp(Number(modeCfg.repeat) || 1, 1, 10)
-      });
-    }
 
     return dispId;
   };
@@ -516,10 +661,39 @@ export function buildXcsProjectString(shapes, {
     }
   };
 
+  const liftingPlatformModeData = {
+    material: 0,
+    thickness: Number(cfg.thicknessMm) || null,
+    focalLength: null,
+    perimeter: null,
+    diameter: null,
+    distence: null,
+    isProcessByLayer: true,
+    processPath: 'layer',
+    pathPlanning: 'custom',
+    fillPlanning: 'separate',
+    scanDirection: 'topToBottom',
+    enableOddEvenKerf: true
+  };
+
+  const laserPlaneModeData = {
+    material: 0,
+    lightSourceMode: isF2 ? 'uv' : 'blue',
+    thickness: Number(cfg.thicknessMm) || null,
+    isProcessByLayer: true,
+    processPath: 'layer',
+    pathPlanning: 'custom',
+    fillPlanning: 'separate',
+    dreedyTsp: false,
+    avoidSmokeModal: false,
+    scanDirection: 'topToBottom',
+    enableOddEvenKerf: true
+  };
+
   const xcsProject = {
     canvasId,
-    extId: isF2 ? 'xTool_F2_Ultra' : 'xTool_P3',
-    extName: isF2 ? 'xTool F2 Ultra' : 'xTool P3',
+    extId,
+    extName,
     version: '1.3.6',
     created: Date.now(),
     modify: Date.now(),
@@ -537,23 +711,19 @@ export function buildXcsProjectString(shapes, {
       }
     ],
     device: {
-      id: isF2 ? 'xTool_F2_Ultra' : 'xTool_P3',
-      power: isF2 ? 20 : 80,
+      id: deviceId,
+      deviceCode,
+      power: devicePower,
       data: {
         dataType: 'Map',
         value: [
           [
             canvasId,
             {
-              mode: 'LASER_PLANE',
+              mode: activeMode,
               data: {
-                LASER_PLANE: {
-                  material: 0,
-                  lightSource: isF2 ? 'uv' : 'co2',
-                  thickness: Number(cfg.thicknessMm) || 3.0,
-                  isProcessByLayer: true,
-                  pathPlanning: 'auto'
-                }
+                LIFTING_PLATFORM_PROCESS: liftingPlatformModeData,
+                LASER_PLANE: laserPlaneModeData
               },
               displays: {
                 dataType: 'Map',
