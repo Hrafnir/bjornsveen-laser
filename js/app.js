@@ -33,6 +33,7 @@ import {
 
 import {
   initializeFonts,
+  FONT_CATALOG,
   createTextShape,
   updateTextShape,
   getFontOptionsHtml
@@ -194,6 +195,8 @@ async function initApp() {
   const fontSelectEl = document.getElementById('text-font-select');
   if (fontSelectEl) {
     fontSelectEl.innerHTML = getFontOptionsHtml('sans-bold');
+    document.getElementById('text-font-count').textContent = `${FONT_CATALOG.length} fontvalg`;
+    updateTextFontPreview();
   }
   const presetSelectEl = document.getElementById('laser-preset-select');
   if (presetSelectEl) {
@@ -1207,9 +1210,16 @@ function renderInspector() {
     if (!textShape || textShape.type !== 'text' || !textShape.textMeta) return;
     textSection.style.display = 'block';
     const meta = textShape.textMeta;
+    document.getElementById('text-refresh-wrap').style.display = meta.layoutVersion === 2 ? 'none' : 'block';
     setValIfNotFocused(document.getElementById('text-content-input'), meta.text ?? '');
     const fontSel = document.getElementById('text-font-select');
-    if (fontSel && meta.fontKey) fontSel.value = meta.fontKey;
+    if (fontSel && meta.fontKey) {
+      if (![...fontSel.options].some(option => option.value === meta.fontKey)) fontSel.innerHTML = getFontOptionsHtml(meta.fontKey, document.getElementById('text-font-search').value);
+      fontSel.value = meta.fontKey;
+    }
+    updateTextFontPreview();
+    document.getElementById('text-direction-select').value = meta.writingDirection || 'horizontal';
+    document.getElementById('text-spacing-slider').value = String(meta.spacingMm ?? 1.2);
     setValIfNotFocused(document.getElementById('text-size-input'), meta.fontSizeMm || 18);
     setValIfNotFocused(document.getElementById('text-spacing-input'), meta.spacingMm ?? 1.2);
 
@@ -1405,6 +1415,19 @@ function renderInspector() {
     const selectedGroup = selected.find(item => item.type === 'group');
     renderGroupInspectorFor(editingGroup || selectedGroup || null);
   }
+}
+
+function updateTextFontPreview() {
+  const key = document.getElementById('text-font-select').value;
+  const preview = document.getElementById('text-font-preview');
+  if (!preview || preview.dataset.font === key) return;
+  const sample = createTextShape({text:'Aa Æøå', fontKey:key, fontSizeMm:10, spacingMm:0, x:0, y:0});
+  preview.setAttribute('viewBox', `${sample.x-1} ${sample.y-1} ${sample.width+2} ${sample.height+2}`);
+  const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d',sample.d);
+  path.setAttribute('fill',key === 'singleline' ? 'none' : 'currentColor');
+  if (key === 'singleline') { path.setAttribute('stroke','currentColor'); path.setAttribute('stroke-width','.15'); }
+  preview.replaceChildren(path); preview.dataset.font = key;
 }
 
 function escapeObjectName(value) {
@@ -1764,6 +1787,7 @@ function bindTextToTargetShape(textShape, targetShape) {
   const cleanPts = bestLoop.map(p => ({ x: roundMm(p.x, 3), y: roundMm(p.y, 3) }));
   textShape.rotation = 0;
   updateTextShape(textShape, {
+    writingDirection: 'horizontal',
     customPath: cleanPts,
     customPathClosed: isClosed,
     customPathSourceId: targetShape.id,
@@ -1970,6 +1994,7 @@ function onCanvasPointerDown(e) {
       fontKey,
       fontSizeMm,
       spacingMm,
+      writingDirection: document.getElementById('text-direction-select').value,
       curve,
       laserMode: state.activeLaserMode
     });
@@ -3010,29 +3035,66 @@ function bindInspectorEvents() {
     return sel.find(s => s.type === 'text' && s.textMeta) || null;
   };
 
-  const onTextMetaUpdate = () => {
+  document.getElementById('btn-refresh-text').addEventListener('click', () => {
+    const textShape = getActiveTextShape();
+    if (!textShape) return;
+    pushUndoSnapshot(); updateTextShape(textShape, {}); renderAll();
+  });
+  let textEditSession = null;
+  const onTextMetaUpdate = (event) => {
+    const target = event?.target;
+    const directionChanged = target?.id === 'text-direction-select';
+    const curveChanged = target?.id === 'text-curve-input';
+    const directionEl = document.getElementById('text-direction-select');
+    const curveEl = document.getElementById('text-curve-input');
+    if (directionChanged && directionEl.value !== 'horizontal') curveEl.value = '0';
+    if (curveChanged && Number(curveEl.value) !== 0) directionEl.value = 'horizontal';
     const textShape = getActiveTextShape();
     if (textShape) {
+      const continuous = target?.id === 'text-content-input' || target?.type === 'range';
+      if (!continuous || textEditSession?.target !== target || textEditSession?.id !== textShape.id) pushUndoSnapshot();
+      textEditSession = continuous && event?.type === 'input' ? {target,id:textShape.id} : null;
       const curMeta = textShape.textMeta || {};
+      const detach = directionChanged && directionEl.value !== 'horizontal' || curveChanged && Number(curveEl.value) !== 0;
       updateTextShape(textShape, {
         text: document.getElementById('text-content-input').value,
         fontKey: document.getElementById('text-font-select').value,
         fontSizeMm: clamp(evalMathExpr(document.getElementById('text-size-input').value, curMeta.fontSizeMm || 18), 2, 400),
         spacingMm: clamp(evalMathExpr(document.getElementById('text-spacing-input').value, curMeta.spacingMm ?? 1.2), -5, 50),
-        curve: parseFloat(document.getElementById('text-curve-input').value) || 0,
+        writingDirection: directionEl.value,
+        curve: parseFloat(curveEl.value) || 0,
+        ...(detach ? {customPath:null,customPathClosed:false,customPathSourceId:null,customPathSourceName:null} : {}),
         pathOffsetPct: parseFloat(document.getElementById('text-path-offset')?.value) || 0,
         pathNormalOffsetMm: parseFloat(document.getElementById('text-path-normal-offset')?.value) || 0,
         pathFlip: Boolean(document.getElementById('text-path-flip')?.checked)
       });
-      saveWorkspaceToLocal(state);
       renderAll();
     }
+    document.getElementById('text-spacing-slider').value = String(clamp(evalMathExpr(document.getElementById('text-spacing-input').value,1.2),-5,50));
+    updateTextFontPreview();
   };
   document.getElementById('text-content-input').addEventListener('input', onTextMetaUpdate);
-  document.getElementById('text-font-select').addEventListener('input', onTextMetaUpdate);
+  document.getElementById('text-font-select').addEventListener('change', onTextMetaUpdate);
+  document.getElementById('text-direction-select').addEventListener('change', onTextMetaUpdate);
   document.getElementById('text-curve-input').addEventListener('input', onTextMetaUpdate);
   document.getElementById('text-size-input').addEventListener('change', onTextMetaUpdate);
   document.getElementById('text-spacing-input').addEventListener('change', onTextMetaUpdate);
+  document.querySelectorAll('#text-inspector-section input').forEach(input => {
+    input.addEventListener('blur', () => { textEditSession = null; });
+    if (input.type === 'range') input.addEventListener('change', () => { textEditSession = null; });
+  });
+  document.getElementById('text-spacing-slider').addEventListener('input', event => {
+    document.getElementById('text-spacing-input').value = event.target.value;
+    onTextMetaUpdate(event);
+  });
+  document.querySelectorAll('[data-text-spacing]').forEach(btn => btn.addEventListener('click', () => {
+    document.getElementById('text-spacing-input').value = btn.dataset.textSpacing;
+    onTextMetaUpdate();
+  }));
+  document.getElementById('text-font-search').addEventListener('input', event => {
+    const select = document.getElementById('text-font-select');
+    select.innerHTML = getFontOptionsHtml(select.value, event.target.value.trim());
+  });
 
   // Quick curve preset buttons (0° Rett, +55° Bue opp, -55° Bue ned, 180° Hel sirkel)
   document.querySelectorAll('[data-curve-preset]').forEach(btn => {
@@ -3040,15 +3102,7 @@ function bindInspectorEvents() {
       const val = parseFloat(btn.dataset.curvePreset) || 0;
       const slider = document.getElementById('text-curve-input');
       if (slider) slider.value = String(val);
-      const textShape = getActiveTextShape();
-      if (textShape) {
-        pushUndoSnapshot();
-        // If text was bound to an external shape and user clicks an arc preset, unbind customPath so the arc preset takes effect immediately
-        if (val !== 0 && textShape.textMeta?.customPath) {
-          textShape.textMeta.customPath = null;
-        }
-        onTextMetaUpdate();
-      }
+      onTextMetaUpdate({ target: slider, type: 'change' });
     });
   });
 
@@ -3602,6 +3656,7 @@ function pasteObjectText(text) {
         fontKey: document.getElementById('text-font-select').value || 'sans-bold',
         fontSizeMm: evalMathExpr(document.getElementById('text-size-input').value, 18),
         spacingMm: evalMathExpr(document.getElementById('text-spacing-input').value, 1.2),
+        writingDirection: document.getElementById('text-direction-select').value,
         curve: 0, laserMode: state.activeLaserMode
       })];
     }

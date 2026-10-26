@@ -423,18 +423,36 @@
       <section id="text-inspector-section" class="panel-section" style="display: none;">
         <div class="panel-section-header">
           <div class="panel-section-title">🔤 Tekst, Fonter &amp; Tekst langs form</div>
-          <span style="font-size: 10.5px; color: #38bdf8; font-weight: 600;">31 fonter</span>
+          <span id="text-font-count" style="font-size: 10.5px; color: #38bdf8; font-weight: 600;"></span>
         </div>
         <div class="prop-grid">
+          <div class="prop-field full-width" id="text-refresh-wrap" style="display:none;">
+            <button id="btn-refresh-text" type="button" class="btn">↻ Oppdater tekstform</button>
+            <div class="text-control-help">Bruk den nye, formfaste teksten på dette objektet. Kan angres.</div>
+          </div>
           <div class="prop-field full-width">
             <label for="text-content-input">Tekstinnhold</label>
             <input type="text" id="text-content-input" class="input-control" value="BJØRNSVEEN" placeholder="Skriv tekst her..." />
           </div>
           <div class="prop-field full-width">
-            <label for="text-font-select">Skrifttype (31 kategoriserte fonter)</label>
+            <label for="text-font-search">Finn skrifttype</label>
+            <input type="search" id="text-font-search" class="input-control" placeholder="Søk etter navn eller stil …" />
+            <label for="text-font-select">Skrifttype</label>
             <select id="text-font-select" class="select-control">
               <option value="sans-bold" selected>Moderne Kraftig (Montserrat / Arial Black)</option>
             </select>
+            <svg id="text-font-preview" role="img" aria-label="Forhåndsvisning av valgt skrifttype" style="width:100%;height:42px;margin-top:5px;" preserveAspectRatio="xMinYMid meet"></svg>
+          </div>
+          <div class="prop-field full-width">
+            <label for="text-direction-select">Skriftretning</label>
+            <select id="text-direction-select" class="select-control">
+              <option value="horizontal">→ Vannrett</option>
+              <option value="down">↓ Les nedover (rotert tekst)</option>
+              <option value="up">↑ Les oppover (rotert tekst)</option>
+              <option value="stacked-down">↓ Stående bokstaver under hverandre</option>
+              <option value="stacked-up">↑ Stående bokstaver oppover</option>
+            </select>
+            <div class="text-control-help">Retning gjelder rett tekst. Bue og «Følg form» plasserer bokstavene langs en bane.</div>
           </div>
           <div class="prop-field">
             <label for="text-size-input">Bokstavhøyde</label>
@@ -444,11 +462,20 @@
             </div>
           </div>
           <div class="prop-field">
-            <label for="text-spacing-input">Bokstavavstand</label>
+            <label for="text-spacing-input">Ekstra bokstavavstand</label>
             <div class="input-with-unit">
               <input type="text" inputmode="decimal" id="text-spacing-input" class="input-control math-input" value="1.2" />
               <span class="unit">mm</span>
             </div>
+          </div>
+          <div class="prop-field full-width">
+            <input type="range" id="text-spacing-slider" aria-label="Juster bokstavavstand" min="-5" max="50" step="0.1" value="1.2" />
+            <div class="action-grid-3">
+              <button class="btn" type="button" data-text-spacing="0">Normal</button>
+              <button class="btn" type="button" data-text-spacing="1">+1 mm</button>
+              <button class="btn" type="button" data-text-spacing="3">+3 mm</button>
+            </div>
+            <div class="text-control-help">0 = fontens normale avstand. Minus gir tettere tekst, pluss gir mer luft.</div>
           </div>
           <div class="prop-field full-width">
             <div style="display: flex; justify-content: space-between; align-items: center;">

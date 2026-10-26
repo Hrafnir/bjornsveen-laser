@@ -28,4 +28,15 @@
 @font-face { font-family: "Rye"; font-style: normal; font-weight: 400; src: url(rye-400-normal.ttf) format('truetype'); font-display: swap; }
 @font-face { font-family: "Satisfy"; font-style: normal; font-weight: 400; src: url(satisfy-400-normal.ttf) format('truetype'); font-display: swap; }
 @font-face { font-family: "Special Elite"; font-style: normal; font-weight: 400; src: url(specialelite-400-normal.ttf) format('truetype'); font-display: swap; }
-@font-face { font-family: "Stardos Stencil"; font-style: normal; font-weight: 700; src: url(stardosstencil-700-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "Stardos Stencil"; font-style: normal; font-weight: 700; src: url(stardosstencil-700-normal.ttf) format('truetype'); font-display: swap; }@font-face { font-family: "Saira Stencil One"; font-style: normal; font-weight: 400; src: url(sairastencilone-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "Cormorant Garamond"; font-style: normal; font-weight: 400; src: url(cormorantgaramond-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "EB Garamond"; font-style: normal; font-weight: 400; src: url(ebgaramond-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "Inconsolata"; font-style: normal; font-weight: 400; src: url(inconsolata-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "Josefin Sans"; font-style: normal; font-weight: 400; src: url(josefinsans-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "Lato"; font-style: normal; font-weight: 400; src: url(lato-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "Merriweather"; font-style: normal; font-weight: 400; src: url(merriweather-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "Nunito"; font-style: normal; font-weight: 400; src: url(nunito-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "Raleway"; font-style: normal; font-weight: 400; src: url(raleway-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "Roboto Slab"; font-style: normal; font-weight: 400; src: url(robotoslab-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "Sacramento"; font-style: normal; font-weight: 400; src: url(sacramento-400-normal.ttf) format('truetype'); font-display: swap; }
+@font-face { font-family: "UnifrakturMaguntia"; font-style: normal; font-weight: 400; src: url(unifrakturmaguntia-400-normal.ttf) format('truetype'); font-display: swap; }

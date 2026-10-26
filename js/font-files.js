@@ -35,5 +35,17 @@ export const FONT_FILES = {
   "pixel": "pressstart2p-400-normal.ttf",
   "medieval": "cinzel-700-normal.ttf",
   "typewriter": "specialelite-400-normal.ttf",
-  "mono": "specialelite-400-normal.ttf"
+  "mono": "specialelite-400-normal.ttf",
+  "sairastencilone": "sairastencilone-400-normal.ttf",
+  "cormorantgaramond": "cormorantgaramond-400-normal.ttf",
+  "ebgaramond": "ebgaramond-400-normal.ttf",
+  "inconsolata": "inconsolata-400-normal.ttf",
+  "josefinsans": "josefinsans-400-normal.ttf",
+  "lato": "lato-400-normal.ttf",
+  "merriweather": "merriweather-400-normal.ttf",
+  "nunito": "nunito-400-normal.ttf",
+  "raleway": "raleway-400-normal.ttf",
+  "robotoslab": "robotoslab-400-normal.ttf",
+  "sacramento": "sacramento-400-normal.ttf",
+  "unifrakturmaguntia": "unifrakturmaguntia-400-normal.ttf"
 };

@@ -141,4 +141,34 @@ await test('legacy line handles and moving a complete line snap to rectangle cor
  drag([68,128],[99,81],d.querySelector('[data-handle="line-p2"]'));const shape=JSON.parse(clipboard('copy').text).shapes[0];near(shape.x2,100,.001);near(shape.y2,80,.001);
  reset();tool('rect');drag([100,80],[180,140]);chain([[20,180],[60,120]]);tool('select');drag([40,150],[79,111],shapes()[1]);near(points(shapes()[1]).at(-1).x,100,.001);near(points(shapes()[1]).at(-1).y,80,.001);
 });
+const setText=value=>{const el=$('text-content-input');el.value=value;el.dispatchEvent(new w.Event('input',{bubbles:true}));el.blur()};
+const textMeta=()=>JSON.parse(clipboard('copy').text).shapes[0].textMeta;
+const addText=(value='ABC')=>{tool('text');edit('text-direction-select','horizontal');$('text-curve-input').value='0';$('text-curve-input').dispatchEvent(new w.Event('input'));edit('text-font-select','playfair');edit('text-spacing-input','1');setText(value);click(70,160);$('text-content-input').blur()};
+await test('text reads up/down, retains metadata on paste and direction edits are undoable',()=>{
+ reset();addText('ÆØÅ ABC');const width=Number($('prop-w').value),height=Number($('prop-h').value);
+ edit('text-direction-select','down');near(Number($('prop-w').value),height);near(Number($('prop-h').value),width);assert(textMeta().writingDirection==='down');
+ key('z',{metaKey:true});selectRow(ids()[0]);assert(textMeta().writingDirection==='horizontal');edit('text-direction-select','up');const copied=clipboard('copy').text;clipboard('paste',copied);assert(shapes().length===2);assert(textMeta().writingDirection==='up');
+});
+await test('stacked text, numeric tracking and the spacing slider update immediately',()=>{
+ reset();addText('ABC');edit('text-direction-select','stacked-down');assert(Number($('prop-h').value)>Number($('prop-w').value));const height=Number($('prop-h').value);
+ $('text-spacing-slider').value='3';$('text-spacing-slider').dispatchEvent(new w.Event('input'));$('text-spacing-slider').dispatchEvent(new w.Event('change'));near(Number($('prop-h').value),height+4);assert(textMeta().spacingMm===3);
+ edit('text-spacing-input','-2');near(Number($('prop-h').value),height-6);edit('text-direction-select','stacked-up');assert(textMeta().writingDirection==='stacked-up');
+});
+await test('new font families are searchable and show a vector preview',()=>{
+ const search=$('text-font-search');search.value='Lato';search.dispatchEvent(new w.Event('input'));assert($('text-font-select').options.length<=2);
+ edit('text-font-select','lato');assert(textMeta().fontKey==='lato');assert($('text-font-preview').dataset.font==='lato');assert($('text-font-preview').querySelector('path').getAttribute('d').length>50);
+ search.value='';search.dispatchEvent(new w.Event('input'));assert($('text-font-select').options.length===49);
+});
+await test('older text can adopt the new rigid layout explicitly and undo restores its saved outlines',()=>{
+ reset();addText('Dette er tekst');const data=JSON.parse(clipboard('copy').text);data.shapes[0].textMeta.layoutVersion=1;data.shapes[0].textMeta.curve=55;clipboard('paste',JSON.stringify(data));
+ const old=shapes()[1].getAttribute('d');assert($('text-refresh-wrap').style.display!=='none');$('btn-refresh-text').click();assert(shapes()[1].getAttribute('d')!==old);assert(textMeta().layoutVersion===2);
+ key('z',{metaKey:true});selectRow(ids()[1]);assert(textMeta().layoutVersion===1);assert(shapes()[1].getAttribute('d')===old);
+});
+await test('text follows a rounded outline with rigid glyphs; direction and path modes switch predictably',()=>{
+ reset();tool('rect');drag([80,80],[280,220]);edit('prop-rx','25');const rectangleId=ids()[0];
+ addText('Dette er en spennende historie');edit('text-size-input','12');const textId=ids()[1];edit('text-direction-select','up');
+ selectRow(rectangleId,true);$('btn-bind-text-to-shape').click();assert(textMeta().customPath.length>4);assert(textMeta().writingDirection==='horizontal');
+ edit('text-direction-select','down');assert(textMeta().customPath===null);assert(textMeta().writingDirection==='down');
+ key('z',{metaKey:true});selectRow(textId);assert(textMeta().customPath.length>4);assert(textMeta().writingDirection==='horizontal');
+});
 document.querySelector('#summary').textContent=`${passed} bestått, ${failed} feilet`;

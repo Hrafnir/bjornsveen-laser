@@ -215,5 +215,113 @@
     "style": "normal",
     "file": "stardosstencil-700-normal.ttf",
     "source": "https://fonts.gstatic.com/s/stardosstencil/v15/X7n44bcuGPC8hrvEOHXOgaKCc2TpU3tTvg.ttf"
+  },
+  {
+    "family": "Saira Stencil One",
+    "weight": 400,
+    "style": "normal",
+    "file": "sairastencilone-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/sairastencilone/v19/SLXSc03I6HkvZGJ1GvvipLoYSTEL9DsLYQw.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/sairastencilone/OFL.txt",
+    "sha256": "b608cde3c3fce3defba40d2f38677b682f7a8c915f5a11f3fc9b3e27d19010e5"
+  },
+  {
+    "family": "Cormorant Garamond",
+    "weight": 400,
+    "style": "normal",
+    "file": "cormorantgaramond-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/cormorantgaramond/v21/co3umX5slCNuHLi8bLeY9MK7whWMhyjypVO7abI26QOD_v86KnTOjw.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/cormorantgaramond/OFL.txt",
+    "sha256": "20a257ad9d80130f035b53d000208f895b9515aa7c7f8f86df45684380d66a0e"
+  },
+  {
+    "family": "EB Garamond",
+    "weight": 400,
+    "style": "normal",
+    "file": "ebgaramond-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/ebgaramond/v33/SlGDmQSNjdsmc35JDF1K5E55YMjF_7DPuGi-6_RkBI96.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/ebgaramond/OFL.txt",
+    "sha256": "86dd34f2c6e4e44974226940b7c8f3131f1f4f963a4728cb616729a795360320"
+  },
+  {
+    "family": "Inconsolata",
+    "weight": 400,
+    "style": "normal",
+    "file": "inconsolata-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/inconsolata/v37/QldgNThLqRwH-OJ1UHjlKENVzkWGVkL3GZQmAwLYxYWI2qfdm7Lpp4U8WR32kg.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/inconsolata/OFL.txt",
+    "sha256": "7e3efabc1d9cbd8d08183702aef59ee9c83c6be1f0168b3a95bee671b13b3d45"
+  },
+  {
+    "family": "Josefin Sans",
+    "weight": 400,
+    "style": "normal",
+    "file": "josefinsans-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/josefinsans/v34/Qw3PZQNVED7rKGKxtqIqX5E-AVSJrOCfjY46_DjQbMZhKg.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/josefinsans/OFL.txt",
+    "sha256": "cc9d932423f8e01d5d9681d00a5fee9298d3502b5152efd03568159125a92278"
+  },
+  {
+    "family": "Lato",
+    "weight": 400,
+    "style": "normal",
+    "file": "lato-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/lato/v25/S6uyw4BMUTPHjx4wWw.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/lato/OFL.txt",
+    "sha256": "b6e055ad6056d64c89133fd73e9ee935c068d8bd3ac09366d5d99f9eee99e3f4"
+  },
+  {
+    "family": "Merriweather",
+    "weight": 400,
+    "style": "normal",
+    "file": "merriweather-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/merriweather/v33/u-4D0qyriQwlOrhSvowK_l5UcA6zuSYEqOzpPe3HOZJ5eX1WtLaQwmYiScCmDxhtNOKl8yDr3icaFF3w.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/merriweather/OFL.txt",
+    "sha256": "068e8c7759a42f05342e041bd5f8299be197e9a96447a64149ca7abb3fe8f76c"
+  },
+  {
+    "family": "Nunito",
+    "weight": 400,
+    "style": "normal",
+    "file": "nunito-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/nunito/v32/XRXI3I6Li01BKofiOc5wtlZ2di8HDLshdTQ3ig.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/OFL.txt",
+    "sha256": "056899e6fad68f3ba400ea1ae9d1a156e52c6839fca08bf141372e2821f2adb5"
+  },
+  {
+    "family": "Raleway",
+    "weight": 400,
+    "style": "normal",
+    "file": "raleway-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/raleway/v37/1Ptxg8zYS_SKggPN4iEgvnHyvveLxVvaorCIPrQ.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/raleway/OFL.txt",
+    "sha256": "50432fc4fcd6a91645e1e41400341363afbf4b17233fd2a28bfd3e8c98798cf0"
+  },
+  {
+    "family": "Roboto Slab",
+    "weight": 400,
+    "style": "normal",
+    "file": "robotoslab-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/robotoslab/v36/BngbUXZYTXPIvIBgJJSb6s3BzlRRfKOFbvjojISmb2Rm.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/apache/robotoslab/LICENSE.txt",
+    "sha256": "a11e2aeebb0fb679ab8931d597303307bc8bd0ec5ac4ab02047e8f36be355d98"
+  },
+  {
+    "family": "Sacramento",
+    "weight": 400,
+    "style": "normal",
+    "file": "sacramento-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/sacramento/v17/buEzpo6gcdjy0EiZMBUG4C0f-A.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/sacramento/OFL.txt",
+    "sha256": "f4ba2c244462b0ab5e20977f87f6c5347012626bc1b61d2c412a9ac21e964068"
+  },
+  {
+    "family": "UnifrakturMaguntia",
+    "weight": 400,
+    "style": "normal",
+    "file": "unifrakturmaguntia-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/unifrakturmaguntia/v22/WWXPlieVYwiGNomYU-ciRLRvEmK7oaVemGZJ.ttf",
+    "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/unifrakturmaguntia/OFL.txt",
+    "sha256": "0319ddffa6d73dba4a7dd1b8b2b1437a28045d77ac6bbac51305cb948f538f77"
   }
 ]

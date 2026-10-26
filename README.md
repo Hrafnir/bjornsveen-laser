@@ -139,3 +139,19 @@ Kjør `npm test` for geometritester og `tests/browser.html` for SVG/flex/lagring
 Slå på **Fest til objekter** øverst. Velg linjen med **V**, og dra det oransje endepunktet mot hjørnet. En **grønn ring** viser når punktet treffer; slipp for å plassere enden nøyaktig på hjørnet. Dette virker også når du tegner med **L** eller **B**, redigerer knutepunkter eller flytter hele linjen. Festingen bruker 8 skjermpiksler, har prioritet over rutenettet og kan hoppes over med **Alt**.
 
 Linjen og rektangelet beholdes som separate, redigerbare objekter med et felles punkt. Sammenkobling til én sti skjer fortsatt bare ved kompatible endepunkter på åpne linjer. Festingen er en plassering, ikke en permanent binding: flytter du rektangelet senere, følger ikke linjen automatisk med. På avrundede rektangler fester du til overgangen mellom rette sider og buene, ikke til det tomme området der et skarpt hjørne ville vært.
+
+### Tekstretning, bokstavavstand og flere fonter
+
+Tekstpanelet har **49 fontvalg**, inkludert 12 nye fontfamilier: Saira Stencil One, Cormorant Garamond, EB Garamond, Inconsolata, Josefin Sans, Lato, Merriweather, Nunito, Raleway, Roboto Slab, Sacramento og UnifrakturMaguntia. De nye familiene er testet med ÆØÅ/æøå. Søkefeltet filtrerer fontlisten; valgt font beholdes i listen. Forhåndsvisningen bruker samme vektorkonturer som teksten på platen. Fontfiler og lisenser følger prosjektet lokalt.
+
+**Skriftretning** tilbyr vannrett tekst, tekst rotert for å leses oppover eller nedover, og stående bokstaver stablet oppover eller nedover. Innstillingen brukes både på valgt tekst og neste tekst du setter inn. Retningene følger med ved kopiering, lagring og XCS/SVG-eksport.
+
+**Ekstra bokstavavstand** kan settes i millimeter, med glidebryter eller knappene Normal / +1 mm / +3 mm. Null bruker fontens normale avstand og kerning; positive verdier gir mer luft, negative verdier tettere bokstaver. Avstanden legges til etter skalering av bokstavhøyden, slik at verdien fortsatt er i millimeter også for tekst med aksenter eller bare små bokstaver. Ved eksplisitt bokstavavstand slås latinske ligaturer av slik at f.eks. «fi» fortsatt har to separate bokstaver. Endringer kan angres.
+
+### Bokstaver langs buer og omriss
+
+Hver bokstav flyttes og roteres som én samlet form langs banen. Konturer, hull, prikker og aksenter bevarer proporsjonene; bokstavene strekkes ikke rundt hjørner. På lukkede figurer sentreres teksten over toppen, med eksisterende justeringer for plassering, avstand og motsatt retning. Svært trange buer kan fortsatt kreve mindre tekst eller større avstand for å unngå at separate bokstaver overlapper.
+
+Skriftretning for rett tekst og tekst langs bane er separate oppsett. Velger du oppover/nedover, frigjøres teksten fra bue/omriss. Binder du den til en form eller velger en bue, brukes vannrett grunntekst langs banen. Byttene kan angres.
+
+Eksisterende lagrede konturer endres ikke automatisk. For tekst fra en eldre versjon: velg tekstobjektet og trykk **Oppdater tekstform** for å bruke den nye formen og millimeteravstanden. Handlingen kan angres. Vanlig redigering av teksten bruker også den nye metoden.

@@ -1119,3 +1119,5 @@ html, body {
 .layer-item.is-hidden .layer-item-left { opacity: .45; }
 .layer-item.is-hidden .layer-name { text-decoration: line-through; }
 .layer-item-actions { flex-shrink: 0; }
+
+.text-control-help { font-size: 10.5px; color: var(--text-muted); line-height: 1.45; margin-top: 4px; }

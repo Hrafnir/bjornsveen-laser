@@ -347,14 +347,102 @@ export const FONT_CATALOG = [
   }
 ];
 
+FONT_CATALOG.push(...[
+  {
+    "key": "sairastencilone",
+    "category": "🆕 Flere skrifttyper",
+    "label": "Saira Stencil One",
+    "family": "\"Saira Stencil One\"",
+    "weight": "400"
+  },
+  {
+    "key": "cormorantgaramond",
+    "category": "🆕 Flere skrifttyper",
+    "label": "Cormorant Garamond",
+    "family": "\"Cormorant Garamond\"",
+    "weight": "400"
+  },
+  {
+    "key": "ebgaramond",
+    "category": "🆕 Flere skrifttyper",
+    "label": "EB Garamond",
+    "family": "\"EB Garamond\"",
+    "weight": "400"
+  },
+  {
+    "key": "inconsolata",
+    "category": "🆕 Flere skrifttyper",
+    "label": "Inconsolata",
+    "family": "\"Inconsolata\"",
+    "weight": "400"
+  },
+  {
+    "key": "josefinsans",
+    "category": "🆕 Flere skrifttyper",
+    "label": "Josefin Sans",
+    "family": "\"Josefin Sans\"",
+    "weight": "400"
+  },
+  {
+    "key": "lato",
+    "category": "🆕 Flere skrifttyper",
+    "label": "Lato",
+    "family": "\"Lato\"",
+    "weight": "400"
+  },
+  {
+    "key": "merriweather",
+    "category": "🆕 Flere skrifttyper",
+    "label": "Merriweather",
+    "family": "\"Merriweather\"",
+    "weight": "400"
+  },
+  {
+    "key": "nunito",
+    "category": "🆕 Flere skrifttyper",
+    "label": "Nunito",
+    "family": "\"Nunito\"",
+    "weight": "400"
+  },
+  {
+    "key": "raleway",
+    "category": "🆕 Flere skrifttyper",
+    "label": "Raleway",
+    "family": "\"Raleway\"",
+    "weight": "400"
+  },
+  {
+    "key": "robotoslab",
+    "category": "🆕 Flere skrifttyper",
+    "label": "Roboto Slab",
+    "family": "\"Roboto Slab\"",
+    "weight": "400"
+  },
+  {
+    "key": "sacramento",
+    "category": "🆕 Flere skrifttyper",
+    "label": "Sacramento",
+    "family": "\"Sacramento\"",
+    "weight": "400"
+  },
+  {
+    "key": "unifrakturmaguntia",
+    "category": "🆕 Flere skrifttyper",
+    "label": "UnifrakturMaguntia",
+    "family": "\"UnifrakturMaguntia\"",
+    "weight": "400"
+  }
+]);
+
 const FONT_MAP = Object.fromEntries(FONT_CATALOG.map(f => [f.key, f]));
 
 /**
  * Generates HTML `<optgroup>` and `<option>` markup for font `<select>` dropdowns.
  */
-export function getFontOptionsHtml(selectedKey = 'sans-bold') {
+export function getFontOptionsHtml(selectedKey = 'sans-bold', query = '') {
   const groups = new Map();
   for (const item of FONT_CATALOG) {
+    if (query && item.key !== selectedKey && !`${item.label} ${item.category}`.toLocaleLowerCase('nb').includes(query.toLocaleLowerCase('nb'))) continue;
     if (!groups.has(item.category)) groups.set(item.category, []);
     groups.get(item.category).push(item);
   }
@@ -378,6 +466,7 @@ export function generateTextPolygons({
   fontKey = 'sans-bold',
   fontSizeMm = 18,
   spacingMm = 1.2,
+  writingDirection = 'horizontal',
   curve = 0,
   customPath = null,
   customPathClosed = false,
@@ -385,7 +474,7 @@ export function generateTextPolygons({
   pathNormalOffsetMm = 0,
   pathFlip = false
 } = {}) {
-  const cleanText = String(text ?? '').trim();
+  const cleanText = String(text ?? '').trim().normalize('NFC');
   if (!cleanText) return [];
   const capHeight = clamp(Number(fontSizeMm) || 18, 2, 400);
   const letterGap = Number(spacingMm) || 0;
@@ -393,12 +482,14 @@ export function generateTextPolygons({
 
   const fontDef = FONT_MAP[fontKey] || FONT_MAP['sans-bold'];
 
+  const direction = normalizeTextDirection(writingDirection, curve, customPath);
+
   // 1. Build flat high-precision loops first
   let rawLoops;
   if (fontDef && fontDef.singleLine) {
-    rawLoops = buildSingleLinePolygons(cleanText, capHeight, letterGap);
+    rawLoops = buildSingleLinePolygons(cleanText, capHeight, letterGap, direction);
   } else {
-    rawLoops = outlineTextToPolygons(cleanText, fontKey, capHeight, letterGap);
+    rawLoops = outlineTextToPolygons(cleanText, fontKey, capHeight, letterGap, direction);
   }
   if (!rawLoops || rawLoops.length === 0) return [];
 
@@ -417,10 +508,14 @@ export function generateTextPolygons({
     return warpLoopsAlongArc(rawLoops, curveVal);
   }
 
-  return rawLoops;
+  return orientTextLoops(rawLoops, direction);
 }
 
-function buildSingleLinePolygons(text, heightMm, spacingMm) {
+function buildSingleLinePolygons(text, heightMm, spacingMm, direction = 'horizontal') {
+  if (direction.startsWith('stacked-')) {
+    const entries = Array.from(text).map(ch => buildSingleLinePolygons(ch, heightMm, 0));
+    return stackGlyphs(entries, heightMm, spacingMm, direction === 'stacked-up');
+  }
   const upper = text.toUpperCase();
   const charW = heightMm * 0.66;
   const stepX = charW + spacingMm;
@@ -430,7 +525,7 @@ function buildSingleLinePolygons(text, heightMm, spacingMm) {
   for (let i = 0; i < upper.length; i++) {
     const ch = upper[i];
     if (ch === ' ') {
-      cursorX += charW * 0.65;
+      cursorX += charW * 0.65 + spacingMm;
       continue;
     }
     const strokes = SINGLE_LINE_GLYPHS[ch] || SINGLE_LINE_GLYPHS['O'];
@@ -455,6 +550,7 @@ function buildSingleLinePolygons(text, heightMm, spacingMm) {
         pts.push(p);
       }
       pts.closed = false;
+      pts.glyphIndex = i;
       loops.push(pts);
     }
     cursorX += stepX;
@@ -477,117 +573,105 @@ export async function initializeFonts() {
   }));
 }
 
-function outlineTextToPolygons(text, fontKey, heightMm, spacingMm) {
+export const TEXT_DIRECTIONS = ['horizontal', 'down', 'up', 'stacked-down', 'stacked-up'];
+function normalizeTextDirection(direction, curve, customPath) {
+  return Math.abs(Number(curve) || 0) > 0.5 || customPath?.length >= 2 || !TEXT_DIRECTIONS.includes(direction) ? 'horizontal' : direction;
+}
+function mapGlyphLoop(loop, transform) {
+  const result = loop.map(transform);
+  result.closed = loop.closed !== false;
+  result.glyphIndex = loop.glyphIndex;
+  return result;
+}
+function orientTextLoops(loops, direction) {
+  if (direction === 'down') return loops.map(loop => mapGlyphLoop(loop, p => ({x:-p.y,y:p.x})));
+  if (direction === 'up') return loops.map(loop => mapGlyphLoop(loop, p => ({x:p.y,y:-p.x})));
+  return loops;
+}
+function stackGlyphs(entries, heightMm, spacingMm, upward) {
+  const all = entries.flat();
+  if (!all.length) return [];
+  const bbox = computePolygonsBBox(all), factor = heightMm / Math.max(.1, bbox.height);
+  const boxes = entries.map(loops => computePolygonsBBox(loops));
+  const width = Math.max(...boxes.map(box => box.width)) * factor;
+  return entries.flatMap((loops, index) => loops.map(loop => {
+    const box = boxes[index];
+    const result = mapGlyphLoop(loop, p => ({
+      x: (width - box.width * factor) / 2 + (p.x - box.x) * factor,
+      y: (upward ? -index : index) * (heightMm + spacingMm) + (heightMm - box.height * factor) / 2 + (p.y - box.y) * factor
+    }));
+    result.glyphIndex = index;
+    return result;
+  }));
+}
+function outlineTextToPolygons(text, fontKey, heightMm, spacingMm, direction = 'horizontal') {
   const file = FONT_FILES[fontKey] || FONT_FILES['sans-bold'];
   const font = loadedFonts.get(file);
   if (!font) throw new Error('Fontene er ikke klare. Last siden på nytt.');
   const def = FONT_MAP[fontKey] || FONT_MAP['sans-bold'];
   const cap = font.charToGlyph('H').getBoundingBox();
   const emSize = heightMm * font.unitsPerEm / Math.max(1, cap.y2 - cap.y1);
+  const stacked = direction.startsWith('stacked-');
+  // Spaced Latin letters must stay separate instead of collapsing into fi/ff ligatures.
+  const glyphs = font.stringToGlyphs(text, {features:{liga:!stacked && spacingMm === 0,rlig:!stacked && spacingMm === 0}});
   let cursor = 0;
-  const loops = [];
-  // Glyph outlines are vectors from the TTF, never traced screen pixels.
-  const glyphs = font.stringToGlyphs(text);
+  const entries = [];
   for (let i = 0; i < glyphs.length; i++) {
     const glyph = glyphs[i];
-    let paths = parseSvgPathToPolygons(glyph.getPath(cursor, 0, emSize).toPathData(5), 0.06);
+    let paths = parseSvgPathToPolygons(glyph.getPath(stacked ? 0 : cursor, 0, emSize).toPathData(5), 0.06);
     if (def.stencil && paths.length) {
       const box = computePolygonsBBox(paths), bridge = Math.max(0.15, heightMm * 0.105);
       const x = box.x + box.width / 2, y = box.y - 1, bottom = box.y + box.height + 1;
       paths = booleanMultiPolygons(paths, [[{x:x-bridge/2,y},{x:x+bridge/2,y},{x:x+bridge/2,y:bottom},{x:x-bridge/2,y:bottom}]], 'subtract');
     }
-    loops.push(...paths);
-    cursor += (glyph.advanceWidth || font.unitsPerEm/2) * emSize/font.unitsPerEm + spacingMm;
+    paths.forEach(loop => { loop.glyphIndex = i; });
+    entries.push(paths);
+    cursor += (glyph.advanceWidth || font.unitsPerEm/2) * emSize/font.unitsPerEm;
     if (i+1 < glyphs.length) cursor += font.getKerningValue(glyph,glyphs[i+1]) * emSize/font.unitsPerEm;
   }
+  if (stacked) return stackGlyphs(entries, heightMm, spacingMm, direction === 'stacked-up');
+  const loops = entries.flat();
   if (!loops.length) return [];
-  const bbox = computePolygonsBBox(loops);
-  const factor = heightMm / Math.max(0.1,bbox.height);
-  return loops.map(loop => { const points=loop.map(pt=>({x:(pt.x-bbox.x)*factor,y:(pt.y-bbox.y)*factor}));points.closed=loop.closed!==false;return points; });
+  const bbox = computePolygonsBBox(loops), factor = heightMm / Math.max(0.1,bbox.height);
+  // Apply tracking AFTER scaling letter height, so 1 mm stays exactly 1 mm.
+  return loops.map(loop => mapGlyphLoop(loop, pt => ({
+    x:(pt.x-bbox.x)*factor + loop.glyphIndex*spacingMm,
+    y:(pt.y-bbox.y)*factor
+  })));
 }
 
-function densifyLoopsForWarping(loops, maxSegMm = 0.6) {
-  return loops.map(loop => {
-    const dense = [];
-    const isClosed = loop.closed !== false;
-    const count = isClosed ? loop.length : loop.length - 1;
-    for (let i = 0; i < count; i++) {
-      const a = loop[i];
-      const b = loop[(i + 1) % loop.length];
-      dense.push(a);
-      const d = Math.hypot(b.x - a.x, b.y - a.y);
-      if (d > maxSegMm) {
-        const steps = Math.min(32, Math.ceil(d / maxSegMm));
-        for (let k = 1; k < steps; k++) {
-          const t = k / steps;
-          dense.push({
-            x: a.x + (b.x - a.x) * t,
-            y: a.y + (b.y - a.y) * t
-          });
-        }
-      }
-    }
-    if (!isClosed && loop.length > 0) {
-      dense.push(loop[loop.length - 1]);
-    }
-    dense.closed = isClosed;
-    return dense;
-  });
+function glyphAnchors(loops) {
+  const groups = new Map();
+  for (const loop of loops) {
+    const key = loop.glyphIndex ?? 0;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(loop);
+  }
+  return new Map([...groups].map(([id, glyph]) => {
+    const b = computePolygonsBBox(glyph);
+    return [id, b.x + b.width / 2];
+  }));
 }
 
-/**
- * Warps polygon loops along a circular arc or full 360° circle when `curve` != 0 (-180..180).
- * curve = ±100 is ~180° semicircle; curve = ±180 is a full 360° circle!
- */
 function warpLoopsAlongArc(loops, curve) {
-  if (!loops || loops.length === 0 || !curve) return loops;
-  const bbox = computePolygonsBBox(loops);
-  const w = Math.max(1, bbox.width);
-  const h = Math.max(1, bbox.height);
-  const cx = bbox.x + w / 2;
-
-  // Map curve in [-180, 180] to bend angle up to 2*PI (full circle at ±180)
-  const clampedCurve = clamp(Number(curve) || 0, -180, 180);
-  const maxAngle = (Math.abs(clampedCurve) / 180) * (Math.PI * 2);
-  if (maxAngle < 0.02) return loops;
-
-  // Add a small gap when wrapping a full circle so first and last letters don't collide
-  const effectiveW = Math.abs(clampedCurve) > 150 ? w + h * 0.55 : w;
-  const radius = effectiveW / maxAngle;
-  const sign = clampedCurve > 0 ? 1 : -1;
-
-  const denseLoops = densifyLoopsForWarping(loops, clamp(h * 0.05, 0.25, 1.2));
-
-  return denseLoops.map(loop => {
-    const warped = loop.map(pt => {
-      const dx = pt.x - cx;
-      const dy = pt.y - (bbox.y + h / 2);
-      const theta = dx / radius;
-      if (sign > 0) {
-        // Arch upward (rainbow / top of circle)
-        const r = radius - dy;
-        return {
-          x: cx + Math.sin(theta) * r,
-          y: bbox.y + radius - Math.cos(theta) * r
-        };
-      } else {
-        // Arch downward (smile / bottom of circle)
-        const r = radius + dy;
-        return {
-          x: cx + Math.sin(theta) * r,
-          y: bbox.y - radius + Math.cos(theta) * r
-        };
-      }
-    });
-    warped.closed = loop.closed !== false;
-    return warped;
+  if (!loops.length || !curve) return loops;
+  const box = computePolygonsBBox(loops), w = Math.max(1, box.width), h = Math.max(1, box.height);
+  const amount = clamp(Number(curve) || 0, -180, 180), angle = Math.abs(amount) / 180 * Math.PI * 2;
+  if (angle < .02) return loops;
+  const radius = (Math.abs(amount) > 150 ? w + h * .55 : w) / angle;
+  const sign = amount > 0 ? 1 : -1, cx = box.x + w / 2, cy = box.y + h / 2;
+  const anchors = glyphAnchors(loops);
+  return loops.map(loop => {
+    const gx = anchors.get(loop.glyphIndex ?? 0), theta = (gx - cx) / radius;
+    const cos = Math.cos(theta), sin = Math.sin(theta);
+    return mapGlyphLoop(loop, p => ({
+      x:cx + sin*radius + cos*(p.x-gx) - sign*sin*(p.y-cy),
+      y:box.y + sign*(radius-cos*radius) + sign*sin*(p.x-gx) + cos*(p.y-cy)
+    }));
   });
 }
 
-/**
- * Warps text polygon loops along ANY arbitrary polyline/shape contour `pathPoints`
- * (e.g., Circle, Ellipse, Heart, Polygon, Rounded Rect, Curved Line, Drawn Path).
- */
+// Each letter follows the path tangent as a rigid shape, never as stretched rubber.
 export function warpLoopsAlongCustomPath(loops, pathPoints, {
   closed = false,
   offsetPct = 0,
@@ -600,9 +684,9 @@ export function warpLoopsAlongCustomPath(loops, pathPoints, {
 
   // 1. Build clean path vertex list and segment arc-length table
   let pts = pathPoints.map(p => ({ x: Number(p.x) || 0, y: Number(p.y) || 0 }));
-  if (flip) {
-    pts = [...pts].reverse();
-  }
+  const area = pts.reduce((sum, p, i) => { const q = pts[(i+1)%pts.length]; return sum + p.x*q.y-q.x*p.y; }, 0);
+  if (closed && area < 0) pts.reverse();
+  if (flip) pts.reverse();
 
   const segs = [];
   let totalLen = 0;
@@ -650,17 +734,7 @@ export function warpLoopsAlongCustomPath(loops, pathPoints, {
     currSeg.t1y = t1y / l1;
   }
 
-  // Determine winding orientation of closed path so outward normal points outside the shape by default
-  let signedArea2 = 0;
-  if (closed && pts.length >= 3) {
-    for (let i = 0; i < pts.length; i++) {
-      const p1 = pts[i];
-      const p2 = pts[(i + 1) % pts.length];
-      signedArea2 += p1.x * p2.y - p2.x * p1.y;
-    }
-  }
-  // In SVG coordinates (Y down), clockwise (signedArea2 > 0) has outward normal (ty, -tx)
-  const normalSign = flip ? -1 : (closed && signedArea2 < 0 ? -1 : 1);
+  const normalSign = 1; // Local x = tangent, local up = left normal: rigid rotation.
 
   // Sample position, smoothed tangent, and outward normal at arc-length `s`
   const sampleAtArcLength = (sInput) => {
@@ -676,7 +750,8 @@ export function warpLoopsAlongCustomPath(loops, pathPoints, {
           x: first.ax + first.tx * s,
           y: first.ay + first.ty * s,
           nx,
-          ny
+          ny,
+          tx: first.tx, ty: first.ty
         };
       }
       if (s >= totalLen) {
@@ -688,7 +763,8 @@ export function warpLoopsAlongCustomPath(loops, pathPoints, {
           x: last.bx + last.tx * extra,
           y: last.by + last.ty * extra,
           nx,
-          ny
+          ny,
+          tx: last.tx, ty: last.ty
         };
       }
     }
@@ -720,7 +796,7 @@ export function warpLoopsAlongCustomPath(loops, pathPoints, {
 
     const nx = ty * normalSign;
     const ny = -tx * normalSign;
-    return { x: px, y: py, nx, ny };
+    return { x: px, y: py, nx, ny, tx, ty };
   };
 
   const bbox = computePolygonsBBox(loops);
@@ -731,37 +807,30 @@ export function warpLoopsAlongCustomPath(loops, pathPoints, {
   // For closed shapes (like a Circle): start at the top-center of the shape by default, plus offsetPct!
   let anchorS = totalLen * 0.5;
   if (closed) {
-    // Find the point on the closed loop with the minimum Y (top-most point of circle/heart/sign)
-    let bestS = 0;
-    let minY = Infinity;
-    let bestX = 0;
+    // Project the top-center of the shape onto the contour, including long straight top edges.
+    const bounds = computePolygonsBBox([pts]), top = {x:bounds.x+bounds.width/2,y:bounds.y};
+    let bestS = 0, bestDistance = Infinity;
     for (const seg of segs) {
-      if (seg.ay < minY || (Math.abs(seg.ay - minY) < 0.5 && Math.abs(seg.ax) < Math.abs(bestX))) {
-        minY = seg.ay;
-        bestX = seg.ax;
-        bestS = seg.startS;
-      }
+      const along = clamp((top.x-seg.ax)*seg.tx+(top.y-seg.ay)*seg.ty,0,seg.len);
+      const distance = Math.hypot(seg.ax+along*seg.tx-top.x,seg.ay+along*seg.ty-top.y);
+      if (distance < bestDistance) { bestDistance=distance; bestS=seg.startS+along; }
     }
     anchorS = bestS + (offsetPct / 100) * totalLen;
   } else {
     anchorS = totalLen * clamp(0.5 + offsetPct / 100, 0, 1);
   }
 
-  const denseLoops = densifyLoopsForWarping(loops, clamp(bbox.height * 0.05, 0.25, 1.0));
-
-  return denseLoops.map(loop => {
-    const warped = loop.map(pt => {
-      const s = anchorS + (pt.x - textCx);
-      // Distance above the text baseline (positive = upward toward top of letter)
-      const heightAboveBaseline = (baselineY - pt.y) + normalOffsetMm;
-      const sample = sampleAtArcLength(s);
+  const anchors = glyphAnchors(loops);
+  return loops.map(loop => {
+    const gx = anchors.get(loop.glyphIndex ?? 0);
+    const sample = sampleAtArcLength(anchorS + gx - textCx);
+    return mapGlyphLoop(loop, pt => {
+      const above = baselineY - pt.y + Number(normalOffsetMm || 0);
       return {
-        x: sample.x + sample.nx * heightAboveBaseline,
-        y: sample.y + sample.ny * heightAboveBaseline
+        x: sample.x + sample.tx*(pt.x-gx) + sample.nx*above,
+        y: sample.y + sample.ty*(pt.x-gx) + sample.ny*above
       };
     });
-    warped.closed = loop.closed !== false;
-    return warped;
   });
 }
 
@@ -775,6 +844,7 @@ export function createTextShape({
   fontKey = 'sans-bold',
   fontSizeMm = 18,
   spacingMm = 1.2,
+  writingDirection = 'horizontal',
   curve = 0,
   customPath = null,
   customPathClosed = false,
@@ -790,6 +860,7 @@ export function createTextShape({
     fontKey,
     fontSizeMm,
     spacingMm,
+    writingDirection,
     curve,
     customPath,
     customPathClosed,
@@ -834,10 +905,12 @@ export function createTextShape({
     d,
     origBBox: { ...bbox },
     textMeta: {
+      layoutVersion: 2,
       text,
       fontKey,
       fontSizeMm,
       spacingMm,
+      writingDirection: normalizeTextDirection(writingDirection, curve, customPath),
       curve,
       customPath: hasCustomPath ? customPath : null,
       customPathClosed: Boolean(customPathClosed),
