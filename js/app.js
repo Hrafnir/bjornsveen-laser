@@ -32,7 +32,9 @@ import {
 import {
   LASER_ICONS,
   createIconShape,
-  traceImageToPolygons
+  traceImageToPolygons,
+  createBitmapImageShape,
+  refreshBitmapShapeDataUrl
 } from './icons.js';
 
 import {
@@ -45,7 +47,11 @@ import {
 } from './generators.js';
 
 import {
+  LASER_MATERIAL_PRESETS,
+  getDefaultLaserSettings,
   buildLaserSvgString,
+  buildXcsProjectString,
+  importXcsStringToWorkspace,
   downloadTextFile,
   importSvgStringToShapes,
   saveWorkspaceToLocal,
@@ -100,6 +106,7 @@ const state = {
   curveModeDefault: false,
   editingGroupId: null,
   pickingPathForTextId: null,
+  laserSettings: getDefaultLaserSettings(),
 
   // Modal state
   activeGeneratorTab: 'box',
@@ -132,6 +139,9 @@ function initApp() {
     state.bedHeight = saved.bedHeight || 400;
     state.snapMm = saved.snapMm !== undefined ? saved.snapMm : 1;
     state.shapes = saved.shapes;
+    if (saved.laserSettings) {
+      state.laserSettings = { ...getDefaultLaserSettings(), ...saved.laserSettings };
+    }
     document.getElementById('machine-select').value = state.machineKey;
     document.getElementById('snap-select').value = String(state.snapMm);
   } else {
@@ -157,6 +167,13 @@ function initApp() {
   if (fontSelectEl) {
     fontSelectEl.innerHTML = getFontOptionsHtml('sans-bold');
   }
+  const presetSelectEl = document.getElementById('laser-preset-select');
+  if (presetSelectEl) {
+    presetSelectEl.innerHTML = Object.entries(LASER_MATERIAL_PRESETS)
+      .map(([k, v]) => `<option value="${k}">${v.name}</option>`)
+      .join('');
+  }
+  syncLaserSettingsUI();
   bindHeaderEvents();
   bindToolbarEvents();
   bindCanvasEvents();
@@ -566,6 +583,41 @@ function createSvgElementForShape(s, sw) {
         g.appendChild(childEl);
       }
     }
+    return g;
+  }
+
+  // Bitmap Photo / Raster Engraving Element
+  if (s.type === 'image') {
+    const href = s.dataUrl || s.srcDataUrl;
+    if (!href) return null;
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.dataset.id = s.id;
+    g.style.cursor = state.activeTool === 'select' ? 'move' : 'crosshair';
+
+    const cx = (Number(s.x) || 0) + (Number(s.width) || 0) / 2;
+    const cy = (Number(s.y) || 0) + (Number(s.height) || 0) / 2;
+    const rot = Number(s.rotation) || 0;
+    const fx = s.flipX ? -1 : 1;
+    const fy = s.flipY ? -1 : 1;
+    const transforms = [];
+    if (rot) transforms.push(`rotate(${rot} ${cx} ${cy})`);
+    if (fx !== 1 || fy !== 1) {
+      transforms.push(`translate(${cx} ${cy}) scale(${fx} ${fy}) translate(${-cx} ${-cy})`);
+    }
+    if (transforms.length > 0) {
+      g.setAttribute('transform', transforms.join(' '));
+    }
+
+    const imgEl = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    imgEl.setAttribute('x', String(Number(s.x) || 0));
+    imgEl.setAttribute('y', String(Number(s.y) || 0));
+    imgEl.setAttribute('width', String(Math.max(0.5, Number(s.width) || 50)));
+    imgEl.setAttribute('height', String(Math.max(0.5, Number(s.height) || 50)));
+    imgEl.setAttribute('preserveAspectRatio', 'none');
+    imgEl.setAttribute('href', href);
+    imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', href);
+    imgEl.dataset.id = s.id;
+    g.appendChild(imgEl);
     return g;
   }
 
@@ -1134,11 +1186,54 @@ function renderInspector() {
     resetCurveBtn.style.display = 'none';
 
     textSection.style.display = state.activeTool === 'text' ? 'block' : 'none';
+    const bmpSec = document.getElementById('bitmap-inspector-section');
+    if (bmpSec) bmpSec.style.display = 'none';
     renderGroupInspectorFor(editingGroup);
     return;
   }
 
   propX.disabled = propY.disabled = propW.disabled = propH.disabled = propRot.disabled = false;
+
+  const bmpSec = document.getElementById('bitmap-inspector-section');
+  const populateBitmapInspectorFor = (bmpShape) => {
+    if (!bmpSec) return;
+    if (!bmpShape || bmpShape.type !== 'image') {
+      bmpSec.style.display = 'none';
+      return;
+    }
+    bmpSec.style.display = 'block';
+    const meta = bmpShape.imageMeta || {};
+    const fSel = document.getElementById('bmp-filter-select');
+    const mSel = document.getElementById('bmp-mask-select');
+    if (fSel) fSel.value = meta.filter || 'grayscale';
+    if (mSel) mSel.value = meta.maskShape || 'rect';
+
+    const br = Number(meta.brightness) || 0;
+    const co = Number(meta.contrast ?? 10);
+    const th = Number(meta.threshold) || 135;
+    const brEl = document.getElementById('bmp-brightness');
+    const coEl = document.getElementById('bmp-contrast');
+    const thEl = document.getElementById('bmp-threshold');
+    if (brEl) brEl.value = String(br);
+    if (coEl) coEl.value = String(co);
+    if (thEl) thEl.value = String(th);
+
+    const brLbl = document.getElementById('bmp-brightness-lbl');
+    const coLbl = document.getElementById('bmp-contrast-lbl');
+    const thLbl = document.getElementById('bmp-threshold-lbl');
+    if (brLbl) brLbl.textContent = `${br > 0 ? '+' : ''}${br}`;
+    if (coLbl) coLbl.textContent = `${co > 0 ? '+' : ''}${co}`;
+    if (thLbl) thLbl.textContent = String(th);
+
+    const thWrap = document.getElementById('bmp-threshold-wrap');
+    if (thWrap) {
+      thWrap.style.display = (meta.filter === 'threshold' || meta.filter === 'dither') ? 'flex' : 'none';
+    }
+    const invEl = document.getElementById('bmp-invert');
+    const rmBgEl = document.getElementById('bmp-remove-bg');
+    if (invEl) invEl.checked = Boolean(meta.invert);
+    if (rmBgEl) rmBgEl.checked = Boolean(meta.removeWhiteBg);
+  };
 
   if (selected.length === 1) {
     const s = selected[0];
@@ -1190,6 +1285,9 @@ function renderInspector() {
       textSection.style.display = state.activeTool === 'text' ? 'block' : 'none';
     }
 
+    // Bitmap inspector
+    populateBitmapInspectorFor(s.type === 'image' ? s : null);
+
     renderGroupInspectorFor(s.type === 'group' ? s : editingGroup);
   } else {
     badge.textContent = `${selected.length} objekter valgt`;
@@ -1200,6 +1298,7 @@ function renderInspector() {
     setValIfNotFocused(propH, roundMm(bbox.height, 2));
     setValIfNotFocused(propRot, 0);
     shapeSpecificWrap.style.display = 'none';
+    populateBitmapInspectorFor(null);
 
     // If 1 text shape + 1 target shape are selected together, keep Text Inspector visible so user can click "Fest tekst til form"!
     const selectedText = selected.find(item => item.type === 'text' && item.textMeta);
@@ -1358,6 +1457,32 @@ function syncLaserModeDockUI(mode) {
   document.querySelectorAll('.laser-mode-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.mode === state.activeLaserMode);
   });
+}
+
+function syncLaserSettingsUI() {
+  const cfg = state.laserSettings || getDefaultLaserSettings();
+  const presetEl = document.getElementById('laser-preset-select');
+  if (presetEl && cfg.presetKey && LASER_MATERIAL_PRESETS[cfg.presetKey]) {
+    presetEl.value = cfg.presetKey;
+  }
+  const setVal = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && document.activeElement !== el && val !== undefined) {
+      el.value = String(val);
+    }
+  };
+  setVal('ls-cut-power', cfg.cut?.power ?? 85);
+  setVal('ls-cut-speed', cfg.cut?.speed ?? 18);
+  setVal('ls-cut-repeat', cfg.cut?.repeat ?? 1);
+  setVal('ls-score-power', cfg.score?.power ?? 18);
+  setVal('ls-score-speed', cfg.score?.speed ?? 160);
+  setVal('ls-score-repeat', cfg.score?.repeat ?? 1);
+  setVal('ls-eng-power', cfg.engrave?.power ?? 30);
+  setVal('ls-eng-speed', cfg.engrave?.speed ?? 350);
+  setVal('ls-eng-density', cfg.engrave?.density ?? 100);
+  setVal('ls-bmp-power', cfg.bitmap?.power ?? 32);
+  setVal('ls-bmp-speed', cfg.bitmap?.speed ?? 300);
+  setVal('ls-bmp-dpi', cfg.bitmap?.dpi ?? 254);
 }
 
 // ============================================================================
@@ -2225,7 +2350,7 @@ function bindHeaderEvents() {
     }
   });
 
-  // Import SVG / JSON / Image
+  // Import .XCS / .SVG / .JSON / Image
   const fileInput = document.getElementById('file-import-input');
   document.getElementById('btn-import').addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', (e) => {
@@ -2233,20 +2358,47 @@ function bindHeaderEvents() {
     if (!file) return;
     const name = file.name.toLowerCase();
 
-    if (name.endsWith('.json')) {
+    if (name.endsWith('.xcs') || name.endsWith('.json')) {
       const reader = new FileReader();
       reader.onload = () => {
         try {
-          const data = JSON.parse(String(reader.result));
+          const text = String(reader.result);
+          const xcsImported = importXcsStringToWorkspace(text);
+          if (xcsImported && Array.isArray(xcsImported.shapes) && xcsImported.shapes.length > 0) {
+            pushUndoSnapshot();
+            state.shapes = xcsImported.shapes;
+            if (xcsImported.machineKey) {
+              state.machineKey = xcsImported.machineKey;
+              document.getElementById('machine-select').value = state.machineKey;
+            }
+            if (xcsImported.bedWidth) state.bedWidth = xcsImported.bedWidth;
+            if (xcsImported.bedHeight) state.bedHeight = xcsImported.bedHeight;
+            if (xcsImported.laserSettings) {
+              state.laserSettings = { ...getDefaultLaserSettings(), ...xcsImported.laserSettings };
+              syncLaserSettingsUI();
+            }
+            updateBedDimensionsUI();
+            fitBedToViewport();
+            renderAll();
+            showToast(`📦 Åpnet xTool / LaserStudio prosjekt: ${file.name} (${xcsImported.shapes.length} objekter)`);
+            return;
+          }
+          const data = JSON.parse(text);
           if (Array.isArray(data.shapes)) {
             pushUndoSnapshot();
             state.shapes = data.shapes;
             if (data.bedWidth) state.bedWidth = data.bedWidth;
             if (data.bedHeight) state.bedHeight = data.bedHeight;
+            if (data.laserSettings) {
+              state.laserSettings = { ...getDefaultLaserSettings(), ...data.laserSettings };
+              syncLaserSettingsUI();
+            }
             updateBedDimensionsUI();
             fitBedToViewport();
             renderAll();
             showToast(`📂 Åpnet prosjekt: ${file.name}`);
+          } else {
+            showToast('⚠️ Fant ingen objekter i prosjektfilen');
           }
         } catch (err) {
           showToast('⚠️ Kunne ikke lese prosjektfilen');
@@ -2262,9 +2414,9 @@ function bindHeaderEvents() {
           state.shapes.push(...imported);
           state.selectedIds = new Set(imported.map(s => s.id));
           renderAll();
-          showToast(`✅ Importerte ${imported.length} vektorformer fra ${file.name}`);
+          showToast(`✅ Importerte ${imported.length} elementer fra ${file.name}`);
         } else {
-          showToast('⚠️ Fant ingen vektorstier i SVG-filen');
+          showToast('⚠️ Fant ingen vektorstier eller bilder i SVG-filen');
         }
       };
       reader.readAsText(file);
@@ -2274,6 +2426,7 @@ function bindHeaderEvents() {
         const img = new Image();
         img.onload = () => {
           state.traceImageElement = img;
+          state.traceImageFileName = file.name.replace(/\.[^.]+$/, '');
           openGeneratorModal('trace');
         };
         img.src = String(reader.result);
@@ -2283,24 +2436,22 @@ function bindHeaderEvents() {
     fileInput.value = '';
   });
 
-  // Save Project JSON
+  // Save Project (.xcs directly!)
   document.getElementById('btn-save-project').addEventListener('click', () => {
-    const json = JSON.stringify({
-      version: 1,
-      app: 'Bjørnsveen LaserStudio',
-      savedAt: new Date().toISOString(),
+    const xcsContent = buildXcsProjectString(state.shapes, {
       machineKey: state.machineKey,
       bedWidth: state.bedWidth,
       bedHeight: state.bedHeight,
-      shapes: state.shapes
-    }, null, 2);
-    downloadTextFile(json, 'bjornsveen-laserprosjekt.json', 'application/json');
-    showToast('💾 Prosjektfil lagret på Macen');
+      laserSettings: state.laserSettings
+    });
+    downloadTextFile(xcsContent, 'bjornsveen-prosjekt.xcs', 'application/json;charset=utf-8');
+    showToast('💾 Lagret .XCS prosjektfil (kan åpnes i både xTool Creative Space og her!)');
   });
 
-  // Laser Pre-flight & Export Modal
+  // Laser Pre-flight & Export Modal (.XCS and .SVG)
   document.getElementById('btn-preflight').addEventListener('click', () => openExportModal());
-  document.getElementById('btn-export-svg').addEventListener('click', () => openExportModal());
+  document.getElementById('btn-export-xcs').addEventListener('click', () => openExportModal('xcs'));
+  document.getElementById('btn-export-svg').addEventListener('click', () => openExportModal('svg'));
 }
 
 function bindInspectorEvents() {
@@ -2761,6 +2912,155 @@ function bindInspectorEvents() {
     }
     ungroupSelectedShapes();
   });
+
+  // Bitmap Photo / Raster Engraving Inspector Controls
+  const onBitmapMetaUpdate = () => {
+    const sel = getSelectedShapes();
+    if (sel.length !== 1 || sel[0].type !== 'image') return;
+    const s = sel[0];
+    s.imageMeta = {
+      ...(s.imageMeta || {}),
+      filter: document.getElementById('bmp-filter-select').value || 'grayscale',
+      maskShape: document.getElementById('bmp-mask-select').value || 'rect',
+      brightness: parseInt(document.getElementById('bmp-brightness').value, 10) || 0,
+      contrast: parseInt(document.getElementById('bmp-contrast').value, 10) || 0,
+      threshold: parseInt(document.getElementById('bmp-threshold').value, 10) || 135,
+      invert: Boolean(document.getElementById('bmp-invert').checked),
+      removeWhiteBg: Boolean(document.getElementById('bmp-remove-bg').checked)
+    };
+    refreshBitmapShapeDataUrl(s, () => {
+      saveWorkspaceToLocal(state);
+      renderAll();
+    });
+  };
+  for (const id of ['bmp-filter-select', 'bmp-mask-select', 'bmp-brightness', 'bmp-contrast', 'bmp-threshold', 'bmp-invert', 'bmp-remove-bg']) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.addEventListener('input', onBitmapMetaUpdate);
+      el.addEventListener('change', onBitmapMetaUpdate);
+    }
+  }
+
+  // One-click "⭕ + Lag rød kuttelinje rundt bildet" (creates a composite Group with the bitmap + red cut outline!)
+  const addBmpCutBtn = document.getElementById('btn-bmp-add-cutline');
+  if (addBmpCutBtn) {
+    addBmpCutBtn.addEventListener('click', () => {
+      const sel = getSelectedShapes();
+      if (sel.length !== 1 || sel[0].type !== 'image') return;
+      const bmp = sel[0];
+      pushUndoSnapshot();
+      const pad = 1.5; // 1.5 mm margin around bitmap
+      const mask = bmp.imageMeta?.maskShape || 'rect';
+      let cutShape;
+      if (mask === 'circle') {
+        cutShape = {
+          id: uid('ellipse'),
+          type: 'ellipse',
+          name: `Kuttelinje (${bmp.name})`,
+          laserMode: 'cut',
+          x: roundMm(bmp.x - pad, 2),
+          y: roundMm(bmp.y - pad, 2),
+          width: roundMm(bmp.width + pad * 2, 2),
+          height: roundMm(bmp.height + pad * 2, 2),
+          rotation: bmp.rotation || 0
+        };
+      } else if (mask === 'heart' || mask === 'star') {
+        cutShape = {
+          id: uid(mask),
+          type: mask,
+          name: `Kuttelinje (${bmp.name})`,
+          laserMode: 'cut',
+          x: roundMm(bmp.x - pad, 2),
+          y: roundMm(bmp.y - pad, 2),
+          width: roundMm(bmp.width + pad * 2, 2),
+          height: roundMm(bmp.height + pad * 2, 2),
+          sides: 5,
+          innerRatio: 45,
+          rotation: bmp.rotation || 0
+        };
+      } else {
+        cutShape = {
+          id: uid('rect'),
+          type: 'rect',
+          name: `Kuttelinje (${bmp.name})`,
+          laserMode: 'cut',
+          x: roundMm(bmp.x - pad, 2),
+          y: roundMm(bmp.y - pad, 2),
+          width: roundMm(bmp.width + pad * 2, 2),
+          height: roundMm(bmp.height + pad * 2, 2),
+          rx: mask === 'rounded' ? roundMm(Math.min(bmp.width, bmp.height) * 0.16 + pad, 1) : 3,
+          rotation: bmp.rotation || 0
+        };
+      }
+
+      const activeList = getActiveContainerList();
+      activeList.push(cutShape);
+      state.selectedIds = new Set([bmp.id, cutShape.id]);
+      groupSelectedShapes();
+      showToast('⭕ La til rød kuttelinje rundt bildet og grupperte dem til en sammensatt figur!');
+    });
+  }
+
+  // Material & Laser Power / Speed Settings Controls
+  const presetSel = document.getElementById('laser-preset-select');
+  if (presetSel) {
+    presetSel.addEventListener('change', (e) => {
+      const key = e.target.value;
+      const preset = LASER_MATERIAL_PRESETS[key];
+      if (!preset) return;
+      state.laserSettings = JSON.parse(JSON.stringify({
+        presetKey: key,
+        thicknessMm: preset.thicknessMm,
+        cut: preset.cut,
+        score: preset.score,
+        engrave: preset.engrave,
+        bitmap: preset.bitmap
+      }));
+      syncLaserSettingsUI();
+      saveWorkspaceToLocal(state);
+      showToast(`⚡ Valgte laserinnstillinger for: ${preset.name}`);
+    });
+  }
+
+  const onLaserParamChange = () => {
+    const cfg = state.laserSettings || getDefaultLaserSettings();
+    cfg.presetKey = 'custom';
+    cfg.cut = {
+      power: clamp(Math.round(evalMathExpr(document.getElementById('ls-cut-power').value, cfg.cut?.power || 85)), 1, 100),
+      speed: clamp(Math.round(evalMathExpr(document.getElementById('ls-cut-speed').value, cfg.cut?.speed || 18)), 1, 2000),
+      repeat: clamp(Math.round(evalMathExpr(document.getElementById('ls-cut-repeat').value, cfg.cut?.repeat || 1)), 1, 10)
+    };
+    cfg.score = {
+      power: clamp(Math.round(evalMathExpr(document.getElementById('ls-score-power').value, cfg.score?.power || 18)), 1, 100),
+      speed: clamp(Math.round(evalMathExpr(document.getElementById('ls-score-speed').value, cfg.score?.speed || 160)), 1, 2000),
+      repeat: clamp(Math.round(evalMathExpr(document.getElementById('ls-score-repeat').value, cfg.score?.repeat || 1)), 1, 10)
+    };
+    cfg.engrave = {
+      power: clamp(Math.round(evalMathExpr(document.getElementById('ls-eng-power').value, cfg.engrave?.power || 30)), 1, 100),
+      speed: clamp(Math.round(evalMathExpr(document.getElementById('ls-eng-speed').value, cfg.engrave?.speed || 350)), 1, 2000),
+      density: clamp(Math.round(evalMathExpr(document.getElementById('ls-eng-density').value, cfg.engrave?.density || 100)), 20, 400),
+      repeat: 1
+    };
+    cfg.bitmap = {
+      power: clamp(Math.round(evalMathExpr(document.getElementById('ls-bmp-power').value, cfg.bitmap?.power || 32)), 1, 100),
+      speed: clamp(Math.round(evalMathExpr(document.getElementById('ls-bmp-speed').value, cfg.bitmap?.speed || 300)), 1, 2000),
+      dpi: clamp(Math.round(evalMathExpr(document.getElementById('ls-bmp-dpi').value, cfg.bitmap?.dpi || 254)), 50, 1000),
+      bitmapMode: cfg.bitmap?.bitmapMode || 'grayscale'
+    };
+    state.laserSettings = cfg;
+    syncLaserSettingsUI();
+    saveWorkspaceToLocal(state);
+  };
+
+  for (const id of [
+    'ls-cut-power', 'ls-cut-speed', 'ls-cut-repeat',
+    'ls-score-power', 'ls-score-speed', 'ls-score-repeat',
+    'ls-eng-power', 'ls-eng-speed', 'ls-eng-density',
+    'ls-bmp-power', 'ls-bmp-speed', 'ls-bmp-dpi'
+  ]) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', onLaserParamChange);
+  }
 
   // Magic Boolean Tools
   const runBoolean = (op) => {
@@ -3865,56 +4165,196 @@ function renderIconsLibraryUI(container) {
   });
 }
 
-// ---- 7. Image-to-Vector Tracer Modal UI ----
+// ---- 7. Photo / Bitmap Engraving & Image-to-Vector Tracer Modal UI ----
 function renderImageTraceUI(container) {
   container.innerHTML = `
     <div class="generator-controls">
       <div class="info-box">
-        🖼️ <strong>Bilde-til-vektor (Bildesporing):</strong> Last opp en tegning, logo eller silhuett for å gjøre den om til ekte kuttbare/graverbare vektorstier!
+        🖼️ <strong>Foto-gravering (Bitmap) &amp; Bilde-til-vektor:</strong> Sett inn et foto/bilde for raster-gravering (med valgfri kuttelinje rundt!), eller spor konturene til kuttbare vektorstier.
       </div>
       <div class="prop-grid">
         <div class="prop-field full-width">
+          <label>1. Velg bildefil (.png, .jpg, .webp)</label>
           <input type="file" id="trace-file-input" accept="image/*" class="input-control" />
         </div>
+        <div class="prop-field full-width">
+          <label>2. Hvordan skal bildet brukes?</label>
+          <select id="img-import-type" class="select-control">
+            <option value="bitmap" selected>🖼️ Foto / Bitmap-gravering (Gråtoner / Punktraster – lagres i .XCS &amp; .SVG!)</option>
+            <option value="trace">✒️ Bilde-til-vektor (Spor omriss / silhuett som vektorstier)</option>
+          </select>
+        </div>
         <div class="prop-field">
+          <label>Bredde på platen</label>
+          <div class="input-with-unit"><input type="text" inputmode="decimal" id="trace-width" class="input-control math-input" value="75" /><span class="unit">mm</span></div>
+        </div>
+        <div class="prop-field" id="bmp-modal-filter-wrap">
+          <label>Graveringsfilter</label>
+          <select id="bmp-modal-filter" class="select-control">
+            <option value="grayscale">Gråtoner (Standard)</option>
+            <option value="dither">Punktraster / Dithering (Best på tre!)</option>
+            <option value="threshold">Sort / Hvitt (Logo / Stempel)</option>
+            <option value="original">Original</option>
+          </select>
+        </div>
+        <div class="prop-field" id="bmp-modal-mask-wrap">
+          <label>Klipp i form (Maske)</label>
+          <select id="bmp-modal-mask" class="select-control">
+            <option value="rect">▢ Rektangel</option>
+            <option value="rounded" selected>▢ Avrundet ramme</option>
+            <option value="circle">⭕ Sirkel / Medaljong</option>
+            <option value="heart">❤️ Hjerte</option>
+            <option value="star">⭐ Stjerne</option>
+          </select>
+        </div>
+        <div class="prop-field" id="bmp-modal-contrast-wrap">
+          <label>Kontrast (-80..+80)</label>
+          <input type="range" id="bmp-modal-contrast" min="-60" max="80" value="15" />
+        </div>
+        <div class="prop-field" id="trace-thresh-wrap" style="display: none;">
           <label>Lys-terskel (Threshold)</label>
           <input type="range" id="trace-thresh" min="20" max="235" value="135" />
         </div>
-        <div class="prop-field">
-          <label>Bredde på ferdig figur</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="trace-width" class="input-control math-input" value="80" /><span class="unit">mm</span></div>
-        </div>
-        <div class="prop-field">
-          <label>Lasermodus</label>
+        <div class="prop-field" id="trace-mode-wrap" style="display: none;">
+          <label>Vektor-lasermodus</label>
           <select id="trace-mode" class="select-control">
             <option value="engrave" selected>⚫ Gravering (Fylt)</option>
             <option value="cut">🔴 Kutt (Ytter-/innerkontur)</option>
             <option value="score">🔵 Linje / Score</option>
           </select>
         </div>
-        <div class="prop-field" style="justify-content:flex-end;">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 0;">
+        <div class="prop-field full-width" style="gap: 5px; margin-top: 2px;">
+          <label id="bmp-modal-cutborder-wrap" style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#f87171;font-weight:600;">
+            <input type="checkbox" id="bmp-modal-cutborder" checked />
+            <span>⭕ Lag rød kuttelinje rundt bildet samtidig (Sammensatt figur!)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;">
             <input type="checkbox" id="trace-invert" />
-            <span>Inverter (Hvitt på mørk)</span>
+            <span>🔄 Inverter farger (For mørk skifer / eloksert aluminium)</span>
+          </label>
+          <label id="bmp-modal-rmbg-wrap" style="display:flex;align-items:center;gap:6px;cursor:pointer;">
+            <input type="checkbox" id="bmp-modal-rmbg" />
+            <span>🧹 Fjern hvit bakgrunn</span>
           </label>
         </div>
       </div>
     </div>
     <div class="generator-preview-box">
       <div id="gen-preview-svg" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;padding:12px;text-align:center;color:var(--text-muted);">
-        Velg en bildefil (.png, .jpg) til venstre for å spore vektorstier!
+        Velg en bildefil (.png, .jpg) til venstre for å forhåndsvise foto-gravering eller vektorsporing!
       </div>
       <div id="gen-preview-caption" class="preview-caption"></div>
     </div>
   `;
 
-  const runTrace = () => {
+  const updatePreview = () => {
+    const importType = document.getElementById('img-import-type').value;
+    const isBmp = importType === 'bitmap';
+    document.getElementById('bmp-modal-filter-wrap').style.display = isBmp ? 'flex' : 'none';
+    document.getElementById('bmp-modal-mask-wrap').style.display = isBmp ? 'flex' : 'none';
+    document.getElementById('bmp-modal-contrast-wrap').style.display = isBmp ? 'flex' : 'none';
+    document.getElementById('bmp-modal-cutborder-wrap').style.display = isBmp ? 'flex' : 'none';
+    document.getElementById('bmp-modal-rmbg-wrap').style.display = isBmp ? 'flex' : 'none';
+    document.getElementById('trace-thresh-wrap').style.display = (!isBmp || document.getElementById('bmp-modal-filter').value !== 'grayscale') ? 'flex' : 'none';
+    document.getElementById('trace-mode-wrap').style.display = isBmp ? 'none' : 'flex';
+
     if (!state.traceImageElement) return;
+
     const threshold = parseInt(document.getElementById('trace-thresh').value, 10) || 135;
     const invert = document.getElementById('trace-invert').checked;
-    const targetWidthMm = evalMathExpr(document.getElementById('trace-width').value, 80);
-    const mode = document.getElementById('trace-mode').value || 'engrave';
+    const targetWidthMm = clamp(evalMathExpr(document.getElementById('trace-width').value, 75), 5, 600);
 
+    if (isBmp) {
+      const filter = document.getElementById('bmp-modal-filter').value || 'grayscale';
+      const maskShape = document.getElementById('bmp-modal-mask').value || 'rounded';
+      const contrast = parseInt(document.getElementById('bmp-modal-contrast').value, 10) || 15;
+      const removeWhiteBg = document.getElementById('bmp-modal-rmbg').checked;
+      const addCutBorder = document.getElementById('bmp-modal-cutborder').checked;
+
+      const bmpShape = createBitmapImageShape(state.traceImageElement, {
+        name: state.traceImageFileName ? `Foto: ${state.traceImageFileName}` : 'Foto / Bitmap',
+        x: 30,
+        y: 30,
+        widthMm: targetWidthMm,
+        brightness: 0,
+        contrast,
+        filter,
+        threshold,
+        invert,
+        removeWhiteBg,
+        maskShape
+      });
+
+      const outShapes = [bmpShape];
+      if (addCutBorder) {
+        const pad = 1.5;
+        let cutShape;
+        if (maskShape === 'circle') {
+          cutShape = {
+            id: uid('ellipse'),
+            type: 'ellipse',
+            name: 'Kuttelinje rundt foto',
+            laserMode: 'cut',
+            x: roundMm(bmpShape.x - pad, 2),
+            y: roundMm(bmpShape.y - pad, 2),
+            width: roundMm(bmpShape.width + pad * 2, 2),
+            height: roundMm(bmpShape.height + pad * 2, 2),
+            rotation: 0
+          };
+        } else if (maskShape === 'heart' || maskShape === 'star') {
+          cutShape = {
+            id: uid(maskShape),
+            type: maskShape,
+            name: 'Kuttelinje rundt foto',
+            laserMode: 'cut',
+            x: roundMm(bmpShape.x - pad, 2),
+            y: roundMm(bmpShape.y - pad, 2),
+            width: roundMm(bmpShape.width + pad * 2, 2),
+            height: roundMm(bmpShape.height + pad * 2, 2),
+            sides: 5,
+            innerRatio: 45,
+            rotation: 0
+          };
+        } else {
+          cutShape = {
+            id: uid('rect'),
+            type: 'rect',
+            name: 'Kuttelinje rundt foto',
+            laserMode: 'cut',
+            x: roundMm(bmpShape.x - pad, 2),
+            y: roundMm(bmpShape.y - pad, 2),
+            width: roundMm(bmpShape.width + pad * 2, 2),
+            height: roundMm(bmpShape.height + pad * 2, 2),
+            rx: maskShape === 'rounded' ? roundMm(Math.min(bmpShape.width, bmpShape.height) * 0.16 + pad, 1) : 2,
+            rotation: 0
+          };
+        }
+        const gBox = getShapesBBox([bmpShape, cutShape]);
+        state.modalPreviewShapes = [{
+          id: uid('group'),
+          type: 'group',
+          name: `Foto-brikke (${bmpShape.name})`,
+          laserMode: 'cut',
+          x: roundMm(gBox.x, 2),
+          y: roundMm(gBox.y, 2),
+          width: roundMm(gBox.width, 2),
+          height: roundMm(gBox.height, 2),
+          rotation: 0,
+          children: [bmpShape, cutShape]
+        }];
+      } else {
+        state.modalPreviewShapes = outShapes;
+      }
+
+      const { svgHtml, bbox } = renderShapesPreviewSvg(state.modalPreviewShapes);
+      document.getElementById('gen-preview-svg').innerHTML = svgHtml;
+      document.getElementById('gen-preview-caption').innerHTML =
+        `<span>🖼️ <strong>Bitmap-gravering${addCutBorder ? ' + Rød kuttelinje (Gruppe)' : ''}</strong></span><span>Mål: ${roundMm(bbox.width, 1)} × ${roundMm(bbox.height, 1)} mm</span>`;
+      return;
+    }
+
+    // Vector Trace Mode
+    const mode = document.getElementById('trace-mode').value || 'engrave';
     const loops = traceImageToPolygons(state.traceImageElement, {
       threshold,
       invert,
@@ -3939,27 +4379,31 @@ function renderImageTraceUI(container) {
   document.getElementById('trace-file-input').addEventListener('change', (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    state.traceImageFileName = f.name.replace(/\.[^.]+$/, '');
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
         state.traceImageElement = img;
-        runTrace();
+        updatePreview();
       };
       img.src = String(reader.result);
     };
     reader.readAsDataURL(f);
   });
 
-  container.querySelectorAll('#trace-thresh, #trace-width, #trace-mode, #trace-invert').forEach(el => {
-    el.addEventListener('input', runTrace);
+  container.querySelectorAll('input, select').forEach(el => {
+    if (el.id !== 'trace-file-input') {
+      el.addEventListener('input', updatePreview);
+      el.addEventListener('change', updatePreview);
+    }
   });
 
-  if (state.traceImageElement) runTrace();
+  if (state.traceImageElement) updatePreview();
 }
 
-// ---- Pre-flight Check & SVG Export Modal ----
-function openExportModal() {
+// ---- Pre-flight Check & .XCS / .SVG Export Modal ----
+function openExportModal(preferredFormat = 'xcs') {
   const modal = document.getElementById('export-modal');
   const body = document.getElementById('export-modal-body');
   const fixDupBtn = document.getElementById('btn-fix-duplicates');
@@ -3974,7 +4418,7 @@ function openExportModal() {
     const dupSet = new Set(report.duplicateShapeIds);
     state.shapes = state.shapes.filter(s => !dupSet.has(s.id));
     renderAll();
-    openExportModal();
+    openExportModal(preferredFormat);
     showToast(`🧹 Fjernet ${dupSet.size} duplikate objekter!`);
   };
 
@@ -3987,66 +4431,102 @@ function openExportModal() {
   }
   if (!hasOutOfBounds && !hasDuplicates) {
     warningsHtml = `<div class="info-box" style="border-color:rgba(16,185,129,0.4);background:rgba(16,185,129,0.1);color:#a7f3d0;">
-      ✅ <strong>Alt ser perfekt ut!</strong> Ingen duplikate linjer og alle objekter er innenfor arbeidsflaten.
+      ✅ <strong>Klar til laser!</strong> Ingen duplikate linjer og alle objekter er innenfor arbeidsflaten.
     </div>`;
   }
+
+  const cfg = state.laserSettings || getDefaultLaserSettings();
+  const presetName = LASER_MATERIAL_PRESETS[cfg.presetKey]?.name || '⚙️ Egendefinerte laserinnstillinger';
 
   body.innerHTML = `
     <div style="display:flex;flex-direction:column;gap:12px;">
       ${warningsHtml}
 
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center;">
-        <div style="background:var(--bg-input);padding:10px;border-radius:8px;border:1px solid rgba(255,30,30,0.35);">
-          <div style="color:#fca5a5;font-weight:700;font-size:12px;">🔴 KUTT (Cut)</div>
-          <div style="font-size:18px;font-weight:800;margin:4px 0;">${report.cutCount} stk</div>
-          <div style="font-size:11px;color:var(--text-muted);">Kuttelengde: ${report.cutLengthMm} mm</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:7px;text-align:center;">
+        <div style="background:var(--bg-input);padding:8px;border-radius:8px;border:1px solid rgba(255,30,30,0.35);">
+          <div style="color:#fca5a5;font-weight:700;font-size:11.5px;">🔴 KUTT</div>
+          <div style="font-size:17px;font-weight:800;margin:3px 0;">${report.cutCount} stk</div>
+          <div style="font-size:10px;color:var(--text-muted);">${cfg.cut?.power}% / ${cfg.cut?.speed} mm/s</div>
         </div>
-        <div style="background:var(--bg-input);padding:10px;border-radius:8px;border:1px solid rgba(59,130,246,0.35);">
-          <div style="color:#93c5fd;font-weight:700;font-size:12px;">🔵 LINJE (Score)</div>
-          <div style="font-size:18px;font-weight:800;margin:4px 0;">${report.scoreCount} stk</div>
-          <div style="font-size:11px;color:var(--text-muted);">Linjelengde: ${report.scoreLengthMm} mm</div>
+        <div style="background:var(--bg-input);padding:8px;border-radius:8px;border:1px solid rgba(59,130,246,0.35);">
+          <div style="color:#93c5fd;font-weight:700;font-size:11.5px;">🔵 SCORE</div>
+          <div style="font-size:17px;font-weight:800;margin:3px 0;">${report.scoreCount} stk</div>
+          <div style="font-size:10px;color:var(--text-muted);">${cfg.score?.power}% / ${cfg.score?.speed} mm/s</div>
         </div>
-        <div style="background:var(--bg-input);padding:10px;border-radius:8px;border:1px solid #475569;">
-          <div style="color:#e2e8f0;font-weight:700;font-size:12px;">⚫ GRAVERING</div>
-          <div style="font-size:18px;font-weight:800;margin:4px 0;">${report.engraveCount} stk</div>
-          <div style="font-size:11px;color:var(--text-muted);">Fylte flater</div>
+        <div style="background:var(--bg-input);padding:8px;border-radius:8px;border:1px solid #475569;">
+          <div style="color:#e2e8f0;font-weight:700;font-size:11.5px;">⚫ GRAVER</div>
+          <div style="font-size:17px;font-weight:800;margin:3px 0;">${report.engraveCount} stk</div>
+          <div style="font-size:10px;color:var(--text-muted);">${cfg.engrave?.power}% / ${cfg.engrave?.speed} mm/s</div>
+        </div>
+        <div style="background:var(--bg-input);padding:8px;border-radius:8px;border:1px solid rgba(56,189,248,0.4);">
+          <div style="color:#38bdf8;font-weight:700;font-size:11.5px;">🖼️ FOTO</div>
+          <div style="font-size:17px;font-weight:800;margin:3px 0;">${report.bitmapCount || 0} stk</div>
+          <div style="font-size:10px;color:var(--text-muted);">${cfg.bitmap?.power}% / ${cfg.bitmap?.dpi} DPI</div>
         </div>
       </div>
 
-      <div class="prop-grid" style="margin-top:4px;">
+      <div style="background:var(--bg-input);padding:9px 11px;border-radius:8px;border:1px solid var(--border-color);font-size:11.5px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span>⚡ <strong>Innebygde .XCS laserinnstillinger:</strong> ${presetName}</span>
+          <span style="color:#38bdf8;font-size:10.5px;">(Endres i høyre panel)</span>
+        </div>
+      </div>
+
+      <div class="prop-grid" style="margin-top:2px;">
         <div class="prop-field full-width">
-          <label>Filnavn ved nedlasting</label>
-          <input type="text" id="export-filename-input" class="input-control" value="bjornsveen-laser-design.svg" />
+          <label>Prosjektnavn / Filnavn ved nedlasting</label>
+          <input type="text" id="export-filename-input" class="input-control" value="bjornsveen-laser-design" />
         </div>
         <div class="prop-field full-width">
-          <label>Eksport-utsnitt for xTool Creative Space / Studio</label>
+          <label>Eksport-utsnitt</label>
           <select id="export-crop-select" class="select-control">
-            <option value="crop" selected>Tilpass utsnitt rundt tegningen i 1:1 mm (Anbefalt for xTool)</option>
-            <option value="bed">Eksporter hele arbeidsflaten (${state.bedWidth} × ${state.bedHeight} mm)</option>
+            <option value="crop" selected>Tilpass utsnitt rundt tegningen i 1:1 mm (Anbefalt)</option>
+            <option value="bed">Hele arbeidsflaten (${state.bedWidth} × ${state.bedHeight} mm)</option>
             ${state.selectedIds.size > 0 ? `<option value="selected">Kun valgte objekter (${state.selectedIds.size} stk)</option>` : ''}
           </select>
         </div>
       </div>
 
       <div style="font-size:11.5px;color:var(--text-muted);background:#0f172a;padding:10px;border-radius:6px;border:1px solid var(--border-color);">
-        <strong>Slik bruker du filen i xTool Creative Space:</strong><br/>
-        1. Klikk <em>Last ned .SVG-fil</em> og dra filen inn i xTool Creative Space.<br/>
-        2. xTool legger automatisk <span style="color:#f87171">Rød (#FF0000)</span>, <span style="color:#60a5fa">Blå (#0000FF)</span> og <strong>Svart (#000000)</strong> i egne fargelag i nøyaktig riktig millimeter-størrelse!
+        <strong>📦 .XCS (xTool Prosjekt) vs. ⬇ .SVG (1:1 mm):</strong><br/>
+        • <strong>📦 Last ned .XCS:</strong> Lagrer hele prosjektet i xTool Creative Space sitt eget format med sammensatte grupper, innebygde bitmap-bilder OG ferdige innstillinger for Styrke (%), Hastighet (mm/s), Passeringer og DPI!<br/>
+        • <strong>⬇ Last ned .SVG:</strong> Lagrer 1:1 millimeter vektorfil (med innebygde bitmap-bilder) som kan dras rett inn i xTool Creative Space eller LightBurn.
       </div>
     </div>
   `;
 
+  const getBaseFilename = () => {
+    const raw = (document.getElementById('export-filename-input').value || 'bjornsveen-laser-design').trim();
+    return raw.replace(/\.(svg|xcs|json)$/i, '');
+  };
+
+  document.getElementById('btn-confirm-download-xcs').onclick = () => {
+    const mode = document.getElementById('export-crop-select').value;
+    const filename = `${getBaseFilename()}.xcs`;
+    const xcsContent = buildXcsProjectString(state.shapes, {
+      machineKey: state.machineKey,
+      bedWidth: state.bedWidth,
+      bedHeight: state.bedHeight,
+      onlySelected: mode === 'selected',
+      selectedIds: state.selectedIds,
+      laserSettings: state.laserSettings
+    });
+    downloadTextFile(xcsContent, filename, 'application/json;charset=utf-8');
+    modal.classList.remove('open');
+    showToast(`📦 Lastet ned "${filename}" med vektorer, bitmap og laserinnstillinger!`);
+  };
+
   document.getElementById('btn-confirm-download-svg').onclick = () => {
     const mode = document.getElementById('export-crop-select').value;
-    let filename = (document.getElementById('export-filename-input').value || 'bjornsveen-laser.svg').trim();
-    if (!filename.toLowerCase().endsWith('.svg')) filename += '.svg';
+    const filename = `${getBaseFilename()}.svg`;
 
     const svgContent = buildLaserSvgString(state.shapes, {
       bedWidth: state.bedWidth,
       bedHeight: state.bedHeight,
       cropToContent: mode !== 'bed',
       onlySelected: mode === 'selected',
-      selectedIds: state.selectedIds
+      selectedIds: state.selectedIds,
+      laserSettings: state.laserSettings
     });
 
     downloadTextFile(svgContent, filename, 'image/svg+xml;charset=utf-8');

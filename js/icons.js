@@ -206,3 +206,271 @@ export function traceImageToPolygons(imgElement, {
   }
   return cleanLoops;
 }
+
+// ============================================================================
+// 2. BITMAP / RASTER PHOTO ENGRAVING ENGINE (FOR XCS & COMPOSITE LASER DESIGNS)
+// ============================================================================
+
+/**
+ * Processes an HTMLImageElement into a laser-ready PNG DataURL with:
+ * - Brightness, Contrast, Invert (for slate/anodized aluminum)
+ * - White-background removal
+ * - Halftone Dithering (Atkinson/Floyd-Steinberg), Grayscale, or B&W Threshold
+ * - Shape Masking (Circle, Heart, Rounded Rect, Star, or Rectangle)
+ */
+export function processBitmapElementToDataUrl(imgElement, {
+  brightness = 0,       // -100 .. +100
+  contrast = 0,         // -100 .. +100
+  filter = 'grayscale', // 'grayscale' | 'dither' | 'threshold' | 'original'
+  threshold = 135,      // 10 .. 245
+  invert = false,
+  removeWhiteBg = false,
+  maskShape = 'rect',   // 'rect' | 'rounded' | 'circle' | 'heart' | 'star'
+  maxDimPx = 600
+} = {}) {
+  if (!imgElement || typeof document === 'undefined') return '';
+  const natW = Math.max(1, imgElement.naturalWidth || imgElement.width || 200);
+  const natH = Math.max(1, imgElement.naturalHeight || imgElement.height || 200);
+  const scale = Math.min(1, maxDimPx / Math.max(natW, natH));
+  const cw = Math.max(16, Math.round(natW * scale));
+  const ch = Math.max(16, Math.round(natH * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = cw;
+  canvas.height = ch;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return '';
+
+  // Apply geometric mask clip if requested
+  if (maskShape && maskShape !== 'rect') {
+    ctx.save();
+    ctx.beginPath();
+    if (maskShape === 'circle') {
+      ctx.ellipse(cw / 2, ch / 2, cw / 2, ch / 2, 0, 0, Math.PI * 2);
+    } else if (maskShape === 'rounded') {
+      const r = Math.min(cw, ch) * 0.16;
+      ctx.moveTo(r, 0);
+      ctx.arcTo(cw, 0, cw, ch, r);
+      ctx.arcTo(cw, ch, 0, ch, r);
+      ctx.arcTo(0, ch, 0, 0, r);
+      ctx.arcTo(0, 0, cw, 0, r);
+    } else if (maskShape === 'heart') {
+      for (let i = 0; i <= 64; i++) {
+        const t = (i / 64) * Math.PI * 2;
+        const hx = Math.pow(Math.sin(t), 3);
+        const hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 16;
+        const px = ((hx + 1) / 2) * cw;
+        const py = ((hy + 0.75) / 1.81) * ch;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+    } else if (maskShape === 'star') {
+      const pts = 5;
+      const innerR = 0.44;
+      for (let i = 0; i < pts * 2; i++) {
+        const rf = i % 2 === 0 ? 1 : innerR;
+        const a = -Math.PI / 2 + (i / (pts * 2)) * Math.PI * 2;
+        const px = cw / 2 + Math.cos(a) * (cw / 2) * rf;
+        const py = ch / 2 + Math.sin(a) * (ch / 2) * rf;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+      }
+    }
+    ctx.closePath();
+    ctx.clip();
+  }
+
+  ctx.drawImage(imgElement, 0, 0, cw, ch);
+  if (maskShape && maskShape !== 'rect') {
+    ctx.restore();
+  }
+
+  const imgData = ctx.getImageData(0, 0, cw, ch);
+  const data = imgData.data;
+  const total = cw * ch;
+
+  const bOffset = (Number(brightness) || 0) * 2.55;
+  const cVal = clamp(Number(contrast) || 0, -100, 100) * 2.55;
+  const cFactor = (259 * (cVal + 255)) / (255 * (259 - cVal));
+  const thresh = clamp(Number(threshold) || 135, 5, 250);
+
+  const lumBuf = new Float32Array(total);
+
+  for (let i = 0; i < total; i++) {
+    const idx = i * 4;
+    const a = data[idx + 3];
+    if (a < 16) {
+      data[idx + 3] = 0;
+      lumBuf[i] = 255;
+      continue;
+    }
+
+    let r = data[idx];
+    let g = data[idx + 1];
+    let b = data[idx + 2];
+
+    // Optional white background removal before invert
+    const rawLum = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (removeWhiteBg && rawLum > 242) {
+      data[idx + 3] = 0;
+      lumBuf[i] = 255;
+      continue;
+    }
+
+    // Apply brightness & contrast
+    r = clamp(cFactor * (r - 128) + 128 + bOffset, 0, 255);
+    g = clamp(cFactor * (g - 128) + 128 + bOffset, 0, 255);
+    b = clamp(cFactor * (b - 128) + 128 + bOffset, 0, 255);
+
+    if (invert) {
+      r = 255 - r;
+      g = 255 - g;
+      b = 255 - b;
+    }
+
+    let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    lumBuf[i] = lum;
+
+    if (filter === 'original') {
+      data[idx] = r;
+      data[idx + 1] = g;
+      data[idx + 2] = b;
+    } else if (filter === 'grayscale') {
+      const v = Math.round(lum);
+      data[idx] = v;
+      data[idx + 1] = v;
+      data[idx + 2] = v;
+    } else if (filter === 'threshold') {
+      const v = lum < thresh ? 0 : 255;
+      data[idx] = v;
+      data[idx + 1] = v;
+      data[idx + 2] = v;
+      if (v === 255 && removeWhiteBg) data[idx + 3] = 0;
+    }
+  }
+
+  // Atkinson / Floyd-Steinberg halftone dithering for crisp CO2/UV photo engraving
+  if (filter === 'dither') {
+    for (let y = 0; y < ch; y++) {
+      for (let x = 0; x < cw; x++) {
+        const i = y * cw + x;
+        const idx = i * 4;
+        if (data[idx + 3] < 16) continue;
+        const oldP = lumBuf[i];
+        const newP = oldP < thresh ? 0 : 255;
+        const err = (oldP - newP) / 8; // Atkinson 1/8 diffusion preserves crisp edge contrast for lasers!
+        lumBuf[i] = newP;
+
+        if (x + 1 < cw) lumBuf[i + 1] += err;
+        if (x + 2 < cw) lumBuf[i + 2] += err;
+        if (y + 1 < ch) {
+          if (x > 0) lumBuf[i + cw - 1] += err;
+          lumBuf[i + cw] += err;
+          if (x + 1 < cw) lumBuf[i + cw + 1] += err;
+        }
+        if (y + 2 < ch) {
+          lumBuf[i + cw * 2] += err;
+        }
+
+        data[idx] = newP;
+        data[idx + 1] = newP;
+        data[idx + 2] = newP;
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+/**
+ * Creates a `type: 'image'` bitmap engraving shape on the workspace.
+ */
+export function createBitmapImageShape(imgElement, {
+  name = 'Foto / Bitmap',
+  x = 40,
+  y = 40,
+  widthMm = 70,
+  brightness = 0,
+  contrast = 10,
+  filter = 'grayscale',
+  threshold = 135,
+  invert = false,
+  removeWhiteBg = false,
+  maskShape = 'rect'
+} = {}) {
+  const natW = Math.max(1, imgElement?.naturalWidth || imgElement?.width || 200);
+  const natH = Math.max(1, imgElement?.naturalHeight || imgElement?.height || 200);
+  const aspect = natH / natW;
+  const w = clamp(Number(widthMm) || 70, 5, 800);
+  const h = roundMm(Math.max(5, w * aspect), 2);
+
+  // Store clean source data URL (bounded to 750px max so localStorage and .xcs stay fast)
+  const srcDataUrl = processBitmapElementToDataUrl(imgElement, {
+    brightness: 0,
+    contrast: 0,
+    filter: 'original',
+    invert: false,
+    removeWhiteBg: false,
+    maskShape: 'rect',
+    maxDimPx: 750
+  });
+
+  const imageMeta = {
+    brightness,
+    contrast,
+    filter,
+    threshold,
+    invert,
+    removeWhiteBg,
+    maskShape,
+    originWidthPx: natW,
+    originHeightPx: natH
+  };
+
+  const processedDataUrl = processBitmapElementToDataUrl(imgElement, imageMeta);
+
+  const shape = {
+    id: uid('img'),
+    type: 'image',
+    name,
+    laserMode: 'engrave', // Bitmap engraving
+    x: roundMm(x, 2),
+    y: roundMm(y, 2),
+    width: roundMm(w, 2),
+    height: h,
+    rotation: 0,
+    flipX: false,
+    flipY: false,
+    srcDataUrl,
+    dataUrl: processedDataUrl || srcDataUrl,
+    imageMeta
+  };
+  Object.defineProperty(shape, '_cachedImg', { value: imgElement, enumerable: false, writable: true });
+  return shape;
+}
+
+/**
+ * Re-processes a bitmap shape's `dataUrl` when its `imageMeta` settings change.
+ */
+export function refreshBitmapShapeDataUrl(shape, onDone) {
+  if (!shape || shape.type !== 'image') return;
+  const meta = shape.imageMeta || {};
+  const runWithImg = (img) => {
+    shape.dataUrl = processBitmapElementToDataUrl(img, meta);
+    if (onDone) onDone(shape);
+  };
+  if (shape._cachedImg && shape._cachedImg.complete) {
+    runWithImg(shape._cachedImg);
+    return;
+  }
+  const src = shape.srcDataUrl || shape.dataUrl;
+  if (!src || typeof Image === 'undefined') return;
+  const img = new Image();
+  img.onload = () => {
+    Object.defineProperty(shape, '_cachedImg', { value: img, enumerable: false, writable: true });
+    runWithImg(img);
+  };
+  img.src = src;
+}
+

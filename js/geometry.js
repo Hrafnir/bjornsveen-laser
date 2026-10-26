@@ -295,6 +295,28 @@ export function shapeToLocalPolygons(shape, curveToleranceMm = 0.2) {
       return [];
     }
 
+    case 'image': {
+      const mask = shape.imageMeta?.maskShape || 'rect';
+      if (mask === 'circle') {
+        return shapeToLocalPolygons({ ...shape, type: 'ellipse' }, curveToleranceMm);
+      }
+      if (mask === 'rounded') {
+        return shapeToLocalPolygons({ ...shape, type: 'rect', rx: Math.min(w, h) * 0.16 }, curveToleranceMm);
+      }
+      if (mask === 'heart') {
+        return shapeToLocalPolygons({ ...shape, type: 'heart' }, curveToleranceMm);
+      }
+      if (mask === 'star') {
+        return shapeToLocalPolygons({ ...shape, type: 'star', sides: 5, innerRatio: 45 }, curveToleranceMm);
+      }
+      return [[
+        { x, y },
+        { x: x + w, y },
+        { x: x + w, y: y + h },
+        { x, y: y + h }
+      ]];
+    }
+
     case 'group': {
       if (!Array.isArray(shape.children)) return [];
       const all = [];
@@ -1313,6 +1335,7 @@ export function analyzeShapesForLaser(shapes, bedWidth, bedHeight) {
   let cutLengthMm = 0;
   let scoreLengthMm = 0;
   let engraveCount = 0;
+  let bitmapCount = 0;
   let cutCount = 0;
   let scoreCount = 0;
   const outOfBounds = [];
@@ -1322,8 +1345,20 @@ export function analyzeShapesForLaser(shapes, bedWidth, bedHeight) {
   // Check duplicate shapes at identical positions
   const signatures = new Map();
 
-  for (const s of shapes) {
-    if (s.laserMode === 'guide') continue;
+  const flatShapes = [];
+  const collectFlat = (list) => {
+    for (const item of list || []) {
+      if (!item || item.hidden || item.laserMode === 'guide') continue;
+      if (item.type === 'group' && Array.isArray(item.children)) {
+        collectFlat(item.children);
+      } else {
+        flatShapes.push(item);
+      }
+    }
+  };
+  collectFlat(shapes);
+
+  for (const s of flatShapes) {
     const loops = shapeToWorldPolygons(s, 0.3);
     const bbox = computePolygonsBBox(loops);
 
@@ -1352,7 +1387,9 @@ export function analyzeShapesForLaser(shapes, bedWidth, bedHeight) {
       }
     }
 
-    if (s.laserMode === 'cut') {
+    if (s.type === 'image' || s.laserMode === 'bitmap') {
+      bitmapCount++;
+    } else if (s.laserMode === 'cut') {
       cutCount++;
       cutLengthMm += len;
     } else if (s.laserMode === 'score') {
@@ -1367,6 +1404,7 @@ export function analyzeShapesForLaser(shapes, bedWidth, bedHeight) {
     cutCount,
     scoreCount,
     engraveCount,
+    bitmapCount,
     cutLengthMm: roundMm(cutLengthMm, 1),
     scoreLengthMm: roundMm(scoreLengthMm, 1),
     outOfBounds,

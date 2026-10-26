@@ -1009,7 +1009,14 @@ export function renderShapesPreviewSvg(shapes) {
   const vh = bbox.height + pad * 2;
   const strokeW = Math.max(vw, vh) * 0.0045;
 
-  const elements = shapes.map(s => {
+  const renderOne = (s) => {
+    if (s.type === 'group' && Array.isArray(s.children)) {
+      return s.children.map(renderOne).join('\n');
+    }
+    if (s.type === 'image' && (s.dataUrl || s.srcDataUrl)) {
+      const href = s.dataUrl || s.srcDataUrl;
+      return `<image x="${s.x}" y="${s.y}" width="${s.width}" height="${s.height}" preserveAspectRatio="none" href="${href}" />`;
+    }
     const color =
       s.laserMode === 'cut' ? '#ff1e1e' :
       s.laserMode === 'score' ? '#3b82f6' :
@@ -1031,7 +1038,9 @@ export function renderShapesPreviewSvg(shapes) {
       return `<path d="${s.d}" fill="${fill}" fill-rule="evenodd" stroke="${color}" stroke-width="${sw}" ${dash}/>`;
     }
     return '';
-  }).join('\n');
+  };
+
+  const elements = shapes.map(renderOne).join('\n');
 
   return {
     svgHtml: `<svg viewBox="${vx} ${vy} ${vw} ${vh}" xmlns="http://www.w3.org/2000/svg">
