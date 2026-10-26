@@ -589,6 +589,38 @@ html, body {
   gap: 8px;
 }
 
+.group-edit-banner {
+  position: absolute;
+  top: 34px;
+  left: 38px;
+  right: 12px;
+  background: rgba(15, 23, 42, 0.94);
+  border: 1.5px solid #f59e0b;
+  color: #fef3c7;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  z-index: 16;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+}
+
+.layer-item.group-child {
+  margin-left: 14px;
+  border-left: 2px solid #475569;
+  background: rgba(15, 23, 42, 0.55);
+  font-size: 11px;
+  padding: 4px 7px;
+}
+
+.layer-item.editing-group {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.14);
+}
+
 /* ================= RIGHT INSPECTOR PANEL ================= */
 .right-panel {
   background: var(--bg-panel);

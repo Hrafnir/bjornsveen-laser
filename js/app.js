@@ -8,6 +8,7 @@ import {
   roundMm,
   evalMathExpr,
   dist,
+  rotatePoint,
   shapeToWorldSvgPath,
   shapeToWorldPolygons,
   computePolygonsBBox,
@@ -96,6 +97,7 @@ const state = {
   measureLine: null, // { x1, y1, x2, y2 }
   spacePressed: false,
   curveModeDefault: false,
+  editingGroupId: null,
 
   // Modal state
   activeGeneratorTab: 'box',
@@ -396,7 +398,97 @@ function renderRulers() {
 // RENDERING: SHAPES, OVERLAY HANDLES & LAYER LIST
 // ============================================================================
 
+function getEditingGroup() {
+  if (!state.editingGroupId) return null;
+  const g = state.shapes.find(s => s.id === state.editingGroupId && s.type === 'group');
+  if (!g || !Array.isArray(g.children)) {
+    state.editingGroupId = null;
+    return null;
+  }
+  return g;
+}
+
+function getActiveContainerList() {
+  const g = getEditingGroup();
+  return g ? g.children : state.shapes;
+}
+
+function syncGroupBBox(group) {
+  if (!group || group.type !== 'group' || !Array.isArray(group.children)) return;
+  if (group.children.length === 0) return;
+  const bbox = getShapesBBox(group.children);
+  group.x = roundMm(bbox.x, 2);
+  group.y = roundMm(bbox.y, 2);
+  group.width = roundMm(bbox.width, 2);
+  group.height = roundMm(bbox.height, 2);
+}
+
+function enterGroupEditMode(groupId, initialChildId = null) {
+  const g = state.shapes.find(s => s.id === groupId && s.type === 'group');
+  if (!g || !Array.isArray(g.children)) return;
+  state.editingGroupId = g.id;
+  if (initialChildId && g.children.some(c => c.id === initialChildId)) {
+    state.selectedIds = new Set([initialChildId]);
+  } else {
+    state.selectedIds = new Set();
+  }
+  setActiveTool('select');
+  renderAll();
+  showToast(`📦 Redigerer inni "${g.name || 'Gruppe'}" – klikk på enkeltdeler for å endre dem!`);
+}
+
+function exitGroupEditMode() {
+  const g = getEditingGroup();
+  if (!g) return;
+  syncGroupBBox(g);
+  state.editingGroupId = null;
+  if (g.children.length === 0) {
+    state.shapes = state.shapes.filter(s => s.id !== g.id);
+    state.selectedIds.clear();
+  } else {
+    state.selectedIds = new Set([g.id]);
+  }
+  renderAll();
+  showToast('✓ Ferdig med grupperedigering');
+}
+
+function removeChildFromGroup(groupId, childId) {
+  const g = state.shapes.find(s => s.id === groupId && s.type === 'group');
+  if (!g || !Array.isArray(g.children)) return;
+  const child = g.children.find(c => c.id === childId);
+  if (!child) return;
+  pushUndoSnapshot();
+  g.children = g.children.filter(c => c.id !== childId);
+  state.shapes.push(child);
+  if (g.children.length === 0) {
+    state.shapes = state.shapes.filter(s => s.id !== g.id);
+    if (state.editingGroupId === g.id) state.editingGroupId = null;
+  } else {
+    syncGroupBBox(g);
+  }
+  state.selectedIds = new Set([child.id]);
+  renderAll();
+  showToast(`📤 Tok "${child.name || child.type}" ut av gruppen`);
+}
+
 function renderAll() {
+  const editingGroup = getEditingGroup();
+  if (editingGroup) {
+    syncGroupBBox(editingGroup);
+  }
+  const banner = document.getElementById('group-edit-banner');
+  if (banner) {
+    if (editingGroup) {
+      banner.style.display = 'flex';
+      document.getElementById('group-edit-title').textContent = `${editingGroup.name || 'Gruppe'} (${editingGroup.children.length} deler)`;
+      const takeOutBtn = document.getElementById('btn-take-out-of-group');
+      if (takeOutBtn) {
+        takeOutBtn.style.display = state.selectedIds.size > 0 ? 'inline-flex' : 'none';
+      }
+    } else {
+      banner.style.display = 'none';
+    }
+  }
   renderShapesLayer();
   renderOverlay();
   renderInspector();
@@ -411,12 +503,28 @@ function getStrokeWidthMm() {
 function renderShapesLayer() {
   shapesLayerEl.innerHTML = '';
   const sw = getStrokeWidthMm();
+  const editingGroup = getEditingGroup();
 
   for (const s of state.shapes) {
     if (s.hidden) continue;
-    const el = createSvgElementForShape(s, sw);
-    if (el) {
-      shapesLayerEl.appendChild(el);
+    if (editingGroup && s.id === editingGroup.id) {
+      // Render children individually so they can be selected and edited directly!
+      for (const c of editingGroup.children) {
+        if (c.hidden) continue;
+        const childEl = createSvgElementForShape(c, sw);
+        if (childEl) {
+          shapesLayerEl.appendChild(childEl);
+        }
+      }
+    } else {
+      const el = createSvgElementForShape(s, sw);
+      if (el) {
+        if (editingGroup) {
+          el.setAttribute('opacity', '0.32');
+          el.style.pointerEvents = 'none';
+        }
+        shapesLayerEl.appendChild(el);
+      }
     }
   }
 }
@@ -426,9 +534,10 @@ function createSvgElementForShape(s, sw) {
     const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
     g.dataset.id = s.id;
     for (const c of s.children) {
+      if (c.hidden) continue;
       const childEl = createSvgElementForShape(c, sw);
       if (childEl) {
-        childEl.dataset.id = s.id; // Clicking child selects group
+        childEl.dataset.id = s.id; // Clicking child selects group when not in group-edit mode
         g.appendChild(childEl);
       }
     }
@@ -473,12 +582,32 @@ function createSvgElementForShape(s, sw) {
 }
 
 function getSelectedShapes() {
-  return state.shapes.filter(s => state.selectedIds.has(s.id));
+  const list = getActiveContainerList();
+  return list.filter(s => state.selectedIds.has(s.id));
 }
 
 function renderOverlay() {
   overlayLayerEl.innerHTML = '';
   const unit = state.viewW / 900; // Screen-independent size unit in mm
+
+  // 0. If currently editing inside a group, draw a dashed amber boundary around the group
+  const editingGroup = getEditingGroup();
+  if (editingGroup && editingGroup.children.length > 0) {
+    const gBox = getShapesBBox(editingGroup.children);
+    const pad = unit * 6;
+    const gRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    gRect.setAttribute('x', gBox.x - pad);
+    gRect.setAttribute('y', gBox.y - pad);
+    gRect.setAttribute('width', gBox.width + pad * 2);
+    gRect.setAttribute('height', gBox.height + pad * 2);
+    gRect.setAttribute('rx', String(unit * 4));
+    gRect.setAttribute('fill', 'rgba(245, 158, 11, 0.03)');
+    gRect.setAttribute('stroke', '#f59e0b');
+    gRect.setAttribute('stroke-width', String(unit * 1.4));
+    gRect.setAttribute('stroke-dasharray', `${unit * 5},${unit * 3}`);
+    gRect.setAttribute('pointer-events', 'none');
+    overlayLayerEl.appendChild(gRect);
+  }
 
   // 1. Selected Shapes Bounding Box, Resize Handles, Line Endpoint/Curve Handles & Node Handles
   const selected = getSelectedShapes();
@@ -786,9 +915,65 @@ function renderInspector() {
   const curveToggle = document.getElementById('prop-curve-toggle');
   const resetCurveBtn = document.getElementById('btn-reset-curve');
   const textSection = document.getElementById('text-inspector-section');
+  const groupSection = document.getElementById('group-inspector-section');
+  const editingGroup = getEditingGroup();
+
+  // Helper to populate the Group Inspector section when a group is selected or being edited
+  const renderGroupInspectorFor = (grp) => {
+    if (!grp || grp.type !== 'group' || !Array.isArray(grp.children)) {
+      groupSection.style.display = 'none';
+      return;
+    }
+    groupSection.style.display = 'block';
+    document.getElementById('group-count-badge').textContent = `${grp.children.length} deler`;
+    const gNameInput = document.getElementById('group-name-input');
+    if (document.activeElement !== gNameInput) {
+      gNameInput.value = grp.name || 'Gruppe';
+    }
+    const editBtn = document.getElementById('btn-edit-group-inside');
+    if (editingGroup && editingGroup.id === grp.id) {
+      editBtn.textContent = '✓ Ferdig med gruppe';
+      editBtn.classList.add('btn-success');
+    } else {
+      editBtn.textContent = '✏️ Rediger inni gruppe';
+      editBtn.classList.remove('btn-success');
+    }
+
+    const childListEl = document.getElementById('group-children-list');
+    childListEl.innerHTML = '';
+    const modeLabels = { cut: 'Kutt', score: 'Score', engrave: 'Graver', guide: 'Hjelp' };
+    for (const c of grp.children) {
+      const row = document.createElement('div');
+      const isChildSel = editingGroup && editingGroup.id === grp.id && state.selectedIds.has(c.id);
+      row.className = `layer-item ${isChildSel ? 'selected' : ''}`;
+      row.style.padding = '4px 7px';
+      row.style.fontSize = '11px';
+      row.innerHTML = `
+        <div class="layer-item-left">
+          <span class="layer-dot ${c.laserMode || 'cut'}" title="${modeLabels[c.laserMode] || 'Kutt'}"></span>
+          <span class="layer-name">${c.name || c.type}</span>
+        </div>
+        <div class="layer-item-actions">
+          <span class="layer-dims">${roundMm(c.width, 0)}×${roundMm(c.height, 0)}</span>
+          <button class="mini-icon-btn" data-child-action="edit" title="Velg og rediger denne delen">✏️</button>
+          <button class="mini-icon-btn" data-child-action="extract" title="Ta denne delen ut av gruppen">📤</button>
+        </div>
+      `;
+      row.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-child-action]');
+        if (btn && btn.dataset.childAction === 'extract') {
+          e.stopPropagation();
+          removeChildFromGroup(grp.id, c.id);
+          return;
+        }
+        enterGroupEditMode(grp.id, c.id);
+      });
+      childListEl.appendChild(row);
+    }
+  };
 
   if (selected.length === 0) {
-    badge.textContent = 'Ingen valgt';
+    badge.textContent = editingGroup ? `Inni: ${editingGroup.name}` : 'Ingen valgt';
     propX.value = '';
     propY.value = '';
     propW.value = '';
@@ -807,6 +992,7 @@ function renderInspector() {
     resetCurveBtn.style.display = 'none';
 
     textSection.style.display = state.activeTool === 'text' ? 'block' : 'none';
+    renderGroupInspectorFor(editingGroup);
     return;
   }
 
@@ -873,6 +1059,8 @@ function renderInspector() {
     } else {
       textSection.style.display = state.activeTool === 'text' ? 'block' : 'none';
     }
+
+    renderGroupInspectorFor(s.type === 'group' ? s : editingGroup);
   } else {
     badge.textContent = `${selected.length} objekter valgt`;
     const bbox = getShapesBBox(selected);
@@ -883,6 +1071,8 @@ function renderInspector() {
     propRot.value = 0;
     shapeSpecificWrap.style.display = 'none';
     textSection.style.display = 'none';
+    const selectedGroup = selected.find(item => item.type === 'group');
+    renderGroupInspectorFor(editingGroup || selectedGroup || null);
   }
 }
 
@@ -898,20 +1088,27 @@ function renderLayerList() {
     return;
   }
 
+  const editingGroup = getEditingGroup();
+  const modeLabels = { cut: 'Kutt', score: 'Score', engrave: 'Graver', guide: 'Hjelp' };
+
   // Render from top-most to bottom-most
   for (let i = state.shapes.length - 1; i >= 0; i--) {
     const s = state.shapes[i];
+    const isEditingThisGroup = editingGroup && editingGroup.id === s.id;
+    const isSelected = !editingGroup && state.selectedIds.has(s.id);
     const item = document.createElement('div');
-    item.className = `layer-item ${state.selectedIds.has(s.id) ? 'selected' : ''}`;
+    item.className = `layer-item ${isSelected ? 'selected' : ''} ${isEditingThisGroup ? 'editing-group' : ''}`;
 
-    const modeLabels = { cut: 'Kutt', score: 'Score', engrave: 'Graver', guide: 'Hjelp' };
+    const isGroup = s.type === 'group' && Array.isArray(s.children);
     item.innerHTML = `
       <div class="layer-item-left">
         <span class="layer-dot ${s.laserMode || 'cut'}" title="${modeLabels[s.laserMode] || 'Kutt'}"></span>
-        <span class="layer-name">${s.name || s.type}</span>
+        <span class="layer-name">${isGroup ? '📦 ' : ''}${s.name || s.type}</span>
       </div>
       <div class="layer-item-actions">
         <span class="layer-dims">${roundMm(s.width, 0)}×${roundMm(s.height, 0)}</span>
+        ${isGroup ? `<button class="mini-icon-btn" data-action="edit-group" title="${isEditingThisGroup ? 'Avslutt grupperedigering' : 'Rediger enkelt-deler inni gruppen'}">${isEditingThisGroup ? '✓' : '✏️'}</button>` : ''}
+        ${isGroup ? `<button class="mini-icon-btn" data-action="ungroup" title="Løs opp gruppe">📤</button>` : ''}
         <button class="mini-icon-btn" data-action="toggle-vis" title="Skjul/vis objekt">${s.hidden ? '🙈' : '👁'}</button>
         <button class="mini-icon-btn" data-action="delete" title="Slett objekt">✕</button>
       </div>
@@ -922,28 +1119,100 @@ function renderLayerList() {
       if (actionBtn) {
         e.stopPropagation();
         const act = actionBtn.dataset.action;
-        if (act === 'toggle-vis') {
+        if (act === 'edit-group') {
+          if (isEditingThisGroup) exitGroupEditMode();
+          else enterGroupEditMode(s.id);
+        } else if (act === 'ungroup') {
+          state.editingGroupId = null;
+          state.selectedIds = new Set([s.id]);
+          ungroupSelectedShapes();
+        } else if (act === 'toggle-vis') {
           s.hidden = !s.hidden;
           renderAll();
         } else if (act === 'delete') {
           pushUndoSnapshot();
+          if (state.editingGroupId === s.id) state.editingGroupId = null;
           state.shapes = state.shapes.filter(obj => obj.id !== s.id);
           state.selectedIds.delete(s.id);
           renderAll();
         }
         return;
       }
-      if (e.shiftKey) {
+      if (editingGroup && editingGroup.id !== s.id) {
+        state.editingGroupId = null;
+      }
+      if (e.shiftKey && !state.editingGroupId) {
         if (state.selectedIds.has(s.id)) state.selectedIds.delete(s.id);
         else state.selectedIds.add(s.id);
       } else {
+        state.editingGroupId = null;
         state.selectedIds.clear();
         state.selectedIds.add(s.id);
       }
       renderAll();
     });
 
+    item.addEventListener('dblclick', () => {
+      if (isGroup) {
+        enterGroupEditMode(s.id);
+      }
+    });
+
     listEl.appendChild(item);
+
+    // If this is a group, also render its children indented below so user can inspect or click any child directly!
+    if (isGroup) {
+      for (let ci = s.children.length - 1; ci >= 0; ci--) {
+        const c = s.children[ci];
+        const childRow = document.createElement('div');
+        const isChildSelected = isEditingThisGroup && state.selectedIds.has(c.id);
+        childRow.className = `layer-item group-child ${isChildSelected ? 'selected' : ''}`;
+        childRow.innerHTML = `
+          <div class="layer-item-left">
+            <span class="layer-dot ${c.laserMode || 'cut'}" title="${modeLabels[c.laserMode] || 'Kutt'}"></span>
+            <span class="layer-name">↳ ${c.name || c.type}</span>
+          </div>
+          <div class="layer-item-actions">
+            <span class="layer-dims">${roundMm(c.width, 0)}×${roundMm(c.height, 0)}</span>
+            <button class="mini-icon-btn" data-caction="extract" title="Ta denne delen ut av gruppen">📤</button>
+            <button class="mini-icon-btn" data-caction="delete" title="Slett denne delen fra gruppen">✕</button>
+          </div>
+        `;
+        childRow.addEventListener('click', (e) => {
+          const cBtn = e.target.closest('[data-caction]');
+          if (cBtn) {
+            e.stopPropagation();
+            if (cBtn.dataset.caction === 'extract') {
+              removeChildFromGroup(s.id, c.id);
+            } else if (cBtn.dataset.caction === 'delete') {
+              pushUndoSnapshot();
+              s.children = s.children.filter(ch => ch.id !== c.id);
+              state.selectedIds.delete(c.id);
+              if (s.children.length === 0) {
+                state.shapes = state.shapes.filter(obj => obj.id !== s.id);
+                if (state.editingGroupId === s.id) state.editingGroupId = null;
+              } else {
+                syncGroupBBox(s);
+              }
+              renderAll();
+            }
+            return;
+          }
+          if (state.editingGroupId !== s.id) {
+            enterGroupEditMode(s.id, c.id);
+          } else {
+            if (e.shiftKey) {
+              if (state.selectedIds.has(c.id)) state.selectedIds.delete(c.id);
+              else state.selectedIds.add(c.id);
+            } else {
+              state.selectedIds = new Set([c.id]);
+            }
+            renderAll();
+          }
+        });
+        listEl.appendChild(childRow);
+      }
+    }
   }
 }
 
@@ -986,14 +1255,96 @@ function bindCanvasEvents() {
     }
     const targetShapeEl = e.target.closest('[data-id]');
     if (targetShapeEl) {
-      const s = state.shapes.find(sh => sh.id === targetShapeEl.dataset.id);
+      const activeList = getActiveContainerList();
+      const s = activeList.find(sh => sh.id === targetShapeEl.dataset.id);
+      if (s && s.type === 'group') {
+        enterGroupEditMode(s.id);
+        return;
+      }
       if (s && s.type === 'text') {
         const input = document.getElementById('text-content-input');
         input.focus();
         input.select();
+        return;
       }
+    } else if (state.editingGroupId) {
+      exitGroupEditMode();
     }
   });
+}
+
+function scaleShapeFromOrig(target, orig, origBox, newBox) {
+  const sx = newBox.width / Math.max(0.01, origBox.width);
+  const sy = newBox.height / Math.max(0.01, origBox.height);
+
+  target.x = roundMm(newBox.x + (orig.x - origBox.x) * sx, 2);
+  target.y = roundMm(newBox.y + (orig.y - origBox.y) * sy, 2);
+  target.width = roundMm(Math.max(0.2, orig.width * sx), 2);
+  target.height = roundMm(Math.max(0.2, orig.height * sy), 2);
+
+  if (target.type === 'line') {
+    target.x1 = roundMm(newBox.x + (orig.x1 - origBox.x) * sx, 2);
+    target.y1 = roundMm(newBox.y + (orig.y1 - origBox.y) * sy, 2);
+    target.x2 = roundMm(newBox.x + (orig.x2 - origBox.x) * sx, 2);
+    target.y2 = roundMm(newBox.y + (orig.y2 - origBox.y) * sy, 2);
+    if (orig.cx !== undefined && orig.cy !== undefined) {
+      target.cx = roundMm(newBox.x + (orig.cx - origBox.x) * sx, 2);
+      target.cy = roundMm(newBox.y + (orig.cy - origBox.y) * sy, 2);
+    }
+    syncLineBBox(target);
+  }
+  if (Array.isArray(orig.nodes) && Array.isArray(target.nodes)) {
+    for (let i = 0; i < orig.nodes.length; i++) {
+      target.nodes[i].x = roundMm(newBox.x + (orig.nodes[i].x - origBox.x) * sx, 2);
+      target.nodes[i].y = roundMm(newBox.y + (orig.nodes[i].y - origBox.y) * sy, 2);
+    }
+    rebuildPathShapeFromNodes(target);
+  }
+  if (target.type === 'group' && Array.isArray(orig.children) && Array.isArray(target.children)) {
+    for (let i = 0; i < orig.children.length; i++) {
+      scaleShapeFromOrig(target.children[i], orig.children[i], origBox, newBox);
+    }
+    syncGroupBBox(target);
+  }
+}
+
+function rotateShapeFromOrig(target, orig, deltaDeg, center) {
+  if (target.type === 'group' && Array.isArray(orig.children) && Array.isArray(target.children)) {
+    for (let i = 0; i < orig.children.length; i++) {
+      rotateShapeFromOrig(target.children[i], orig.children[i], deltaDeg, center);
+    }
+    target.rotation = roundMm((((orig.rotation || 0) + deltaDeg) % 360 + 360) % 360, 1);
+    syncGroupBBox(target);
+    return;
+  }
+  if (target.type === 'line') {
+    const p1 = rotatePoint({ x: orig.x1, y: orig.y1 }, center, deltaDeg);
+    const p2 = rotatePoint({ x: orig.x2, y: orig.y2 }, center, deltaDeg);
+    target.x1 = roundMm(p1.x, 2);
+    target.y1 = roundMm(p1.y, 2);
+    target.x2 = roundMm(p2.x, 2);
+    target.y2 = roundMm(p2.y, 2);
+    if (orig.cx !== undefined && orig.cy !== undefined) {
+      const pc = rotatePoint({ x: orig.cx, y: orig.cy }, center, deltaDeg);
+      target.cx = roundMm(pc.x, 2);
+      target.cy = roundMm(pc.y, 2);
+    }
+    syncLineBBox(target);
+    return;
+  }
+  const origCenter = { x: orig.x + orig.width / 2, y: orig.y + orig.height / 2 };
+  const newCenter = rotatePoint(origCenter, center, deltaDeg);
+  target.x = roundMm(newCenter.x - orig.width / 2, 2);
+  target.y = roundMm(newCenter.y - orig.height / 2, 2);
+  target.rotation = roundMm((((orig.rotation || 0) + deltaDeg) % 360 + 360) % 360, 1);
+  if (Array.isArray(orig.nodes) && Array.isArray(target.nodes)) {
+    for (let i = 0; i < orig.nodes.length; i++) {
+      const rp = rotatePoint(orig.nodes[i], center, deltaDeg);
+      target.nodes[i].x = roundMm(rp.x, 2);
+      target.nodes[i].y = roundMm(rp.y, 2);
+    }
+    rebuildPathShapeFromNodes(target);
+  }
 }
 
 function onCanvasPointerDown(e) {
@@ -1031,6 +1382,7 @@ function onCanvasPointerDown(e) {
       state.interaction = {
         type: 'rotate',
         shape: s,
+        origSnapshot: JSON.parse(JSON.stringify(s)),
         cx: s.x + s.width / 2,
         cy: s.y + s.height / 2
       };
@@ -1052,6 +1404,7 @@ function onCanvasPointerDown(e) {
         type: 'resize',
         handle: handleId,
         shape: s,
+        origSnapshot: JSON.parse(JSON.stringify(s)),
         origX: s.x,
         origY: s.y,
         origW: s.width,
@@ -1074,26 +1427,13 @@ function onCanvasPointerDown(e) {
         state.selectedIds.add(id);
       }
       pushUndoSnapshot();
-      const movingShapes = getSelectedShapes().map(s => ({
-        ref: s,
-        origX: s.x,
-        origY: s.y,
-        origX1: s.x1,
-        origY1: s.y1,
-        origX2: s.x2,
-        origY2: s.y2,
-        origCx: s.cx,
-        origCy: s.cy,
-        origNodes: Array.isArray(s.nodes) ? s.nodes.map(n => ({ x: n.x, y: n.y })) : null,
-        childrenOrig: s.type === 'group' && s.children
-          ? s.children.map(c => ({ ref: c, origX: c.x, origY: c.y }))
-          : null
-      }));
       state.interaction = {
         type: 'move',
         startX: worldPt.x,
         startY: worldPt.y,
-        movingShapes
+        lastDx: 0,
+        lastDy: 0,
+        shapes: getSelectedShapes()
       };
       renderAll();
     } else {
@@ -1120,9 +1460,10 @@ function onCanvasPointerDown(e) {
 
   // 4. Text Tool: Edit existing text if clicked, or insert new text at clicked location
   if (state.activeTool === 'text') {
+    const activeList = getActiveContainerList();
     const hitShapeEl = e.target.closest('[data-id]');
     if (hitShapeEl) {
-      const existing = state.shapes.find(sh => sh.id === hitShapeEl.dataset.id);
+      const existing = activeList.find(sh => sh.id === hitShapeEl.dataset.id);
       if (existing && existing.type === 'text') {
         state.selectedIds.clear();
         state.selectedIds.add(existing.id);
@@ -1154,7 +1495,7 @@ function onCanvasPointerDown(e) {
       curve,
       laserMode: state.activeLaserMode
     });
-    state.shapes.push(newText);
+    activeList.push(newText);
     state.selectedIds.clear();
     state.selectedIds.add(newText.id);
     setActiveTool('select');
@@ -1208,7 +1549,7 @@ function onCanvasPointerDown(e) {
     newShape.y2 = worldPt.y;
     newShape.curved = Boolean(state.curveModeDefault);
   }
-  state.shapes.push(newShape);
+  getActiveContainerList().push(newShape);
   state.selectedIds.clear();
   state.selectedIds.add(newShape.id);
   state.interaction = {
@@ -1250,34 +1591,14 @@ function onCanvasPointerMove(e) {
   if (act.type === 'move') {
     const dx = worldPt.x - act.startX;
     const dy = worldPt.y - act.startY;
-    for (const item of act.movingShapes) {
-      item.ref.x = roundMm(item.origX + dx, 2);
-      item.ref.y = roundMm(item.origY + dy, 2);
-      if (item.ref.type === 'line') {
-        item.ref.x1 = roundMm(item.origX1 + dx, 2);
-        item.ref.y1 = roundMm(item.origY1 + dy, 2);
-        item.ref.x2 = roundMm(item.origX2 + dx, 2);
-        item.ref.y2 = roundMm(item.origY2 + dy, 2);
-        if (item.origCx !== undefined && item.origCy !== undefined) {
-          item.ref.cx = roundMm(item.origCx + dx, 2);
-          item.ref.cy = roundMm(item.origCy + dy, 2);
-        }
-      }
-      if (item.origNodes && Array.isArray(item.ref.nodes)) {
-        for (let idx = 0; idx < item.origNodes.length; idx++) {
-          item.ref.nodes[idx].x = roundMm(item.origNodes[idx].x + dx, 2);
-          item.ref.nodes[idx].y = roundMm(item.origNodes[idx].y + dy, 2);
-        }
-        rebuildPathShapeFromNodes(item.ref);
-      }
-      if (item.childrenOrig) {
-        for (const c of item.childrenOrig) {
-          c.ref.x = roundMm(c.origX + dx, 2);
-          c.ref.y = roundMm(c.origY + dy, 2);
-        }
-      }
+    const stepDx = dx - act.lastDx;
+    const stepDy = dy - act.lastDy;
+    if (Math.abs(stepDx) > 1e-4 || Math.abs(stepDy) > 1e-4) {
+      moveShapesBy(act.shapes, stepDx, stepDy);
+      act.lastDx = dx;
+      act.lastDy = dy;
+      renderAll();
     }
-    renderAll();
     return;
   }
 
@@ -1357,10 +1678,19 @@ function onCanvasPointerMove(e) {
       else h = w / aspect;
     }
 
-    s.x = roundMm(x, 2);
-    s.y = roundMm(y, 2);
-    s.width = roundMm(w, 2);
-    s.height = roundMm(h, 2);
+    if (act.origSnapshot) {
+      scaleShapeFromOrig(
+        s,
+        act.origSnapshot,
+        { x: act.origX, y: act.origY, width: act.origW, height: act.origH },
+        { x, y, width: w, height: h }
+      );
+    } else {
+      s.x = roundMm(x, 2);
+      s.y = roundMm(y, 2);
+      s.width = roundMm(w, 2);
+      s.height = roundMm(h, 2);
+    }
     renderAll();
     return;
   }
@@ -1369,7 +1699,13 @@ function onCanvasPointerMove(e) {
     const angleRad = Math.atan2(rawWorldPt.y - act.cy, rawWorldPt.x - act.cx);
     let deg = angleRad * (180 / Math.PI) + 90;
     if (e.shiftKey) deg = Math.round(deg / 15) * 15;
-    act.shape.rotation = roundMm(((deg % 360) + 360) % 360, 1);
+    const targetDeg = ((deg % 360) + 360) % 360;
+    if (act.shape.type === 'group' && act.origSnapshot) {
+      const deltaDeg = targetDeg - (act.origSnapshot.rotation || 0);
+      rotateShapeFromOrig(act.shape, act.origSnapshot, deltaDeg, { x: act.cx, y: act.cy });
+    } else {
+      act.shape.rotation = roundMm(targetDeg, 1);
+    }
     renderAll();
     return;
   }
@@ -1468,7 +1804,7 @@ function onCanvasPointerUp() {
     const mw = Math.abs(act.curX - act.startX);
     const mh = Math.abs(act.curY - act.startY);
     if (mw > 1 || mh > 1) {
-      for (const s of state.shapes) {
+      for (const s of getActiveContainerList()) {
         if (s.hidden) continue;
         const b = getShapesBBox([s]);
         if (b.x >= mx && b.y >= my && b.x + b.width <= mx + mw && b.y + b.height <= my + mh) {
@@ -1508,7 +1844,7 @@ function finishPenPath(closed = true) {
   newShape.closedPath = isClosed;
   newShape.curved = Boolean(state.curveModeDefault);
 
-  state.shapes.push(newShape);
+  getActiveContainerList().push(newShape);
   state.selectedIds.clear();
   state.selectedIds.add(newShape.id);
   state.penPoints = [];
@@ -1643,6 +1979,17 @@ function bindHeaderEvents() {
 
   document.getElementById('btn-undo').addEventListener('click', undo);
   document.getElementById('btn-redo').addEventListener('click', redo);
+  document.getElementById('btn-header-group').addEventListener('click', groupSelectedShapes);
+  document.getElementById('btn-header-ungroup').addEventListener('click', ungroupSelectedShapes);
+  document.getElementById('btn-exit-group-edit').addEventListener('click', exitGroupEditMode);
+  document.getElementById('btn-take-out-of-group').addEventListener('click', () => {
+    const g = getEditingGroup();
+    const sel = getSelectedShapes();
+    if (!g || sel.length === 0) return;
+    for (const c of sel) {
+      removeChildFromGroup(g.id, c.id);
+    }
+  });
 
   // Import SVG / JSON / Image
   const fileInput = document.getElementById('file-import-input');
@@ -1775,25 +2122,44 @@ function bindInspectorEvents() {
       }
       if (field === 'w') {
         const nw = Math.max(0.5, evalMathExpr(document.getElementById('prop-w').value, s.width));
-        if (lockAspect) s.height = roundMm(oldH * (nw / oldW), 2);
-        s.width = roundMm(nw, 2);
-        if (s.type === 'line') {
-          s.x2 = roundMm(s.x1 + (s.x2 >= s.x1 ? nw : -nw), 2);
-          syncLineBBox(s);
+        const nh = lockAspect ? roundMm(oldH * (nw / oldW), 2) : s.height;
+        if (s.type === 'group') {
+          const orig = JSON.parse(JSON.stringify(s));
+          scaleShapeFromOrig(s, orig, { x: orig.x, y: orig.y, width: oldW, height: oldH }, { x: s.x, y: s.y, width: nw, height: nh });
+        } else {
+          s.width = roundMm(nw, 2);
+          s.height = roundMm(nh, 2);
+          if (s.type === 'line') {
+            s.x2 = roundMm(s.x1 + (s.x2 >= s.x1 ? nw : -nw), 2);
+            syncLineBBox(s);
+          }
         }
       }
       if (field === 'h') {
         const nh = Math.max(0.5, evalMathExpr(document.getElementById('prop-h').value, s.height));
-        if (lockAspect) s.width = roundMm(oldW * (nh / oldH), 2);
-        s.height = roundMm(nh, 2);
-        if (s.type === 'line') {
-          s.y2 = roundMm(s.y1 + (s.y2 >= s.y1 ? nh : -nh), 2);
-          syncLineBBox(s);
+        const nw = lockAspect ? roundMm(oldW * (nh / oldH), 2) : s.width;
+        if (s.type === 'group') {
+          const orig = JSON.parse(JSON.stringify(s));
+          scaleShapeFromOrig(s, orig, { x: orig.x, y: orig.y, width: oldW, height: oldH }, { x: s.x, y: s.y, width: nw, height: nh });
+        } else {
+          s.width = roundMm(nw, 2);
+          s.height = roundMm(nh, 2);
+          if (s.type === 'line') {
+            s.y2 = roundMm(s.y1 + (s.y2 >= s.y1 ? nh : -nh), 2);
+            syncLineBBox(s);
+          }
         }
       }
       if (field === 'rot') {
         const deg = evalMathExpr(document.getElementById('prop-rot').value, s.rotation || 0);
-        s.rotation = roundMm(((deg % 360) + 360) % 360, 1);
+        const targetDeg = roundMm(((deg % 360) + 360) % 360, 1);
+        if (s.type === 'group') {
+          const orig = JSON.parse(JSON.stringify(s));
+          const deltaDeg = targetDeg - (orig.rotation || 0);
+          rotateShapeFromOrig(s, orig, deltaDeg, { x: orig.x + orig.width / 2, y: orig.y + orig.height / 2 });
+        } else {
+          s.rotation = targetDeg;
+        }
       }
     } else {
       const bbox = getShapesBBox(sel);
@@ -1946,6 +2312,38 @@ function bindInspectorEvents() {
   document.getElementById('text-size-input').addEventListener('change', onTextMetaUpdate);
   document.getElementById('text-spacing-input').addEventListener('change', onTextMetaUpdate);
 
+  // Group Inspector Controls (Rename group, Open/Edit inside group, Ungroup)
+  document.getElementById('group-name-input').addEventListener('input', (e) => {
+    const editingGroup = getEditingGroup();
+    const sel = getSelectedShapes();
+    const targetGroup = editingGroup || (sel.length === 1 && sel[0].type === 'group' ? sel[0] : null);
+    if (targetGroup) {
+      targetGroup.name = e.target.value || 'Gruppe';
+      saveWorkspaceToLocal(state);
+      renderLayerList();
+    }
+  });
+  document.getElementById('btn-edit-group-inside').addEventListener('click', () => {
+    const editingGroup = getEditingGroup();
+    if (editingGroup) {
+      exitGroupEditMode();
+      return;
+    }
+    const sel = getSelectedShapes();
+    const grp = sel.find(s => s.type === 'group');
+    if (grp) {
+      enterGroupEditMode(grp.id);
+    }
+  });
+  document.getElementById('btn-ungroup-inspector').addEventListener('click', () => {
+    const editingGroup = getEditingGroup();
+    if (editingGroup) {
+      state.editingGroupId = null;
+      state.selectedIds = new Set([editingGroup.id]);
+    }
+    ungroupSelectedShapes();
+  });
+
   // Magic Boolean Tools
   const runBoolean = (op) => {
     const sel = getSelectedShapes();
@@ -2039,21 +2437,52 @@ function bindInspectorEvents() {
     showToast('↖ Plassert 5 mm fra øvre venstre hjørne');
   });
 
+  const flipShapeInBox = (s, refBox, axis) => {
+    if (s.type === 'group' && Array.isArray(s.children)) {
+      for (const c of s.children) {
+        flipShapeInBox(c, refBox, axis);
+      }
+      syncGroupBBox(s);
+      return;
+    }
+    if (s.type === 'line') {
+      if (axis === 'h') {
+        s.x1 = roundMm(refBox.x + refBox.width - (s.x1 - refBox.x), 2);
+        s.x2 = roundMm(refBox.x + refBox.width - (s.x2 - refBox.x), 2);
+        if (s.cx !== undefined) s.cx = roundMm(refBox.x + refBox.width - (s.cx - refBox.x), 2);
+      } else {
+        s.y1 = roundMm(refBox.y + refBox.height - (s.y1 - refBox.y), 2);
+        s.y2 = roundMm(refBox.y + refBox.height - (s.y2 - refBox.y), 2);
+        if (s.cy !== undefined) s.cy = roundMm(refBox.y + refBox.height - (s.cy - refBox.y), 2);
+      }
+      syncLineBBox(s);
+      return;
+    }
+    if (axis === 'h') {
+      s.x = roundMm(refBox.x + refBox.width - (s.x - refBox.x) - s.width, 2);
+      s.flipX = !s.flipX;
+      if (s.rotation) s.rotation = roundMm((360 - s.rotation) % 360, 1);
+      if (Array.isArray(s.nodes)) {
+        for (const n of s.nodes) n.x = roundMm(refBox.x + refBox.width - (n.x - refBox.x), 2);
+        rebuildPathShapeFromNodes(s);
+      }
+    } else {
+      s.y = roundMm(refBox.y + refBox.height - (s.y - refBox.y) - s.height, 2);
+      s.flipY = !s.flipY;
+      if (s.rotation) s.rotation = roundMm((360 - s.rotation) % 360, 1);
+      if (Array.isArray(s.nodes)) {
+        for (const n of s.nodes) n.y = roundMm(refBox.y + refBox.height - (n.y - refBox.y), 2);
+        rebuildPathShapeFromNodes(s);
+      }
+    }
+  };
+
   document.getElementById('btn-flip-h').addEventListener('click', () => {
     const sel = getSelectedShapes();
     if (sel.length === 0) return;
     pushUndoSnapshot();
-    for (const s of sel) {
-      const loops = shapeToWorldPolygons(s, 0.15);
-      const b = computePolygonsBBox(loops);
-      const flipped = loops.map(l => {
-        const out = l.map(p => ({ x: b.x + b.width - (p.x - b.x), y: p.y }));
-        out.closed = l.closed !== false;
-        return out;
-      });
-      const updated = createPathShapeFromPolygons(flipped, s.laserMode, s.name);
-      Object.assign(s, updated, { id: s.id });
-    }
+    const refBox = getShapesBBox(sel);
+    for (const s of sel) flipShapeInBox(s, refBox, 'h');
     renderAll();
     showToast('⇄ Speilvendt horisontalt');
   });
@@ -2062,17 +2491,8 @@ function bindInspectorEvents() {
     const sel = getSelectedShapes();
     if (sel.length === 0) return;
     pushUndoSnapshot();
-    for (const s of sel) {
-      const loops = shapeToWorldPolygons(s, 0.15);
-      const b = computePolygonsBBox(loops);
-      const flipped = loops.map(l => {
-        const out = l.map(p => ({ x: p.x, y: b.y + b.height - (p.y - b.y) }));
-        out.closed = l.closed !== false;
-        return out;
-      });
-      const updated = createPathShapeFromPolygons(flipped, s.laserMode, s.name);
-      Object.assign(s, updated, { id: s.id });
-    }
+    const refBox = getShapesBBox(sel);
+    for (const s of sel) flipShapeInBox(s, refBox, 'v');
     renderAll();
     showToast('⇅ Speilvendt vertikalt');
   });
@@ -2151,13 +2571,20 @@ function duplicateSelectedShapes() {
   const sel = getSelectedShapes();
   if (sel.length === 0) return;
   pushUndoSnapshot();
+  const activeList = getActiveContainerList();
   const newIds = new Set();
+  const assignFreshIds = (obj) => {
+    obj.id = uid(obj.type);
+    if (obj.type === 'group' && Array.isArray(obj.children)) {
+      obj.children.forEach(assignFreshIds);
+    }
+  };
   for (const s of sel) {
     const copy = JSON.parse(JSON.stringify(s));
-    copy.id = uid(s.type);
+    assignFreshIds(copy);
     copy.name = `${s.name || s.type} (kopi)`;
     moveShapesBy([copy], 8, 8);
-    state.shapes.push(copy);
+    activeList.push(copy);
     newIds.add(copy.id);
   }
   state.selectedIds = newIds;
@@ -2166,37 +2593,82 @@ function duplicateSelectedShapes() {
 }
 
 function groupSelectedShapes() {
+  if (state.editingGroupId) {
+    exitGroupEditMode();
+    return;
+  }
   const sel = getSelectedShapes();
   if (sel.length < 2) {
-    showToast('⚠️ Velg minst 2 objekter for å gruppere dem');
+    if (sel.length === 1 && sel[0].type === 'group') {
+      enterGroupEditMode(sel[0].id);
+      return;
+    }
+    showToast('⚠️ Velg minst 2 objekter for å gruppere dem (Hold Shift eller dra en ramme rundt dem)');
     return;
   }
   pushUndoSnapshot();
-  const bbox = getShapesBBox(sel);
+
+  // If exactly 1 existing group is selected along with other shapes, merge those shapes into that group!
+  const existingGroups = sel.filter(s => s.type === 'group' && Array.isArray(s.children));
+  const nonGroups = sel.filter(s => s.type !== 'group');
+  if (existingGroups.length === 1 && nonGroups.length >= 1) {
+    const targetGroup = existingGroups[0];
+    const nonGroupIds = new Set(nonGroups.map(s => s.id));
+    state.shapes = state.shapes.filter(s => !nonGroupIds.has(s.id));
+    targetGroup.children.push(...nonGroups);
+    if (/^Gruppe \(\d+ deler\)$/.test(targetGroup.name || '')) {
+      targetGroup.name = `Gruppe (${targetGroup.children.length} deler)`;
+    }
+    syncGroupBBox(targetGroup);
+    state.selectedIds = new Set([targetGroup.id]);
+    renderAll();
+    showToast(`📦 La til ${nonGroups.length} del(er) i "${targetGroup.name}"!`);
+    return;
+  }
+
+  // Flatten any selected groups so we get a clean, flat group of parts
+  const flatChildren = [];
+  for (const s of sel) {
+    if (s.type === 'group' && Array.isArray(s.children)) {
+      flatChildren.push(...s.children);
+    } else {
+      flatChildren.push(s);
+    }
+  }
+
+  const bbox = getShapesBBox(flatChildren);
   const selIds = new Set(sel.map(s => s.id));
   state.shapes = state.shapes.filter(s => !selIds.has(s.id));
   const group = {
     id: uid('group'),
     type: 'group',
-    name: `Gruppe (${sel.length} deler)`,
-    laserMode: sel[0].laserMode || 'cut',
+    name: `Gruppe (${flatChildren.length} deler)`,
+    laserMode: flatChildren[0]?.laserMode || 'cut',
     x: roundMm(bbox.x, 2),
     y: roundMm(bbox.y, 2),
     width: roundMm(bbox.width, 2),
     height: roundMm(bbox.height, 2),
     rotation: 0,
-    children: sel
+    children: flatChildren
   };
   state.shapes.push(group);
   state.selectedIds = new Set([group.id]);
   renderAll();
-  showToast('📦 Gruppert valgte objekter');
+  showToast(`📦 Gruppert ${flatChildren.length} deler! (Dobbeltklikk på gruppen for å endre enkeltdeler)`);
 }
 
 function ungroupSelectedShapes() {
+  const editingGroup = getEditingGroup();
+  if (editingGroup) {
+    state.editingGroupId = null;
+    state.selectedIds = new Set([editingGroup.id]);
+  }
   const sel = getSelectedShapes();
   const groups = sel.filter(s => s.type === 'group' && Array.isArray(s.children));
-  if (groups.length === 0) return;
+  if (groups.length === 0) {
+    showToast('⚠️ Velg en gruppe først for å løse den opp');
+    return;
+  }
   pushUndoSnapshot();
   const newIds = new Set();
   for (const g of groups) {
@@ -2214,6 +2686,19 @@ function ungroupSelectedShapes() {
 function deleteSelectedShapes() {
   if (state.selectedIds.size === 0) return;
   pushUndoSnapshot();
+  const editingGroup = getEditingGroup();
+  if (editingGroup) {
+    editingGroup.children = editingGroup.children.filter(c => !state.selectedIds.has(c.id));
+    state.selectedIds.clear();
+    if (editingGroup.children.length === 0) {
+      state.shapes = state.shapes.filter(s => s.id !== editingGroup.id);
+      state.editingGroupId = null;
+    } else {
+      syncGroupBBox(editingGroup);
+    }
+    renderAll();
+    return;
+  }
   state.shapes = state.shapes.filter(s => !state.selectedIds.has(s.id));
   state.selectedIds.clear();
   renderAll();
@@ -2275,12 +2760,16 @@ function bindKeyboardShortcuts() {
         state.penPoints = [];
         state.penCursor = null;
       }
-      if (state.dragMode === 'draw' && state.dragShapeRef) {
-        state.shapes = state.shapes.filter(s => s.id !== state.dragShapeRef.id);
+      if (state.interaction && state.interaction.type === 'draw' && state.interaction.shape) {
+        const activeList = getActiveContainerList();
+        const idx = activeList.findIndex(s => s.id === state.interaction.shape.id);
+        if (idx !== -1) activeList.splice(idx, 1);
         state.selectedIds.clear();
-        state.dragMode = null;
-        state.dragShapeRef = null;
-        state.lineClickPending = false;
+        state.interaction = null;
+      }
+      if (state.editingGroupId && state.activeTool === 'select') {
+        exitGroupEditMode();
+        return;
       }
       setActiveTool('select');
       document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.remove('open'));

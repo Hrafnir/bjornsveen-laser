@@ -54,9 +54,14 @@
 
       <div class="header-divider"></div>
 
-      <!-- Undo / Redo -->
+      <!-- Undo / Redo & Quick Group Actions -->
       <button id="btn-undo" class="btn btn-icon-only" title="Angre (⌘Z)" disabled>↩ Angre</button>
       <button id="btn-redo" class="btn btn-icon-only" title="Gjør om (⇧⌘Z)" disabled>↪</button>
+
+      <div class="header-divider"></div>
+
+      <button id="btn-header-group" class="btn" title="Grupper valgte objekter, eller legg valgte objekter inn i eksisterende gruppe (⌘G)">📦 Grupper</button>
+      <button id="btn-header-ungroup" class="btn" title="Løs opp valgt gruppe i enkeltobjekter (⇧⌘G)">📤 Løs opp</button>
     </div>
 
     <div class="header-actions">
@@ -180,6 +185,18 @@
       <canvas id="ruler-left" class="ruler-left"></canvas>
 
       <div id="workspace-hint" class="workspace-hint"></div>
+
+      <!-- Group Edit / Isolation Banner -->
+      <div id="group-edit-banner" class="group-edit-banner" style="display: none;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <span>📦 <strong>Redigerer inni gruppe:</strong> <span id="group-edit-title">Gruppe</span></span>
+          <span style="font-size: 11px; opacity: 0.85;">(Klikk på enkeltdeler for å flytte, skalere, endre tekst eller bytte lag)</span>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button id="btn-take-out-of-group" class="btn" style="padding: 3px 8px; font-size: 11px; display: none;" title="Ta valgt del ut av gruppen">📤 Ta del ut av gruppe</button>
+          <button id="btn-exit-group-edit" class="btn btn-primary" style="padding: 4px 10px; font-size: 11.5px;">✓ Ferdig med gruppe (Esc)</button>
+        </div>
+      </div>
 
       <div id="canvas-viewport" class="canvas-viewport">
         <svg id="main-svg" xmlns="http://www.w3.org/2000/svg">
@@ -420,6 +437,32 @@
             <input type="range" id="text-curve-input" min="-100" max="100" value="0" step="5" />
           </div>
         </div>
+      </section>
+
+      <!-- 2B. GROUP PROPERTIES & GROUP EDITING (Shown when a group is selected or being edited) -->
+      <section id="group-inspector-section" class="panel-section" style="display: none;">
+        <div class="panel-section-header">
+          <div class="panel-section-title">📦 Gruppe &amp; Endring av gruppe</div>
+          <span id="group-count-badge" style="font-size: 11px; color: #f59e0b; font-weight: 600;">0 deler</span>
+        </div>
+        <div class="prop-grid" style="margin-bottom: 8px;">
+          <div class="prop-field full-width">
+            <label for="group-name-input">Gruppenavn</label>
+            <input type="text" id="group-name-input" class="input-control" value="Gruppe" placeholder="Navn på gruppen..." />
+          </div>
+        </div>
+        <div class="action-grid-2" style="margin-bottom: 8px;">
+          <button id="btn-edit-group-inside" class="btn btn-primary" title="Åpne gruppen slik at du kan flytte, skalere eller endre enkelt-deler inni den uten å løse opp gruppen (Eller dobbeltklikk på gruppen)">
+            ✏️ Rediger inni gruppe
+          </button>
+          <button id="btn-ungroup-inspector" class="btn" title="Løs opp gruppen til frittstående objekter (⇧⌘G)">
+            📤 Løs opp gruppe
+          </button>
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">
+          Deler i gruppen (klikk på en del for å redigere den direkte):
+        </div>
+        <div id="group-children-list" class="layer-list" style="max-height: 135px;"></div>
       </section>
 
       <!-- 3. MAGIC LASER TOOLS (BOOLEAN, OFFSET, KEYRING TAB, CLONE) -->
