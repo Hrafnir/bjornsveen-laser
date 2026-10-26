@@ -321,6 +321,8 @@ export function shapeToLocalPolygons(shape, curveToleranceMm = 0.2) {
       if (!Array.isArray(shape.children)) return [];
       const all = [];
       for (const child of shape.children) {
+        // Generated part labels are annotations, not part of physical group size.
+        if (child.guideLabel && child.laserMode === 'guide') continue;
         const childLoops = shapeToWorldPolygons(child, curveToleranceMm);
         all.push(...childLoops);
       }

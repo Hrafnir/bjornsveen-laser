@@ -20,7 +20,7 @@ Programmet kjører direkte i nettleseren uten installasjon eller innlogging. Teg
   * 🟢 **HJELPELINJE:** Senterlinjer, delehjulssirkler på tannhjul og merkelapper (eksporteres **ikke** til laseren).
 
 ### 2. Innebygde Skaperverksted-generatorer
-* 📦 **Finger-joint Boks-generator:** Genererer åpne bokser (5 sider), lukkede bokser med lokk (6 sider) eller bokser med skillevegger/rominndeling. Støtter eksakt materialtykkelse ($t$ i mm), indre/ytre mål og *kerf*-kompensasjon (stramhet i sammenføyningen).
+* 📦 **Finger-joint Boks-generator:** Sju varianter: åpen, løst lokk, skyvelokk, hengsellokk for løse beslag, brett med håndtak, sorteringsboks og fast topp. Rominndeling (1–12 rom i hver retning) kan kombineres med lokk. Viser kuttedeler eller sammensatt boks. Mål og full snittbredde kompenseres analytisk i millimeter.
 * 🪧 **Dørskilt- & Nøkkelring-generator:** Velg skiltfasong, opphengshull (2 skruehull, 4 hjørnehull eller sveiset nøkkelring-øye), pynteramme, tekst og symbol.
 * 🧩 **Puslespill-generator:** Genererer puslespill i valgfri millimeterstørrelse og antall brikker ($\text{Kolonner} \times \text{Rader}$) med ekte kurvede låsebrikker.
 * ⚙️ **Evolvent Tannhjul-generator (Involute Spur Gears):** Genererer enkelt-tannhjul eller matchende tannhjul-par med valgfri *Modul (mm)*, antall tenner ($Z_1, Z_2$), senterhull for aksling, eiker og visning av eksakt senteravstand mellom akslene.
@@ -54,6 +54,22 @@ python3 -m http.server 8080
 2. Last opp innholdet i `bjornsveen-laser/` (`index.html`, `styles.css`, `README.md`, `js/`, `fonts/` og `vendor/`).
 3. Gå til **Settings → Pages** på GitHub, velg **Deploy from a branch (`main` / root)** og klikk **Save**.
 4. I løpet av 1 minutt er programmet tilgjengelig på `https://<ditt-brukernavn>.github.io/bjornsveen-laser/` for alle elevene!
+
+## Bokser: mål, skjøter og montering
+
+Boksmotoren i `js/box-generator.js` bygger parvise fingerskjøter fra samme mål. Hjørnene møtes vinkelrett. Bunn og eventuell fast topp eier hjørnevolumet slik at tre plater ikke kolliderer. Konturer avrundes til 0,001 mm uten å skaleres gjennom en grovere avrundet ramme.
+
+- **Ytre mål** inkluderer lokket. **Indre høyde** er fri høyde under lokk/sentreringsplate. Skyvelokkets skinner tar noe plass langs sideveggene; skilleveggene senkes under de nedre skinnene for å unngå kollisjon. Skilleveggene er litt lavere enn fri høyde og har valgt klaring ved endene.
+- **Materialtykkelse** er målt tykkelse. **Kerf** er hele snittbredden: konturen flyttes en halv snittbredde ut, og hull en halv snittbredde inn. XCS-eksport slår av ytterligere kerfkompensasjon. Ikke legg på kompensasjon en gang til i laserprogrammet. Standardverdien er et utgangspunkt; prøvemonter en liten boks i samme materiale først.
+- **Løst lokk:** Lim sentreringsplaten midt under lokket. Begge får samme fingerhull dersom det er valgt.
+- **Skyvelokk:** Fire skinner limes på innsiden av sideveggene, to på hver side. Øvre skinner flukter med veggenes overkant. De nedre skinnenes overkant flukter med den lave frontveggen. Sporet mellom skinnene er materialtykkelsen pluss valgt klaring. Lokket skyves inn fra fronten. Skinner og øvrige fingerskjøter krever lim.
+- **Hengsellokk:** Krever to separate utvendige hengsler egnet for en bakvegg og et lokk i 90° når boksen er lukket. Generatoren tilbyr to hull per blad, med justerbar hullavstand, diameter og avstand fra topp/bakkant. Hengslene plasseres ved ¼ og ¾ av lengden. Tilpass hullene til faktiske beslag; slå dem av dersom hengslene har et annet hullmønster. Dette er ikke et integrert trehengsel eller et bøyelig laserskåret hengsel.
+- **Rom:** Like store rom, med materialtykkelsen til hver skillevegg trukket fra. Kryssende skillevegger har motsatte halv-i-halv-spor. Skillevegger i bare én retning må limes eller festes separat.
+- **Kutt:** Hull får et eget XCS-lag før boksenes ytterkonturer. SVG har de samme fargegruppene, men rekkefølgen må settes i laserprogrammet. Delnavn vises som vanlig, tydelig tekst under delene og eksporteres ikke. Hver del grupperes med hull og delnavn slik at de flyttes sammen. Delene legges uten overlapp; platebehov vises før innsetting. Lag eldre bokser på nytt for å bruke den nye geometrien.
+
+Utvalg og parametere er inspirert av [Boxes.py](https://boxes.hackerspace-bamberg.de/?language=en), spesielt [skyvelokk](https://boxes.hackerspace-bamberg.de/SlidingLidBox?language=en) og forklaringen av [materialtykkelse og burn](https://florianfesti.github.io/boxes/html/usermanual.html). Boxes.py kaller **halv** snittbredde «burn»; her brukes **hel** snittbredde «kerf». Implementasjonen er skrevet for denne appen og kjører lokalt uten Boxes.py-tjenesten.
+
+Testene kontrollerer skjøtene som ekstruderte flater i en 3D-sammenstilling, alle hjørner, kompensasjon på hver kant, rominndeling, hullkollisjoner og eksportmål. Fysisk prøvekutt, passform og montering av lokk/hengsler må fortsatt testes på maskinen.
 
 ## Stabilisering og lokal drift
 

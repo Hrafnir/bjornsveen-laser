@@ -13,6 +13,7 @@ import {
   clamp,
   createPathShapeFromPolygons,
   polygonsToSvgPath,
+  shapeToWorldSvgPath,
   computePolygonsBBox,
   booleanMultiPolygons
 } from './geometry.js';
@@ -24,241 +25,7 @@ import { LASER_ICONS, createIconShape, traceImageToPolygons } from './icons.js';
 // 1. FINGER-JOINT BOX GENERATOR ("BOKS-GENERATOR")
 // ============================================================================
 
-/**
- * Generates a tabbed edge from (x0, y0) to (x1, y1).
- * @param {number} parity
- *   +1 = Tabs protrude OUTWARD at odd indices (corners recessed by thickness `t`)
- *   -1 = Tabs protrude OUTWARD at even indices (corners flush to outer dimension)
- *    0 = Flat straight edge (e.g. open top of box)
- */
-function buildFingerEdge(x0, y0, x1, y1, nx, ny, thickness, targetFingerW, parity, kerf = 0) {
-  if (parity === 0) {
-    return [{ x: x0, y: y0 }, { x: x1, y: y1 }];
-  }
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const len = Math.hypot(dx, dy);
-  const ux = dx / len;
-  const uy = dy / len;
-
-  // Ensure odd number of segments >= 3 so corners are symmetric
-  let count = Math.max(3, Math.round(len / Math.max(4, targetFingerW)));
-  if (count % 2 === 0) count += 1;
-
-  const segW = len / count;
-  const halfKerf = (Number(kerf) || 0) * 0.5;
-  const pts = [];
-
-  for (let i = 0; i < count; i++) {
-    const isTab = parity === 1 ? (i % 2 === 1) : (i % 2 === 0);
-    // Outward offset: 0 when tab protrudes to full outer dimension, -thickness when recessed slot
-    const offset = isTab ? 0 : -thickness;
-
-    // Apply kerf adjustment along edge tangent so tabs are slightly wider by +kerf
-    let s0 = i * segW;
-    let s1 = (i + 1) * segW;
-    if (halfKerf > 0 && count > 1) {
-      if (isTab) {
-        if (i > 0) s0 -= halfKerf;
-        if (i < count - 1) s1 += halfKerf;
-      } else {
-        if (i > 0) s0 += halfKerf;
-        if (i < count - 1) s1 -= halfKerf;
-      }
-    }
-
-    const pStart = {
-      x: x0 + ux * s0 + nx * offset,
-      y: y0 + uy * s0 + ny * offset
-    };
-    const pEnd = {
-      x: x0 + ux * s1 + nx * offset,
-      y: y0 + uy * s1 + ny * offset
-    };
-    pts.push(pStart, pEnd);
-  }
-  return pts;
-}
-
-/**
- * Builds a single rectangular box panel centered at (ox + w/2, oy + h/2) with specified edge parities:
- * [topParity, rightParity, bottomParity, leftParity]
- */
-function buildBoxPanelLoop(ox, oy, w, h, t, fingerW, parities, kerf = 0) {
-  const [pTop, pRight, pBottom, pLeft] = parities;
-  const topPts = buildFingerEdge(ox, oy, ox + w, oy, 0, -1, t, fingerW, pTop, kerf);
-  const rightPts = buildFingerEdge(ox + w, oy, ox + w, oy + h, 1, 0, t, fingerW, pRight, kerf);
-  const bottomPts = buildFingerEdge(ox + w, oy + h, ox, oy + h, 0, 1, t, fingerW, pBottom, kerf);
-  const leftPts = buildFingerEdge(ox, oy + h, ox, oy, -1, 0, t, fingerW, pLeft, kerf);
-
-  const combined = [...topPts, ...rightPts, ...bottomPts, ...leftPts];
-  // Deduplicate consecutive identical points
-  const clean = [];
-  for (const pt of combined) {
-    if (clean.length === 0 || Math.hypot(pt.x - clean[clean.length - 1].x, pt.y - clean[clean.length - 1].y) > 0.01) {
-      clean.push(pt);
-    }
-  }
-  if (clean.length > 2 && Math.hypot(clean[0].x - clean[clean.length - 1].x, clean[0].y - clean[clean.length - 1].y) < 0.01) {
-    clean.pop();
-  }
-  clean.closed = true;
-  return clean;
-}
-
-export function generateFingerJointBox({
-  boxType = 'open',        // 'open' (5 sider), 'closed' (6 sider), 'dividers' (Åpen m/ skillevegger)
-  dimMode = 'outer',       // 'outer' | 'inner'
-  lengthMm = 120,
-  widthMm = 85,
-  heightMm = 55,
-  thicknessMm = 3.0,
-  fingerWidthMm = 14,
-  kerfMm = 0.08,
-  addLabels = true,
-  fingerHoleLid = true
-} = {}) {
-  const t = clamp(Number(thicknessMm) || 3.0, 0.5, 25);
-  const kerf = clamp(Number(kerfMm) || 0, 0, 1.0);
-  const fw = clamp(Number(fingerWidthMm) || 14, t * 2, 80);
-
-  let L = clamp(Number(lengthMm) || 120, 20, 900);
-  let W = clamp(Number(widthMm) || 85, 20, 900);
-  let H = clamp(Number(heightMm) || 55, 15, 500);
-
-  if (dimMode === 'inner') {
-    L += 2 * t;
-    W += 2 * t;
-    H += (boxType === 'closed' ? 2 * t : t);
-  }
-
-  const gap = 5; // 5mm spacing between laid-out panels
-  const shapes = [];
-  const hasTop = boxType === 'closed';
-  const topEdgeParityForWalls = hasTop ? -1 : 0;
-
-  // 1. BUNN (L x W) -> All 4 edges have parity +1
-  const bunnX = 10 + W + gap;
-  const bunnY = 10 + H + gap;
-  const bunnLoop = buildBoxPanelLoop(bunnX, bunnY, L, W, t, fw, [1, 1, 1, 1], kerf);
-  shapes.push(createPathShapeFromPolygons([bunnLoop], 'cut', `Boks Bunn (${roundMm(L)}×${roundMm(W)} mm)`));
-
-  // 2. BAKVEGG (L x H) -> Placed above Bunn. Bottom meets Bunn.top (-1), Top is topEdgeParity, Left/Right = +1
-  const bakX = bunnX;
-  const bakY = 10;
-  const bakLoop = buildBoxPanelLoop(bakX, bakY, L, H, t, fw, [topEdgeParityForWalls, 1, -1, 1], kerf);
-  shapes.push(createPathShapeFromPolygons([bakLoop], 'cut', `Boks Bakvegg (${roundMm(L)}×${roundMm(H)} mm)`));
-
-  // 3. FRONTVEGG (L x H) -> Placed below Bunn. Top meets Bunn.bottom (-1), Bottom is topEdgeParity, Left/Right = +1
-  const frontX = bunnX;
-  const frontY = bunnY + W + gap;
-  const frontLoops = [buildBoxPanelLoop(frontX, frontY, L, H, t, fw, [-1, 1, topEdgeParityForWalls, 1], kerf)];
-  shapes.push(createPathShapeFromPolygons(frontLoops, 'cut', `Boks Frontvegg (${roundMm(L)}×${roundMm(H)} mm)`));
-
-  // 4. VENSTRE VEGG (H x W) or (W x H) -> Placed left of Front/Bunn (width W, height H)
-  // Top/Bottom = length W (meets Bunn left/right -> -1), Left/Right = height H (meets Front/Bak -> -1)
-  const venstreX = 10;
-  const venstreY = 10;
-  const venstreLoop = buildBoxPanelLoop(venstreX, venstreY, W, H, t, fw, [topEdgeParityForWalls, -1, -1, -1], kerf);
-  shapes.push(createPathShapeFromPolygons([venstreLoop], 'cut', `Boks Venstre (${roundMm(W)}×${roundMm(H)} mm)`));
-
-  // 5. HØYRE VEGG (W x H)
-  const hoyreX = 10;
-  const hoyreY = 10 + H + gap;
-  const hoyreLoop = buildBoxPanelLoop(hoyreX, hoyreY, W, H, t, fw, [topEdgeParityForWalls, -1, -1, -1], kerf);
-  shapes.push(createPathShapeFromPolygons([hoyreLoop], 'cut', `Boks Høyre (${roundMm(W)}×${roundMm(H)} mm)`));
-
-  // 6. TOPP / LOKK (L x W) if closed box
-  if (hasTop) {
-    const toppX = bunnX + L + gap;
-    const toppY = bunnY;
-    const toppLoops = [buildBoxPanelLoop(toppX, toppY, L, W, t, fw, [1, 1, 1, 1], kerf)];
-    if (fingerHoleLid) {
-      // Add a 16mm finger hole in the center of the lid
-      const holePts = [];
-      const r = Math.min(9, Math.min(L, W) * 0.16);
-      const cx = toppX + L / 2;
-      const cy = toppY + W / 2;
-      for (let i = 0; i < 36; i++) {
-        const a = (i / 36) * Math.PI * 2;
-        holePts.push({ x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r });
-      }
-      holePts.closed = true;
-      toppLoops.push(holePts);
-    }
-    shapes.push(createPathShapeFromPolygons(toppLoops, 'cut', `Boks Topp/Lokk (${roundMm(L)}×${roundMm(W)} mm)`));
-  }
-
-  // Optional internal cross-dividers (Skillevegger med halv-i-halv-slisser)
-  if (boxType === 'dividers') {
-    const innerL = L - 2 * t;
-    const innerW = W - 2 * t;
-    const divH = H - t;
-    const slotW = Math.max(0.5, t - kerf);
-    const divX = bunnX + L + gap;
-
-    // Long divider (innerL x divH) with slot from top to middle
-    const d1x = divX;
-    const d1y = 10;
-    const mid1 = d1x + innerL / 2;
-    const div1Loop = [
-      { x: d1x, y: d1y },
-      { x: mid1 - slotW / 2, y: d1y },
-      { x: mid1 - slotW / 2, y: d1y + divH / 2 },
-      { x: mid1 + slotW / 2, y: d1y + divH / 2 },
-      { x: mid1 + slotW / 2, y: d1y },
-      { x: d1x + innerL, y: d1y },
-      { x: d1x + innerL, y: d1y + divH },
-      { x: d1x, y: d1y + divH }
-    ];
-    div1Loop.closed = true;
-    shapes.push(createPathShapeFromPolygons([div1Loop], 'cut', `Skillevegg Lang (${roundMm(innerL)}×${roundMm(divH)} mm)`));
-
-    // Short divider (innerW x divH) with slot from bottom to middle
-    const d2x = divX;
-    const d2y = 10 + divH + gap;
-    const mid2 = d2x + innerW / 2;
-    const div2Loop = [
-      { x: d2x, y: d2y },
-      { x: d2x + innerW, y: d2y },
-      { x: d2x + innerW, y: d2y + divH },
-      { x: mid2 + slotW / 2, y: d2y + divH },
-      { x: mid2 + slotW / 2, y: d2y + divH / 2 },
-      { x: mid2 - slotW / 2, y: d2y + divH / 2 },
-      { x: mid2 - slotW / 2, y: d2y + divH },
-      { x: d2x, y: d2y + divH }
-    ];
-    div2Loop.closed = true;
-    shapes.push(createPathShapeFromPolygons([div2Loop], 'cut', `Skillevegg Kort (${roundMm(innerW)}×${roundMm(divH)} mm)`));
-  }
-
-  // Optional guide labels so students know which panel is which
-  if (addLabels) {
-    const labelSpecs = [
-      { text: 'BUNN', cx: bunnX + L / 2, cy: bunnY + W / 2 },
-      { text: 'BAK', cx: bakX + L / 2, cy: bakY + H / 2 },
-      { text: 'FRONT', cx: frontX + L / 2, cy: frontY + H / 2 },
-      { text: 'VENSTRE', cx: venstreX + W / 2, cy: venstreY + H / 2 },
-      { text: 'HOYRE', cx: hoyreX + W / 2, cy: hoyreY + H / 2 }
-    ];
-    for (const lbl of labelSpecs) {
-      const tShape = createTextShape({
-        x: lbl.cx - 12,
-        y: lbl.cy - 3,
-        text: lbl.text,
-        fontKey: 'singleline',
-        fontSizeMm: 6,
-        spacingMm: 0.8,
-        laserMode: 'guide'
-      });
-      tShape.x = roundMm(lbl.cx - tShape.width / 2, 2);
-      tShape.y = roundMm(lbl.cy - tShape.height / 2, 2);
-      shapes.push(tShape);
-    }
-  }
-
-  return shapes;
-}
+export { generateFingerJointBox } from './box-generator.js';
 
 // ============================================================================
 // 2. DOOR SIGN & KEYRING GENERATOR ("DØRSKILT & NØKKELRING")
@@ -985,7 +752,7 @@ export function generateMandalaOrnament({
 // 6. INTERACTIVE MODAL UI CONTROLLER FOR ALL GENERATORS
 // ============================================================================
 
-export function renderShapesPreviewSvg(shapes) {
+export function renderShapesPreviewSvg(shapes, { strokeScale = 0.0045 } = {}) {
   if (!shapes || shapes.length === 0) return '<svg></svg>';
   const allLoops = [];
   for (const s of shapes) {
@@ -1008,7 +775,7 @@ export function renderShapesPreviewSvg(shapes) {
   const vy = bbox.y - pad;
   const vw = bbox.width + pad * 2;
   const vh = bbox.height + pad * 2;
-  const strokeW = Math.max(vw, vh) * 0.0045;
+  const strokeW = Math.max(vw, vh) * strokeScale;
 
   const renderOne = (s) => {
     if (s.type === 'group' && Array.isArray(s.children)) {
@@ -1018,12 +785,17 @@ export function renderShapesPreviewSvg(shapes) {
       const href = s.dataUrl || s.srcDataUrl;
       return `<image x="${s.x}" y="${s.y}" width="${s.width}" height="${s.height}" preserveAspectRatio="none" href="${href}" />`;
     }
+    if (s.guideLabel && s.laserMode === 'guide') {
+      const text = String(s.textMeta?.text || s.name).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&apos;'}[c]));
+      const cx = s.x + s.width / 2, cy = s.y + s.height / 2;
+      return `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" font-size="${s.height * 1.25}" font-weight="600" fill="#047857" transform="rotate(${s.rotation || 0} ${cx} ${cy})">${text}</text>`;
+    }
     const color =
       s.laserMode === 'cut' ? '#ff1e1e' :
       s.laserMode === 'score' ? '#3b82f6' :
       s.laserMode === 'guide' ? '#10b981' : '#111827';
     const fill = s.laserMode === 'engrave' ? '#111827' : 'none';
-    const dash = s.laserMode === 'guide' ? `stroke-dasharray="${strokeW * 3},${strokeW * 2}"` : '';
+    const dash = s.laserMode === 'guide' && s.type !== 'text' ? `stroke-dasharray="${strokeW * 3},${strokeW * 2}"` : '';
     const sw = s.laserMode === 'engrave' ? 0 : strokeW;
 
     if (s.type === 'rect') {
@@ -1036,7 +808,7 @@ export function renderShapesPreviewSvg(shapes) {
       return `<line x1="${s.x1}" y1="${s.y1}" x2="${s.x2}" y2="${s.y2}" stroke="${color}" stroke-width="${sw}" ${dash}/>`;
     }
     if (s.d) {
-      return `<path d="${s.d}" fill="${fill}" fill-rule="evenodd" stroke="${color}" stroke-width="${sw}" ${dash}/>`;
+      return `<path d="${shapeToWorldSvgPath(s)}" fill="${fill}" fill-rule="evenodd" stroke="${color}" stroke-width="${sw}" ${dash}/>`;
     }
     return '';
   };

@@ -1,3 +1,4 @@
+import { BOX_TYPES, buildBoxModel, boxModelToShapes, groupBoxParts, renderBoxAssemblySvg } from './box-generator.js';
 import { flushWorkspaceSave, hasUnprotectedChanges } from './storage.js';
 // ============================================================================
 // Bjørnsveen LaserStudio – Main Application Controller
@@ -43,7 +44,6 @@ import {
 } from './icons.js';
 
 import {
-  generateFingerJointBox,
   generateSignOrKeyring,
   generateJigsawPuzzle,
   generateInvoluteGears,
@@ -459,7 +459,7 @@ function getActiveContainerList() {
 function syncGroupBBox(group) {
   if (!group || group.type !== 'group' || !Array.isArray(group.children)) return;
   if (group.children.length === 0) return;
-  const bbox = getShapesBBox(group.children);
+  const bbox = getShapesBBox([group]);
   group.x = roundMm(bbox.x, 2);
   group.y = roundMm(bbox.y, 2);
   group.width = roundMm(bbox.width, 2);
@@ -623,6 +623,22 @@ function createSvgElementForShape(s, sw) {
     return g;
   }
 
+  if (s.guideLabel && s.laserMode === 'guide') {
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.dataset.id = s.id;
+    label.textContent = s.textMeta?.text || s.name;
+    label.setAttribute('x', String(s.x + s.width / 2));
+    label.setAttribute('y', String(s.y + s.height / 2));
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('dominant-baseline', 'central');
+    label.setAttribute('font-family', 'system-ui, sans-serif');
+    label.setAttribute('font-size', String(s.height * 1.25));
+    label.setAttribute('font-weight', '600');
+    label.setAttribute('fill', '#047857');
+    if (s.rotation) label.setAttribute('transform', `rotate(${s.rotation} ${s.x + s.width / 2} ${s.y + s.height / 2})`);
+    return label;
+  }
+
   const d = shapeToWorldSvgPath(s);
   if (!d) return null;
 
@@ -646,7 +662,7 @@ function createSvgElementForShape(s, sw) {
     pathEl.setAttribute('fill', 'none');
     pathEl.setAttribute('stroke', '#10b981');
     pathEl.setAttribute('stroke-width', String(sw * 0.85));
-    pathEl.setAttribute('stroke-dasharray', `${sw * 3},${sw * 2}`);
+    if (s.type !== 'text') pathEl.setAttribute('stroke-dasharray', `${sw * 3},${sw * 2}`);
   } else {
     // 'cut' (#ff1e1e)
     pathEl.setAttribute('fill', 'rgba(255, 30, 30, 0.02)');
@@ -3703,6 +3719,7 @@ function openGeneratorModal(tabName) {
   const insertBtn = document.getElementById('btn-modal-insert');
   bodyEl.className = tabName === 'icons' ? 'modal-body single-col' : 'modal-body';
   insertBtn.style.display = tabName === 'icons' ? 'none' : 'inline-flex';
+  insertBtn.disabled = false;
 
   if (tabName === 'box') renderBoxGeneratorUI(bodyEl);
   else if (tabName === 'sign') renderSignGeneratorUI(bodyEl);
@@ -3717,97 +3734,116 @@ function openGeneratorModal(tabName) {
 
 // ---- 1. Finger-joint Box Modal UI ----
 function renderBoxGeneratorUI(container) {
+  const input = (id, label, value, unit = 'mm') => `<div class="prop-field"><label for="gen-box-${id}">${label}</label><div class="input-with-unit"><input type="text" inputmode="decimal" id="gen-box-${id}" class="input-control math-input" value="${value}" />${unit ? `<span class="unit">${unit}</span>` : ''}</div></div>`;
   container.innerHTML = `
-    <div class="generator-controls">
-      <div class="info-box">
-        📦 <strong>Finger-joint Boks-generator:</strong> Lager alle vegger og bunn/lokk med eksakte tapper som passer sammen i laserkutteren.
+    <div class="generator-controls box-controls">
+      <div class="prop-field"><label for="gen-box-type">Bokstype</label>
+        <select id="gen-box-type" class="select-control">${BOX_TYPES.map(type => `<option value="${type.id}">${type.name}</option>`).join('')}</select>
       </div>
+      <div class="info-box" id="gen-box-note"></div>
       <div class="prop-grid">
-        <div class="prop-field full-width">
-          <label>Bokstype</label>
-          <select id="gen-box-type" class="select-control">
-            <option value="open">Åpen boks uten lokk (5 sider)</option>
-            <option value="closed">Lukket boks med lokk (6 sider)</option>
-            <option value="dividers">Åpen boks med 4 rom / skillevegger (7 deler)</option>
-          </select>
-        </div>
-        <div class="prop-field">
-          <label>Lengde (L)</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="gen-box-l" class="input-control math-input" value="110" /><span class="unit">mm</span></div>
-        </div>
-        <div class="prop-field">
-          <label>Bredde (B)</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="gen-box-w" class="input-control math-input" value="80" /><span class="unit">mm</span></div>
-        </div>
-        <div class="prop-field">
-          <label>Høyde (H)</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="gen-box-h" class="input-control math-input" value="50" /><span class="unit">mm</span></div>
-        </div>
-        <div class="prop-field">
-          <label>Mål gjelder</label>
-          <select id="gen-box-dimmode" class="select-control">
-            <option value="outer">Ytre mål</option>
-            <option value="inner">Indre mål</option>
-          </select>
-        </div>
-        <div class="prop-field">
-          <label>Materialtykkelse (t)</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="gen-box-t" class="input-control math-input" value="3.0" /><span class="unit">mm</span></div>
-          <div class="preset-pills">
-            <span class="preset-pill" data-t="3.0">3,0 mm</span>
-            <span class="preset-pill" data-t="3.8">3,8 mm</span>
-            <span class="preset-pill" data-t="4.0">4,0 mm</span>
-            <span class="preset-pill" data-t="6.0">6,0 mm</span>
-          </div>
-        </div>
-        <div class="prop-field">
-          <label>Tapp-bredde</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="gen-box-fw" class="input-control math-input" value="14" /><span class="unit">mm</span></div>
-        </div>
-        <div class="prop-field">
-          <label title="Kompenserer for bredden av laserstrålen så tappene sitter stramt">Kerf (Snittbredde)</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="gen-box-kerf" class="input-control math-input" value="0.08" /><span class="unit">mm</span></div>
-        </div>
-        <div class="prop-field" style="justify-content: flex-end;">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 0;">
-            <input type="checkbox" id="gen-box-labels" checked />
-            <span>Merk deler (Hjelpelinje)</span>
-          </label>
+        ${input('l', 'Lengde', 120)}${input('w', 'Bredde', 85)}${input('h', 'Høyde', 55)}
+        <div class="prop-field"><label for="gen-box-dimmode">Mål gjelder</label><select id="gen-box-dimmode" class="select-control"><option value="outer">Ytre mål, inkl. lokk</option><option value="inner">Indre, fri høyde</option></select></div>
+        ${input('t', 'Faktisk materialtykkelse', 3)}${input('kerf', 'Kerf – hele snittbredden', 0.08)}
+      </div>
+      <div class="box-help">Mål materialet med skyvelære. Kerf kompenseres med halv snittbredde rundt hele konturen. Prøv en liten boks før endelig kutt.</div>
+      <div class="box-options" id="gen-box-lid-options">
+        <div class="prop-grid">${input('clearance', 'Klaring for bevegelig lokk', 0.2)}
+          <label class="box-check"><input type="checkbox" id="gen-box-finger-hole" checked /> Fingerhull i lokket</label>
         </div>
       </div>
+      <details class="box-options" id="gen-box-hinge-options" open>
+        <summary>Hull for to utvendige hengsler</summary>
+        <label class="box-check"><input type="checkbox" id="gen-box-hinge-holes" checked /> Kutt skruehull</label>
+        <div class="prop-grid" id="gen-box-hinge-fields">
+          ${input('hinge-spacing', 'Hullavstand på hvert blad', 12)}
+          ${input('hinge-setback', 'Hullrad fra bakkant / topp', 8)}
+          ${input('hinge-diameter', 'Hulldiameter', 3)}
+        </div>
+        <div class="box-help">To hull per hengselblad, samme mønster i lokk og bakvegg. Velg mål fra hengslene dine, eller slå av hull og monter dem selv.</div>
+      </details>
+      <div class="box-options">
+        <label class="box-check"><input type="checkbox" id="gen-box-dividers" /> Rominndeling</label>
+        <div class="prop-grid" id="gen-box-compartments">
+          ${input('cols', 'Rom langs lengden', 2, '')}${input('rows', 'Rom langs bredden', 2, '')}
+        </div>
+        <div class="box-help" id="gen-box-cell-size"></div>
+      </div>
+      <details class="box-options"><summary>Skjøter og plassering</summary>
+        <div class="prop-grid">${input('fw', 'Ønsket tappbredde', 14)}${input('gap', 'Avstand mellom delene', 6)}</div>
+        <div class="box-help">Tappbredden tilpasses parvis slik at kantene passer sammen. Hull kuttes før ytterkonturene i XCS.</div>
+        <label class="box-check"><input type="checkbox" id="gen-box-labels" checked /> Vis delnavn under delene</label>
+      </details>
     </div>
-    <div class="generator-preview-box">
-      <div id="gen-preview-svg" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"></div>
-      <div id="gen-preview-caption" class="preview-caption"></div>
+    <div class="box-preview-column">
+      <div class="box-view-tabs" role="group" aria-label="Forhåndsvisning av boks">
+        <button type="button" class="btn active" id="gen-box-view-cuts" aria-pressed="true">Kuttedeler</button>
+        <button type="button" class="btn" id="gen-box-view-assembly" aria-pressed="false">Sammensatt</button>
+      </div>
+      <div class="generator-preview-box box-preview">
+        <div id="gen-preview-svg"></div>
+        <div id="gen-preview-caption" class="preview-caption"></div>
+      </div>
+      <div class="box-dimensions" id="gen-box-dimensions"></div>
+      <div class="box-error" id="gen-box-error" role="alert" hidden></div>
+      <div class="box-help" id="gen-box-assembly-note" hidden>Lokk vises løftet. Illustrasjonen viser sammenstillingen; hengsler og lim er ikke tegnet inn.</div>
     </div>
   `;
-
-  const update = () => {
-    const shapes = generateFingerJointBox({
-      boxType: document.getElementById('gen-box-type').value,
-      dimMode: document.getElementById('gen-box-dimmode').value,
-      lengthMm: evalMathExpr(document.getElementById('gen-box-l').value, 110),
-      widthMm: evalMathExpr(document.getElementById('gen-box-w').value, 80),
-      heightMm: evalMathExpr(document.getElementById('gen-box-h').value, 50),
-      thicknessMm: evalMathExpr(document.getElementById('gen-box-t').value, 3.0),
-      fingerWidthMm: evalMathExpr(document.getElementById('gen-box-fw').value, 14),
-      kerfMm: evalMathExpr(document.getElementById('gen-box-kerf').value, 0),
-      addLabels: document.getElementById('gen-box-labels').checked
-    });
-    state.modalPreviewShapes = shapes;
-    const { svgHtml, bbox } = renderShapesPreviewSvg(shapes);
-    document.getElementById('gen-preview-svg').innerHTML = svgHtml;
-    document.getElementById('gen-preview-caption').innerHTML =
-      `<span>Totalt plassbehov på plate: <strong>${roundMm(bbox.width, 0)} × ${roundMm(bbox.height, 0)} mm</strong></span><span>1:1 mm</span>`;
+  let view = 'cuts', model = null, preview = null;
+  const el = id => container.querySelector('#gen-box-' + id);
+  const number = id => evalMathExpr(el(id).value, NaN);
+  const insertBtn = document.getElementById('btn-modal-insert');
+  const renderPreview = () => {
+    if (!model || !preview) return;
+    container.querySelector('#gen-preview-svg').innerHTML = view === 'cuts' ? preview.svgHtml : renderBoxAssemblySvg(model);
+    el('assembly-note').hidden = view !== 'assembly';
+    for (const mode of ['cuts', 'assembly']) {
+      el('view-' + mode).classList.toggle('active', view === mode);
+      el('view-' + mode).setAttribute('aria-pressed', String(view === mode));
+    }
   };
-
-  container.querySelectorAll('input, select').forEach(el => el.addEventListener('input', update));
-  container.querySelectorAll('.preset-pill[data-t]').forEach(pill => {
-    pill.addEventListener('click', () => {
-      document.getElementById('gen-box-t').value = pill.dataset.t;
-      update();
-    });
-  });
+  const update = () => {
+    const type = el('type').value, divider = el('dividers').checked || type === 'dividers';
+    el('note').textContent = BOX_TYPES.find(t => t.id === type).note;
+    el('lid-options').hidden = !['lid', 'sliding', 'hinged'].includes(type);
+    el('hinge-options').hidden = type !== 'hinged';
+    el('hinge-fields').hidden = !el('hinge-holes').checked;
+    el('compartments').hidden = !divider;
+    el('dividers').disabled = type === 'dividers';
+    el('error').hidden = true;
+    try {
+      model = buildBoxModel({
+        boxType: type, dimMode: el('dimmode').value,
+        lengthMm: number('l'), widthMm: number('w'), heightMm: number('h'),
+        thicknessMm: number('t'), kerfMm: number('kerf'), fingerWidthMm: number('fw'),
+        partGapMm: number('gap'), lidClearanceMm: number('clearance'),
+        fingerHoleLid: el('finger-hole').checked, addLabels: el('labels').checked,
+        addDividers: divider, compartmentCols: number('cols'), compartmentRows: number('rows'),
+        hingeHoles: el('hinge-holes').checked, hingeHoleSpacingMm: number('hinge-spacing'),
+        hingeSetbackMm: number('hinge-setback'), hingeHoleDiameterMm: number('hinge-diameter')
+      });
+      const flatParts = boxModelToShapes(model);
+      state.modalPreviewShapes = groupBoxParts(flatParts);
+      preview = renderShapesPreviewSvg(flatParts, { strokeScale: 0.0028 });
+      insertBtn.disabled = false;
+      const size = d => `${roundMm(d.length, 2)} × ${roundMm(d.width, 2)} × ${roundMm(d.height, 2)} mm`;
+      el('dimensions').innerHTML = `<strong>${model.parts.length} deler</strong><span>Ytre: ${size(model.outer)}</span><span>Indre: ${size(model.inner)}</span>`;
+      const c = model.compartments;
+      el('cell-size').textContent = divider ? `${c.columns * c.rows} rom, hvert ${roundMm(c.cellLength, 2)} × ${roundMm(c.cellWidth, 2)} mm. ${c.columns === 1 || c.rows === 1 ? 'Skillevegger i én retning limes fast.' : 'Skilleveggene tres sammen halv-i-halv.'}` : '';
+      const bbox = computePolygonsBBox(flatParts.filter(s => s.laserMode === 'cut').flatMap(s => shapeToWorldPolygons(s)));
+      container.querySelector('#gen-preview-caption').textContent = `Platebehov: ${roundMm(bbox.width, 1)} × ${roundMm(bbox.height, 1)} mm · 1:1`;
+      renderPreview();
+    } catch (error) {
+      model = null; preview = null; state.modalPreviewShapes = []; insertBtn.disabled = true;
+      container.querySelector('#gen-preview-svg').innerHTML = '';
+      container.querySelector('#gen-preview-caption').textContent = '';
+      el('dimensions').textContent = ''; el('cell-size').textContent = '';
+      el('error').textContent = error.message; el('error').hidden = false;
+    }
+  };
+  container.querySelectorAll('input, select').forEach(input => input.addEventListener('input', update));
+  el('type').addEventListener('change', () => { if (el('type').value === 'dividers') el('dividers').checked = true; update(); });
+  for (const mode of ['cuts', 'assembly']) el('view-' + mode).addEventListener('click', () => { view = mode; renderPreview(); });
   update();
 }
 

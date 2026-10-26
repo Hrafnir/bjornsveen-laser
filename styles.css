@@ -1074,3 +1074,17 @@ html, body {
   border-color: var(--accent);
   color: #fff;
 }
+
+/* Parametric box controls and previews */
+.box-options { border-top: 1px solid var(--border-color); padding-top: 10px; }
+.box-options summary { cursor: pointer; font-weight: 600; margin-bottom: 10px; }
+.box-check { display: flex; align-items: center; gap: 8px; font-size: 12px; padding: 7px 0; }
+.box-help { color: var(--text-muted); font-size: 11px; line-height: 1.55; }
+.box-preview-column { align-self: start; position: sticky; top: 0; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.box-view-tabs { display: flex; gap: 8px; }
+.box-view-tabs .active { background: var(--accent-soft); color: #38bdf8; border-color: var(--accent); }
+.box-preview { height: 360px; background: #f8fafc; }
+.box-preview #gen-preview-svg { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 10px 10px 42px; }
+.box-dimensions { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
+.box-error { padding: 12px; border: 1px solid #ef4444; border-radius: 8px; background: #451a1a; color: #fecaca; font-size: 12px; }
+.box-controls [hidden], .box-preview-column [hidden] { display: none !important; }

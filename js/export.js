@@ -17,7 +17,7 @@ import {
   parseSvgPathToPolygons
 } from './geometry.js';
 import { resolveXcsBitmapMode } from './icons.js';
-import { PUZZLE_CUT_STAGES, getCutStage } from './cut-order.js';
+import { CUT_STAGES, getCutStage } from './cut-order.js';
 
 
 
@@ -91,7 +91,7 @@ export function buildLaserSvgString(shapes, {
   const engravePaths = [];
   const scorePaths = [];
   const cutPaths = [];
-  const stagedCutPaths = new Map(PUZZLE_CUT_STAGES.map(stage => [stage.id, []]));
+  const stagedCutPaths = new Map(CUT_STAGES.map(stage => [stage.id, []]));
 
   for (const s of exportable) {
     const safeName = escapeXml(s.name || s.type);
@@ -163,7 +163,7 @@ export function buildLaserSvgString(shapes, {
     lines.push(`  </g>`);
   }
 
-  for (const stage of PUZZLE_CUT_STAGES) {
+  for (const stage of CUT_STAGES) {
     const paths = stagedCutPaths.get(stage.id);
     if (!paths.length) continue;
     lines.push(`  <g id="${stage.id}" data-name="${escapeXml(stage.name)}">`, ...paths, `  </g>`);
@@ -662,7 +662,7 @@ export function buildXcsProjectString(shapes, {
     }
   };
 
-  for (const stage of PUZZLE_CUT_STAGES) {
+  for (const stage of CUT_STAGES) {
     if (displays.some(display => display.layerTag === stage.color)) {
       layerData[stage.color] = { name: stage.name, order: stage.order, visible: true, panel: 0 };
     }

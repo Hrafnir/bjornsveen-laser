@@ -1,3 +1,5 @@
+import { BOX_TYPES, buildBoxModel, boxModelToShapes, renderBoxAssemblySvg } from '../js/box-generator.js';
+import { renderShapesPreviewSvg } from '../js/generators.js';
 import { generateJigsawPuzzle } from '../js/generators.js';
 import { importSvgStringToShapes } from '../js/svg-import.js';
 import { computePolygonsBBox,shapeToWorldPolygons } from '../js/geometry.js';
@@ -50,6 +52,23 @@ await test('Puzzle SVG roundtrip preserves the three cut stages and colors',()=>
  assert(new Set(displays.map(d=>d.layerTag)).size===3);
  const orders=displays.map(d=>xcs.canvas[0].layerData[d.layerTag].order);
  assert(orders[0]<orders[1] && orders[1]<orders[2]);
+});
+await test('All box variants render, show readable guide labels and export cut stages',()=>{
+ for(const type of BOX_TYPES) {
+  const model=buildBoxModel({boxType:type.id});
+  const shapes=boxModelToShapes(model);
+  for(const svg of [renderShapesPreviewSvg(shapes).svgHtml,renderBoxAssemblySvg(model),buildLaserSvgString(shapes)]) {
+   const doc=new DOMParser().parseFromString(svg,'image/svg+xml');
+   assert(!doc.querySelector('parsererror'),type.id);assert(doc.querySelectorAll('path').length>0,type.id);
+  }
+  const exported=importSvgStringToShapes(buildLaserSvgString(shapes));
+  assert(exported.every(s=>s.laserMode==='cut' && s.cutStage.startsWith('box-')),type.id);
+  assert(exported.filter(s=>s.cutStage==='box-outline').length===model.parts.length,type.id);
+  const preview=new DOMParser().parseFromString(renderShapesPreviewSvg(shapes).svgHtml,'image/svg+xml');
+  const labels=[...preview.querySelectorAll('text')];
+  assert(labels.length===model.parts.length,type.id);
+  assert(labels.every(label=>!label.hasAttribute('stroke-dasharray') && label.getAttribute('font-family').includes('system-ui')),type.id);
+ }
 });
 // Dependency injection gives storage tests their own database and legacy key.
 const { createWorkspaceStorage } = await import('../js/storage.js');

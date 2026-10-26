@@ -6,7 +6,13 @@ export const PUZZLE_CUT_STAGES = [
   { id: 'puzzle-outline', name: 'Puslespill 3 – Ytterkontur', color: '#9900ff', order: 6 }
 ];
 
+export const CUT_STAGES = [
+  ...PUZZLE_CUT_STAGES,
+  { id: 'box-holes', name: 'Boks 1 – Hull', color: '#00aaaa', order: 7 },
+  { id: 'box-outline', name: 'Boks 2 – Ytterkonturer', color: '#aa5500', order: 8 }
+];
+
 export function getCutStage(shape) {
   if ((shape.laserMode || 'cut') !== 'cut') return undefined;
-  return PUZZLE_CUT_STAGES.find(stage => stage.id === shape.cutStage);
+  return CUT_STAGES.find(stage => stage.id === shape.cutStage);
 }
