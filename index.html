@@ -4,6 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Bjørnsveen LaserStudio – Vektorverktøy for CO2- og UV-laser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Alfa+Slab+One&family=Amatic+SC:wght@700&family=Anton&family=Bangers&family=Bebas+Neue&family=Black+Ops+One&family=Caveat:wght@700&family=Cinzel:wght@700;900&family=Dancing+Script:wght@700&family=Fredoka:wght@600;700&family=Great+Vibes&family=Lobster&family=Montserrat:wght@700;900&family=Orbitron:wght@700;900&family=Oswald:wght@700&family=Pacifico&family=Permanent+Marker&family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Press+Start+2P&family=Righteous&family=Rye&family=Satisfy&family=Special+Elite&family=Stardos+Stencil:wght@700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -332,7 +335,7 @@
           <div class="prop-field">
             <label for="prop-rot">Rotasjon</label>
             <div class="input-with-unit">
-              <input type="text" inputmode="decimal" id="prop-rot" class="input-control math-input" placeholder="f.eks. 360/8" disabled />
+              <input type="text" inputmode="decimal" id="prop-rot" class="input-control math-input" placeholder="f.eks. 45" disabled />
               <span class="unit">°</span>
             </div>
           </div>
@@ -341,6 +344,16 @@
               <input type="checkbox" id="prop-lock-aspect" />
               <span>🔒 Lås forhold (B/H)</span>
             </label>
+          </div>
+          <div class="prop-field full-width" style="margin-top: 2px;">
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <span style="font-size: 10.5px; color: var(--text-muted); margin-right: 2px;">Hurtig-roter:</span>
+              <button type="button" class="btn" data-quick-rot="-90" style="flex: 1; padding: 3px 4px; font-size: 11px;" title="Roter 90° mot klokken">↺ −90°</button>
+              <button type="button" class="btn" data-quick-rot="-45" style="flex: 1; padding: 3px 4px; font-size: 11px;" title="Roter 45° mot klokken">↺ −45°</button>
+              <button type="button" class="btn" data-quick-rot="45" style="flex: 1; padding: 3px 4px; font-size: 11px;" title="Roter 45° med klokken">↻ +45°</button>
+              <button type="button" class="btn" data-quick-rot="90" style="flex: 1; padding: 3px 4px; font-size: 11px;" title="Roter 90° med klokken">↻ +90°</button>
+              <button type="button" class="btn" data-quick-rot="reset" style="padding: 3px 6px; font-size: 11px;" title="Nullstill rotasjon til 0°">0°</button>
+            </div>
           </div>
         </div>
 
@@ -399,7 +412,8 @@
       <!-- 2. TEXT PROPERTIES (Shown when text tool active or text shape selected) -->
       <section id="text-inspector-section" class="panel-section" style="display: none;">
         <div class="panel-section-header">
-          <div class="panel-section-title">🔤 Tekst &amp; Laser-fonter</div>
+          <div class="panel-section-title">🔤 Tekst, Fonter &amp; Tekst langs form</div>
+          <span style="font-size: 10.5px; color: #38bdf8; font-weight: 600;">31 fonter</span>
         </div>
         <div class="prop-grid">
           <div class="prop-field full-width">
@@ -407,15 +421,9 @@
             <input type="text" id="text-content-input" class="input-control" value="BJØRNSVEEN" placeholder="Skriv tekst her..." />
           </div>
           <div class="prop-field full-width">
-            <label for="text-font-select">Skrifttype (Font)</label>
+            <label for="text-font-select">Skrifttype (31 kategoriserte fonter)</label>
             <select id="text-font-select" class="select-control">
-              <option value="stencil">✂️ Laser Sjablong (Stencil – Faller ikke ut ved kutt!)</option>
-              <option value="singleline">⚡ Laser Enkelstreg (10x raskere Score-linje!)</option>
-              <option value="sans-bold" selected>Moderne Kraftig (Arial Black / Impact)</option>
-              <option value="rounded">Avrundet Skiltfont (Trebuchet / Rund)</option>
-              <option value="serif">Klassisk Dørskilt (Georgia / Serif)</option>
-              <option value="mono">Teknisk Blokkschrift (Monospace)</option>
-              <option value="script">Dekor / Kursiv (Snell / Apple Chancery)</option>
+              <option value="sans-bold" selected>Moderne Kraftig (Montserrat / Arial Black)</option>
             </select>
           </div>
           <div class="prop-field">
@@ -433,8 +441,53 @@
             </div>
           </div>
           <div class="prop-field full-width">
-            <label for="text-curve-input">Buet tekst (0 = rett linje, + = bue opp, − = bue ned)</label>
-            <input type="range" id="text-curve-input" min="-100" max="100" value="0" step="5" />
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label for="text-curve-input">Buet tekst / Sirkelbue</label>
+              <span id="text-curve-val-label" style="font-size: 11px; color: #38bdf8; font-weight: 600;">0° (Rett)</span>
+            </div>
+            <input type="range" id="text-curve-input" min="-180" max="180" value="0" step="2" />
+            <div style="display: flex; gap: 4px; margin-top: 4px;">
+              <button type="button" class="btn" data-curve-preset="0" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">Rett (0°)</button>
+              <button type="button" class="btn" data-curve-preset="55" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">⌒ Bue opp</button>
+              <button type="button" class="btn" data-curve-preset="-55" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">⌣ Bue ned</button>
+              <button type="button" class="btn" data-curve-preset="180" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">⭕ Hel sirkel</button>
+            </div>
+          </div>
+
+          <!-- TEXT ALONG ANY SHAPE / CIRCLE / OUTLINE -->
+          <div class="prop-field full-width" style="margin-top: 4px; padding: 8px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <span style="font-size: 11.5px; font-weight: 700; color: #38bdf8;">🔄 Følg omriss / form (Sirkel, Hjerte, Linje)</span>
+              <span id="text-path-status" style="font-size: 10.5px; color: var(--text-muted);">Ikke festet</span>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" id="btn-bind-text-to-shape" class="btn btn-primary" style="flex: 1; font-size: 11.5px; padding: 5px 8px;" title="Klikk her og velg en sirkel, bue, hjerte eller form på platen som teksten skal følge!">
+                🔗 Fest tekst til form / sirkel...
+              </button>
+              <button type="button" id="btn-unbind-text-path" class="btn btn-danger" style="display: none; font-size: 11px; padding: 5px 8px;" title="Frigjør teksten fra formen">
+                ✕ Frigjør
+              </button>
+            </div>
+            <div id="text-path-controls" style="display: none; margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--border-color);">
+              <div class="prop-field" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between;">
+                  <label for="text-path-offset">Plassering langs omriss</label>
+                  <span id="text-path-offset-label" style="font-size: 10.5px; color: #38bdf8;">0%</span>
+                </div>
+                <input type="range" id="text-path-offset" min="-100" max="100" value="0" step="1" />
+              </div>
+              <div class="prop-field" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between;">
+                  <label for="text-path-normal-offset">Avstand fra strek/kant (mm)</label>
+                  <span id="text-path-normal-label" style="font-size: 10.5px; color: #38bdf8;">0 mm</span>
+                </div>
+                <input type="range" id="text-path-normal-offset" min="-25" max="25" value="0" step="0.5" />
+              </div>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11.5px; color: var(--text-main);">
+                <input type="checkbox" id="text-path-flip" />
+                <span>🔄 Vend innside / motsatt retning</span>
+              </label>
+            </div>
           </div>
         </div>
       </section>

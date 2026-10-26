@@ -1,9 +1,9 @@
 // ============================================================================
-// Bjørnsveen LaserStudio – Laser Font & Text-to-Path Engine
+// Bjørnsveen LaserStudio – Laser Font, Rich Typography & Text-on-Path Engine
 // Includes:
-// 1. Single-Line Score Font ("Laser Enkelstreg") for 10x faster scoring
-// 2. Stencil Font ("Laser Sjablong") with bridges so islands (O, A, B, D, P, R, Å, Ø) never fall out!
-// 3. High-Resolution Subpixel Vectorizer for all system/display fonts + Curved Text
+// 1. 30+ Categorized Fonts (Laser Stencil, Single-Line Score, Sans, Serif, Script, Gaming/Theme)
+// 2. Ultra-Smooth Subpixel Vectorizer (Gaussian-filtered SDF + corner-preserving curve smoothing)
+// 3. Text-on-Path Engine: Follow ANY shape outline (Circle, Heart, Sign, Curved Line) or Arc/Ring
 // ============================================================================
 
 import {
@@ -70,24 +70,318 @@ const SINGLE_LINE_GLYPHS = {
   '&': [[[0.95, 1], [0.15, 0.35], [0.15, 0.12], [0.38, 0], [0.62, 0], [0.78, 0.15], [0.78, 0.32], [0.05, 0.68], [0.05, 0.88], [0.28, 1], [0.68, 1], [0.95, 0.65]]]
 };
 
-const FONT_FAMILIES = {
-  'stencil': 'Impact, "Arial Black", sans-serif',
-  'sans-bold': '"Arial Black", Impact, system-ui, sans-serif',
-  'rounded': '"Trebuchet MS", "Arial Rounded MT Bold", system-ui, sans-serif',
-  'serif': 'Georgia, "Times New Roman", serif',
-  'mono': '"Courier New", Menlo, monospace',
-  'script': '"Snell Roundhand", "Apple Chancery", "Brush Script MT", Georgia, cursive'
-};
+export const FONT_CATALOG = [
+  // 1. Laser-Spesial (Sjablong & Enkelstreg)
+  {
+    key: 'stencil',
+    category: '⚡ Laser-spesial (Sjablong & Hurtig-score)',
+    label: '✂️ Laser Sjablong – Kraftig (Faller ikke ut ved kutt!)',
+    family: '"Black Ops One", Impact, "Arial Black", sans-serif',
+    weight: '900',
+    stencil: true
+  },
+  {
+    key: 'stencil-serif',
+    category: '⚡ Laser-spesial (Sjablong & Hurtig-score)',
+    label: '✂️ Laser Sjablong – Militær / Klassisk',
+    family: '"Stardos Stencil", Rockwell, Georgia, serif',
+    weight: '900',
+    stencil: true
+  },
+  {
+    key: 'stencil-round',
+    category: '⚡ Laser-spesial (Sjablong & Hurtig-score)',
+    label: '✂️ Laser Sjablong – Avrundet',
+    family: '"Fredoka", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif',
+    weight: '800',
+    stencil: true
+  },
+  {
+    key: 'singleline',
+    category: '⚡ Laser-spesial (Sjablong & Hurtig-score)',
+    label: '⚡ Laser Enkelstreg (10x raskere Score-linje!)',
+    family: 'monospace',
+    weight: '400',
+    singleLine: true
+  },
+
+  // 2. Moderne & Skilt (Sans-Serif)
+  {
+    key: 'sans-bold',
+    category: '🪧 Moderne & Skilt (Sans-Serif)',
+    label: 'Moderne Kraftig (Montserrat / Arial Black)',
+    family: '"Montserrat", "Arial Black", "Helvetica Neue", sans-serif',
+    weight: '900'
+  },
+  {
+    key: 'impact',
+    category: '🪧 Moderne & Skilt (Sans-Serif)',
+    label: 'Plakat & Overskrift (Anton / Impact)',
+    family: '"Anton", Impact, "Arial Narrow", sans-serif',
+    weight: '900'
+  },
+  {
+    key: 'bebas',
+    category: '🪧 Moderne & Skilt (Sans-Serif)',
+    label: 'Høy & Smal Skiltfont (Bebas Neue / Oswald)',
+    family: '"Bebas Neue", "Oswald", Impact, sans-serif',
+    weight: '800'
+  },
+  {
+    key: 'futura',
+    category: '🪧 Moderne & Skilt (Sans-Serif)',
+    label: 'Geometrisk Design (Futura / Century Gothic)',
+    family: 'Futura, "Century Gothic", "Montserrat", sans-serif',
+    weight: '800'
+  },
+  {
+    key: 'avenir',
+    category: '🪧 Moderne & Skilt (Sans-Serif)',
+    label: 'Nordisk Ren (Avenir Next / Helvetica)',
+    family: '"Avenir Next", Avenir, "Helvetica Neue", sans-serif',
+    weight: '800'
+  },
+  {
+    key: 'rounded',
+    category: '🪧 Moderne & Skilt (Sans-Serif)',
+    label: 'Myk & Avrundet (Fredoka / Arial Rounded)',
+    family: '"Fredoka", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif',
+    weight: '700'
+  },
+  {
+    key: 'righteous',
+    category: '🪧 Moderne & Skilt (Sans-Serif)',
+    label: 'Moderne Dekor / Funky (Righteous / Bauhaus)',
+    family: '"Righteous", Futura, "Arial Rounded MT Bold", sans-serif',
+    weight: '700'
+  },
+  {
+    key: 'gill',
+    category: '🪧 Moderne & Skilt (Sans-Serif)',
+    label: 'Klassisk Skilt (Gill Sans / Trebuchet)',
+    family: '"Gill Sans", "Trebuchet MS", sans-serif',
+    weight: '700'
+  },
+  {
+    key: 'optima',
+    category: '🪧 Moderne & Skilt (Sans-Serif)',
+    label: 'Slank & Elegant (Optima / Candara)',
+    family: 'Optima, Candara, "Segoe UI", sans-serif',
+    weight: '700'
+  },
+  {
+    key: 'verdana',
+    category: '🪧 Moderne & Skilt (Sans-Serif)',
+    label: 'Bred & Ekstra Tydelig (Verdana / Tahoma)',
+    family: 'Verdana, Tahoma, Geneva, sans-serif',
+    weight: '800'
+  },
+
+  // 3. Klassisk, Tradisjon & Hytteskilt (Serif & Slab)
+  {
+    key: 'serif',
+    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
+    label: 'Klassisk Dørskilt (Georgia / Times)',
+    family: 'Georgia, "Times New Roman", serif',
+    weight: '800'
+  },
+  {
+    key: 'cinzel',
+    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
+    label: 'Romersk / Herskapelig (Cinzel / Trajan)',
+    family: '"Cinzel", "Trajan Pro", Copperplate, Georgia, serif',
+    weight: '800'
+  },
+  {
+    key: 'copperplate',
+    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
+    label: 'Støpt Metallskilt (Copperplate Gothic)',
+    family: 'Copperplate, "Cinzel", Georgia, serif',
+    weight: '800'
+  },
+  {
+    key: 'playfair',
+    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
+    label: 'Kontrast & Luksus (Playfair / Didot / Bodoni)',
+    family: '"Playfair Display", "Abril Fatface", Didot, "Bodoni MT", serif',
+    weight: '800'
+  },
+  {
+    key: 'abril',
+    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
+    label: 'Kraftig Fest-Serif (Abril Fatface / Ultra)',
+    family: '"Abril Fatface", "Playfair Display", Georgia, serif',
+    weight: '900'
+  },
+  {
+    key: 'baskerville',
+    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
+    label: 'Tradisjonell Boktrykk (Baskerville / Palatino)',
+    family: 'Baskerville, Palatino, "Palatino Linotype", serif',
+    weight: '700'
+  },
+  {
+    key: 'rockwell',
+    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
+    label: 'Kraftig Verksted / Slab (Alfa Slab / Rockwell)',
+    family: '"Alfa Slab One", Rockwell, "Courier New", serif',
+    weight: '900'
+  },
+  {
+    key: 'western',
+    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
+    label: 'Western / Saloon / Villmark (Rye / Playbill)',
+    family: '"Rye", Playbill, Rockwell, Copperplate, serif',
+    weight: '700'
+  },
+
+  // 4. Kursiv, Håndskrift & Kalligrafi (Script)
+  {
+    key: 'script',
+    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
+    label: 'Elegant Kalligrafi (Great Vibes / Snell Roundhand)',
+    family: '"Great Vibes", "Snell Roundhand", "Zapfino", cursive',
+    weight: '700'
+  },
+  {
+    key: 'pacifico',
+    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
+    label: 'Tykke Penselstrøk – God til utskjæring! (Pacifico / SignPainter)',
+    family: '"Pacifico", "SignPainter", "Brush Script MT", cursive',
+    weight: '700'
+  },
+  {
+    key: 'lobster',
+    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
+    label: 'Retro Kafé-Script (Lobster / Brush Script)',
+    family: '"Lobster", "SignPainter", "Brush Script MT", cursive',
+    weight: '700'
+  },
+  {
+    key: 'dancing',
+    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
+    label: 'Levende Kursiv (Dancing Script / Satisfy)',
+    family: '"Dancing Script", "Satisfy", "Apple Chancery", cursive',
+    weight: '700'
+  },
+  {
+    key: 'chancery',
+    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
+    label: 'Eventyr & Snirkler (Apple Chancery / Cormorant)',
+    family: '"Apple Chancery", "URW Chancery L", Georgia, cursive',
+    weight: '700 italic'
+  },
+  {
+    key: 'caveat',
+    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
+    label: 'Naturlig Håndskrift (Caveat / Bradley Hand)',
+    family: '"Caveat", "Bradley Hand", "Comic Sans MS", cursive',
+    weight: '700'
+  },
+  {
+    key: 'marker',
+    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
+    label: 'Sprittusj / Street Art (Permanent Marker / Marker Felt)',
+    family: '"Permanent Marker", "Marker Felt", "Chalkboard SE", cursive',
+    weight: '700'
+  },
+  {
+    key: 'chalk',
+    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
+    label: 'Tavlekritt / Barnerom (Chalkboard SE / Comic)',
+    family: '"Chalkboard SE", "Comic Sans MS", "Fredoka", cursive',
+    weight: '700'
+  },
+  {
+    key: 'amatic',
+    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
+    label: 'Håndtegnet Smal (Amatic SC / Herculanum)',
+    family: '"Amatic SC", Herculanum, "Marker Felt", sans-serif',
+    weight: '700'
+  },
+
+  // 5. Gaming, Sci-Fi, Viking & Tema
+  {
+    key: 'orbitron',
+    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
+    label: 'Sci-Fi / Cyber / Robot (Orbitron / Eurostile)',
+    family: '"Orbitron", Eurostile, "Bank Gothic", Futura, sans-serif',
+    weight: '900'
+  },
+  {
+    key: 'bangers',
+    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
+    label: 'Tegneserie / Action / Gamer (Bangers / Impact)',
+    family: '"Bangers", Impact, "Arial Black", cursive',
+    weight: '700'
+  },
+  {
+    key: 'pixel',
+    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
+    label: 'Retro Arcade / Minecraft-stil (Press Start 2P)',
+    family: '"Press Start 2P", "Courier New", Menlo, monospace',
+    weight: '700'
+  },
+  {
+    key: 'medieval',
+    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
+    label: 'Viking / Middelalder / Rollespill (Luminari / Trattatello)',
+    family: 'Luminari, Trattatello, Herculanum, "Cinzel", fantasy',
+    weight: '700'
+  },
+  {
+    key: 'typewriter',
+    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
+    label: 'Skrivemaskin / Detektiv (Special Elite / American Typewriter)',
+    family: '"Special Elite", "American Typewriter", "Courier New", monospace',
+    weight: '700'
+  },
+  {
+    key: 'mono',
+    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
+    label: 'Teknisk Maskinskrift (Menlo / Courier Bold)',
+    family: '"Courier New", Menlo, Monaco, monospace',
+    weight: '800'
+  }
+];
+
+const FONT_MAP = Object.fromEntries(FONT_CATALOG.map(f => [f.key, f]));
+
+/**
+ * Generates HTML `<optgroup>` and `<option>` markup for font `<select>` dropdowns.
+ */
+export function getFontOptionsHtml(selectedKey = 'sans-bold') {
+  const groups = new Map();
+  for (const item of FONT_CATALOG) {
+    if (!groups.has(item.category)) groups.set(item.category, []);
+    groups.get(item.category).push(item);
+  }
+  let html = '';
+  for (const [cat, items] of groups.entries()) {
+    html += `<optgroup label="${cat}">`;
+    for (const item of items) {
+      const sel = item.key === selectedKey ? ' selected' : '';
+      html += `<option value="${item.key}"${sel}>${item.label}</option>`;
+    }
+    html += `</optgroup>`;
+  }
+  return html;
+}
 
 /**
  * Generates polygon loops in millimeter coordinates for a text object.
  */
-export function generateTextPolygons( {
+export function generateTextPolygons({
   text = 'BJØRNSVEEN',
   fontKey = 'sans-bold',
   fontSizeMm = 18,
   spacingMm = 1.2,
-  curve = 0
+  curve = 0,
+  customPath = null,
+  customPathClosed = false,
+  pathOffsetPct = 0,
+  pathNormalOffsetMm = 0,
+  pathFlip = false
 } = {}) {
   const cleanText = String(text ?? '').trim();
   if (!cleanText) return [];
@@ -95,15 +389,33 @@ export function generateTextPolygons( {
   const letterGap = Number(spacingMm) || 0;
   const curveVal = Number(curve) || 0;
 
-  // 1. If Single-Line Score font is chosen
-  if (fontKey === 'singleline') {
-    const rawLoops = buildSingleLinePolygons(cleanText, capHeight, letterGap);
-    return curveVal !== 0 ? warpLoopsAlongArc(rawLoops, curveVal) : rawLoops;
+  const fontDef = FONT_MAP[fontKey] || FONT_MAP['sans-bold'];
+
+  // 1. Build flat high-precision loops first
+  let rawLoops;
+  if (fontDef && fontDef.singleLine) {
+    rawLoops = buildSingleLinePolygons(cleanText, capHeight, letterGap);
+  } else {
+    rawLoops = traceCanvasTextToPolygons(cleanText, fontKey, capHeight, letterGap);
+  }
+  if (!rawLoops || rawLoops.length === 0) return [];
+
+  // 2. If bound to a custom shape outline / path (e.g., Circle, Heart, Sign, Curved Line)
+  if (Array.isArray(customPath) && customPath.length >= 2) {
+    return warpLoopsAlongCustomPath(rawLoops, customPath, {
+      closed: Boolean(customPathClosed ?? customPath.closed),
+      offsetPct: Number(pathOffsetPct) || 0,
+      normalOffsetMm: Number(pathNormalOffsetMm) || 0,
+      flip: Boolean(pathFlip)
+    });
   }
 
-  // 2. Render outline font (with automatic stencil bridges if fontKey === 'stencil')
-  const rawLoops = traceCanvasTextToPolygons(cleanText, fontKey, capHeight, letterGap);
-  return curveVal !== 0 ? warpLoopsAlongArc(rawLoops, curveVal) : rawLoops;
+  // 3. Otherwise, if curved via the built-in Arc / Circle slider (-180..+180)
+  if (Math.abs(curveVal) > 0.5) {
+    return warpLoopsAlongArc(rawLoops, curveVal);
+  }
+
+  return rawLoops;
 }
 
 function buildSingleLinePolygons(text, heightMm, spacingMm) {
@@ -121,12 +433,27 @@ function buildSingleLinePolygons(text, heightMm, spacingMm) {
     }
     const strokes = SINGLE_LINE_GLYPHS[ch] || SINGLE_LINE_GLYPHS['O'];
     for (const stroke of strokes) {
-      const loop = stroke.map(([nx, ny]) => ({
-        x: cursorX + nx * charW,
-        y: ny * heightMm
-      }));
-      loop.closed = false;
-      loops.push(loop);
+      // Subdivide segments so single-line characters bend smoothly along curves/circles
+      const pts = [];
+      for (let s = 0; s < stroke.length; s++) {
+        const [nx, ny] = stroke[s];
+        const p = { x: cursorX + nx * charW, y: ny * heightMm };
+        if (s > 0) {
+          const prev = pts[pts.length - 1];
+          const segLen = Math.hypot(p.x - prev.x, p.y - prev.y);
+          const steps = Math.max(1, Math.ceil(segLen / (heightMm * 0.08)));
+          for (let k = 1; k < steps; k++) {
+            const t = k / steps;
+            pts.push({
+              x: prev.x + (p.x - prev.x) * t,
+              y: prev.y + (p.y - prev.y) * t
+            });
+          }
+        }
+        pts.push(p);
+      }
+      pts.closed = false;
+      loops.push(pts);
     }
     cursorX += stepX;
   }
@@ -134,31 +461,114 @@ function buildSingleLinePolygons(text, heightMm, spacingMm) {
 }
 
 /**
- * Renders text onto an offscreen canvas at high DPI, applies stencil bridges if requested,
- * and extracts subpixel vector contours via Marching Squares.
+ * Smooths a 2D scalar field with `passes` iterations of a 3x3 separable [1, 2, 1]/4 tent filter.
+ * Eliminates pixel-grid staircasing on curves and diagonals before Marching Squares contouring!
+ */
+function smoothScalarField2D(field, w, h, passes = 2) {
+  const tmp = new Float32Array(w * h);
+  for (let p = 0; p < passes; p++) {
+    // Horizontal pass [1, 2, 1] / 4
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      tmp[row] = field[row];
+      tmp[row + w - 1] = field[row + w - 1];
+      for (let x = 1; x < w - 1; x++) {
+        const idx = row + x;
+        tmp[idx] = 0.25 * field[idx - 1] + 0.5 * field[idx] + 0.25 * field[idx + 1];
+      }
+    }
+    // Vertical pass [1, 2, 1] / 4
+    for (let x = 0; x < w; x++) {
+      field[x] = tmp[x];
+      field[(h - 1) * w + x] = tmp[(h - 1) * w + x];
+    }
+    for (let y = 1; y < h - 1; y++) {
+      const row = y * w;
+      for (let x = 1; x < w - 1; x++) {
+        const idx = row + x;
+        field[idx] = 0.25 * tmp[idx - w] + 0.5 * tmp[idx] + 0.25 * tmp[idx + w];
+      }
+    }
+  }
+}
+
+/**
+ * Smooths curved/diagonal vertices along a closed polygon while preserving sharp corners (>= 40 deg turn).
+ */
+function smoothPolygonPreservingCorners(loop, iterations = 2) {
+  if (!loop || loop.length < 5) return loop;
+  let pts = loop;
+  const n = pts.length;
+  // cos(38 deg) ≈ 0.788: if dot product > 0.788, turn angle is < 38 deg (smooth curve), so smooth it!
+  const cornerCosThreshold = 0.788;
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const nextPts = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const prev = pts[(i - 1 + n) % n];
+      const curr = pts[i];
+      const next = pts[(i + 1) % n];
+
+      const v1x = curr.x - prev.x;
+      const v1y = curr.y - prev.y;
+      const v2x = next.x - curr.x;
+      const v2y = next.y - curr.y;
+      const l1 = Math.hypot(v1x, v1y);
+      const l2 = Math.hypot(v2x, v2y);
+
+      if (l1 > 1e-6 && l2 > 1e-6) {
+        const cosAngle = (v1x * v2x + v1y * v2y) / (l1 * l2);
+        if (cosAngle > cornerCosThreshold) {
+          nextPts[i] = {
+            x: 0.24 * prev.x + 0.52 * curr.x + 0.24 * next.x,
+            y: 0.24 * prev.y + 0.52 * curr.y + 0.24 * next.y
+          };
+          continue;
+        }
+      }
+      nextPts[i] = curr;
+    }
+    nextPts.closed = loop.closed !== false;
+    pts = nextPts;
+  }
+  return pts;
+}
+
+/**
+ * Renders text onto an offscreen canvas at ultra-high resolution (~210px cap height),
+ * applies stencil bridges if requested, smooths the signed distance field,
+ * and extracts silky-smooth subpixel vector contours via Marching Squares.
  */
 function traceCanvasTextToPolygons(text, fontKey, capHeightMm, spacingMm) {
-  const pxPerMm = clamp(56 / capHeightMm, 2.5, 9); // Fast subpixel resolution (~68px tall letters)
-  const fontPx = Math.round(capHeightMm * pxPerMm * 1.22);
+  if (typeof document === 'undefined') return [];
+
+  const fontDef = FONT_MAP[fontKey] || FONT_MAP['sans-bold'];
+  const family = fontDef ? fontDef.family : '"Montserrat", "Arial Black", sans-serif';
+  const weight = fontDef ? fontDef.weight : '900';
+  const isStencil = Boolean(fontDef && fontDef.stencil) || String(fontKey).startsWith('stencil');
+
+  // High internal font resolution (~210px) so curves and dots over "i" are silky-smooth at any scale!
+  const targetFontPx = 210;
+  const pxPerMm = clamp(targetFontPx / Math.max(1, capHeightMm), 2.5, 40);
+  const fontPx = Math.round(capHeightMm * pxPerMm);
   const spacingPx = spacingMm * pxPerMm;
-  const family = FONT_FAMILIES[fontKey] || FONT_FAMILIES['sans-bold'];
-  const weight = fontKey === 'script' ? 'bold italic' : '900';
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return [];
   ctx.font = `${weight} ${fontPx}px ${family}`;
 
   // Measure characters individually to support exact letter spacing and stencil bridges
   const chars = Array.from(text);
   const charMetrics = chars.map(ch => {
     const m = ctx.measureText(ch);
-    return { ch, width: Math.max(fontPx * 0.25, m.width) };
+    return { ch, width: Math.max(fontPx * 0.2, m.width) };
   });
 
   const totalW = charMetrics.reduce((acc, c) => acc + c.width, 0) + Math.max(0, chars.length - 1) * spacingPx;
-  const pad = Math.ceil(fontPx * 0.35);
-  const cw = Math.max(32, Math.ceil(totalW + pad * 2));
-  const ch = Math.max(32, Math.ceil(fontPx * 1.5 + pad * 2));
+  const pad = Math.ceil(fontPx * 0.42);
+  const cw = clamp(Math.ceil(totalW + pad * 2), 48, 4800);
+  const ch = clamp(Math.ceil(fontPx * 1.65 + pad * 2), 48, 1200);
 
   canvas.width = cw;
   canvas.height = ch;
@@ -170,21 +580,20 @@ function traceCanvasTextToPolygons(text, fontKey, capHeightMm, spacingMm) {
   ctx.fillStyle = '#000000';
   ctx.textBaseline = 'alphabetic';
 
-  const baselineY = pad + fontPx * 0.95;
+  const baselineY = pad + fontPx * 0.98;
   let curX = pad;
 
-  const isStencil = fontKey === 'stencil';
-  const bridgeWidthPx = Math.max(3, fontPx * 0.11);
+  const bridgeWidthPx = Math.max(4, fontPx * 0.105);
 
   for (const item of charMetrics) {
     ctx.fillStyle = '#000000';
     ctx.fillText(item.ch, curX, baselineY);
 
-    // If Stencil font: cut vertical bridge through center of enclosed characters so inner pieces stay attached!
+    // If Stencil font: cut vertical bridge through center of enclosed characters so inner islands stay attached!
     if (isStencil && /[ABDOPQRÆØÅabdopqræøå04689@#%&]/.test(item.ch)) {
       const centerX = curX + item.width * 0.5 - bridgeWidthPx * 0.5;
       ctx.fillStyle = '#ffffff';
-      ctx.fillRect(centerX, baselineY - fontPx * 1.05, bridgeWidthPx, fontPx * 1.25);
+      ctx.fillRect(centerX, baselineY - fontPx * 1.08, bridgeWidthPx, fontPx * 1.32);
     }
 
     curX += item.width + spacingPx;
@@ -194,24 +603,33 @@ function traceCanvasTextToPolygons(text, fontKey, capHeightMm, spacingMm) {
   const field = new Float32Array(cw * ch);
   for (let i = 0; i < cw * ch; i++) {
     // Luminance in [0..255]; <= 128 is inside letter (negative)
-    const r = imgData[i * 4];
-    field[i] = r - 128;
+    field[i] = imgData[i * 4] - 128;
   }
+
+  // Smooth the signed field to eliminate pixel staircasing on curves & diagonals!
+  smoothScalarField2D(field, cw, ch, 2);
 
   const scaleMm = 1 / pxPerMm;
   const rawLoops = marchingSquaresZeroIsoline(field, cw, ch, 0, 0, scaleMm);
   if (!rawLoops || rawLoops.length === 0) return [];
 
-  const simplified = rawLoops
-    .map(loop => simplifyRdpPolygon(loop, 0.08 * (capHeightMm / 18)))
+  // Fine tolerance (0.008mm at 18mm cap height) + corner-preserving curve smoothing
+  const rdpTol = 0.008 * (capHeightMm / 18);
+  const smoothedLoops = rawLoops
+    .map(loop => {
+      const smoothed = smoothPolygonPreservingCorners(loop, 2);
+      return simplifyRdpPolygon(smoothed, rdpTol);
+    })
     .filter(l => l.length >= 3);
 
+  if (smoothedLoops.length === 0) return [];
+
   // Normalize top-left to (0, 0) and scale height to exact requested capHeightMm
-  const bbox = computePolygonsBBox(simplified);
+  const bbox = computePolygonsBBox(smoothedLoops);
   const actualH = Math.max(0.1, bbox.height);
   const scaleFactor = capHeightMm / actualH;
 
-  return simplified.map(loop => {
+  return smoothedLoops.map(loop => {
     const out = loop.map(pt => ({
       x: (pt.x - bbox.x) * scaleFactor,
       y: (pt.y - bbox.y) * scaleFactor
@@ -222,7 +640,41 @@ function traceCanvasTextToPolygons(text, fontKey, capHeightMm, spacingMm) {
 }
 
 /**
- * Warps polygon loops along a circular arc when `curve` != 0 (-100..100).
+ * Subdivides long straight segments in glyph polygons before warping along a curved path or arc
+ * so that flat letter tops/stems bend smoothly along circles and curves!
+ */
+function densifyLoopsForWarping(loops, maxSegMm = 0.6) {
+  return loops.map(loop => {
+    const dense = [];
+    const isClosed = loop.closed !== false;
+    const count = isClosed ? loop.length : loop.length - 1;
+    for (let i = 0; i < count; i++) {
+      const a = loop[i];
+      const b = loop[(i + 1) % loop.length];
+      dense.push(a);
+      const d = Math.hypot(b.x - a.x, b.y - a.y);
+      if (d > maxSegMm) {
+        const steps = Math.min(32, Math.ceil(d / maxSegMm));
+        for (let k = 1; k < steps; k++) {
+          const t = k / steps;
+          dense.push({
+            x: a.x + (b.x - a.x) * t,
+            y: a.y + (b.y - a.y) * t
+          });
+        }
+      }
+    }
+    if (!isClosed && loop.length > 0) {
+      dense.push(loop[loop.length - 1]);
+    }
+    dense.closed = isClosed;
+    return dense;
+  });
+}
+
+/**
+ * Warps polygon loops along a circular arc or full 360° circle when `curve` != 0 (-180..180).
+ * curve = ±100 is ~180° semicircle; curve = ±180 is a full 360° circle!
  */
 function warpLoopsAlongArc(loops, curve) {
   if (!loops || loops.length === 0 || !curve) return loops;
@@ -231,33 +683,219 @@ function warpLoopsAlongArc(loops, curve) {
   const h = Math.max(1, bbox.height);
   const cx = bbox.x + w / 2;
 
-  // Total bend angle up to +-150 degrees
-  const maxAngle = (Math.abs(curve) / 100) * (Math.PI * 0.85);
+  // Map curve in [-180, 180] to bend angle up to 2*PI (full circle at ±180)
+  const clampedCurve = clamp(Number(curve) || 0, -180, 180);
+  const maxAngle = (Math.abs(clampedCurve) / 180) * (Math.PI * 2);
   if (maxAngle < 0.02) return loops;
 
-  const radius = w / maxAngle;
-  const sign = curve > 0 ? 1 : -1;
+  // Add a small gap when wrapping a full circle so first and last letters don't collide
+  const effectiveW = Math.abs(clampedCurve) > 150 ? w + h * 0.55 : w;
+  const radius = effectiveW / maxAngle;
+  const sign = clampedCurve > 0 ? 1 : -1;
 
-  return loops.map(loop => {
+  const denseLoops = densifyLoopsForWarping(loops, clamp(h * 0.05, 0.25, 1.2));
+
+  return denseLoops.map(loop => {
     const warped = loop.map(pt => {
       const dx = pt.x - cx;
       const dy = pt.y - (bbox.y + h / 2);
       const theta = dx / radius;
       if (sign > 0) {
-        // Arch upward (rainbow)
+        // Arch upward (rainbow / top of circle)
         const r = radius - dy;
         return {
           x: cx + Math.sin(theta) * r,
           y: bbox.y + radius - Math.cos(theta) * r
         };
       } else {
-        // Arch downward (smile)
+        // Arch downward (smile / bottom of circle)
         const r = radius + dy;
         return {
           x: cx + Math.sin(theta) * r,
           y: bbox.y - radius + Math.cos(theta) * r
         };
       }
+    });
+    warped.closed = loop.closed !== false;
+    return warped;
+  });
+}
+
+/**
+ * Warps text polygon loops along ANY arbitrary polyline/shape contour `pathPoints`
+ * (e.g., Circle, Ellipse, Heart, Polygon, Rounded Rect, Curved Line, Drawn Path).
+ */
+export function warpLoopsAlongCustomPath(loops, pathPoints, {
+  closed = false,
+  offsetPct = 0,
+  normalOffsetMm = 0,
+  flip = false
+} = {}) {
+  if (!loops || loops.length === 0 || !Array.isArray(pathPoints) || pathPoints.length < 2) {
+    return loops;
+  }
+
+  // 1. Build clean path vertex list and segment arc-length table
+  let pts = pathPoints.map(p => ({ x: Number(p.x) || 0, y: Number(p.y) || 0 }));
+  if (flip) {
+    pts = [...pts].reverse();
+  }
+
+  const segs = [];
+  let totalLen = 0;
+  const segCount = closed ? pts.length : pts.length - 1;
+
+  for (let i = 0; i < segCount; i++) {
+    const a = pts[i];
+    const b = pts[(i + 1) % pts.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-5) continue;
+    segs.push({
+      ax: a.x,
+      ay: a.y,
+      bx: b.x,
+      by: b.y,
+      tx: dx / len,
+      ty: dy / len,
+      startS: totalLen,
+      len
+    });
+    totalLen += len;
+  }
+
+  if (segs.length === 0 || totalLen < 0.5) return loops;
+
+  // Compute smoothed vertex tangents so letters don't kink sharply across polygon/circle vertices
+  const nSegs = segs.length;
+  for (let i = 0; i < nSegs; i++) {
+    const prevSeg = closed ? segs[(i - 1 + nSegs) % nSegs] : segs[Math.max(0, i - 1)];
+    const currSeg = segs[i];
+    const nextSeg = closed ? segs[(i + 1) % nSegs] : segs[Math.min(nSegs - 1, i + 1)];
+
+    let t0x = prevSeg.tx + currSeg.tx;
+    let t0y = prevSeg.ty + currSeg.ty;
+    const l0 = Math.hypot(t0x, t0y) || 1;
+    currSeg.t0x = t0x / l0;
+    currSeg.t0y = t0y / l0;
+
+    let t1x = currSeg.tx + nextSeg.tx;
+    let t1y = currSeg.ty + nextSeg.ty;
+    const l1 = Math.hypot(t1x, t1y) || 1;
+    currSeg.t1x = t1x / l1;
+    currSeg.t1y = t1y / l1;
+  }
+
+  // Determine winding orientation of closed path so outward normal points outside the shape by default
+  let signedArea2 = 0;
+  if (closed && pts.length >= 3) {
+    for (let i = 0; i < pts.length; i++) {
+      const p1 = pts[i];
+      const p2 = pts[(i + 1) % pts.length];
+      signedArea2 += p1.x * p2.y - p2.x * p1.y;
+    }
+  }
+  // In SVG coordinates (Y down), clockwise (signedArea2 > 0) has outward normal (ty, -tx)
+  const normalSign = flip ? -1 : (closed && signedArea2 < 0 ? -1 : 1);
+
+  // Sample position, smoothed tangent, and outward normal at arc-length `s`
+  const sampleAtArcLength = (sInput) => {
+    let s = sInput;
+    if (closed) {
+      s = ((s % totalLen) + totalLen) % totalLen;
+    } else {
+      if (s <= 0) {
+        const first = segs[0];
+        const nx = first.ty * normalSign;
+        const ny = -first.tx * normalSign;
+        return {
+          x: first.ax + first.tx * s,
+          y: first.ay + first.ty * s,
+          nx,
+          ny
+        };
+      }
+      if (s >= totalLen) {
+        const last = segs[nSegs - 1];
+        const extra = s - totalLen;
+        const nx = last.ty * normalSign;
+        const ny = -last.tx * normalSign;
+        return {
+          x: last.bx + last.tx * extra,
+          y: last.by + last.ty * extra,
+          nx,
+          ny
+        };
+      }
+    }
+
+    // Binary search for segment containing s
+    let lo = 0;
+    let hi = nSegs - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (segs[mid].startS + segs[mid].len < s) lo = mid + 1;
+      else hi = mid;
+    }
+    const seg = segs[lo];
+    const t = clamp((s - seg.startS) / seg.len, 0, 1);
+    const px = seg.ax + (seg.bx - seg.ax) * t;
+    const py = seg.ay + (seg.by - seg.ay) * t;
+
+    // Interpolate tangent only near segment ends if angle change is gentle (< 35 deg)
+    const dotEnds = seg.t0x * seg.t1x + seg.t0y * seg.t1y;
+    let tx = seg.tx;
+    let ty = seg.ty;
+    if (dotEnds > 0.82) {
+      tx = seg.t0x * (1 - t) + seg.t1x * t;
+      ty = seg.t0y * (1 - t) + seg.t1y * t;
+      const tl = Math.hypot(tx, ty) || 1;
+      tx /= tl;
+      ty /= tl;
+    }
+
+    const nx = ty * normalSign;
+    const ny = -tx * normalSign;
+    return { x: px, y: py, nx, ny };
+  };
+
+  const bbox = computePolygonsBBox(loops);
+  const textCx = bbox.x + bbox.width / 2;
+  const baselineY = bbox.y + bbox.height; // Bottom of letters sits on the path outline!
+
+  // Where along the path should the center of the text sit?
+  // For closed shapes (like a Circle): start at the top-center of the shape by default, plus offsetPct!
+  let anchorS = totalLen * 0.5;
+  if (closed) {
+    // Find the point on the closed loop with the minimum Y (top-most point of circle/heart/sign)
+    let bestS = 0;
+    let minY = Infinity;
+    let bestX = 0;
+    for (const seg of segs) {
+      if (seg.ay < minY || (Math.abs(seg.ay - minY) < 0.5 && Math.abs(seg.ax) < Math.abs(bestX))) {
+        minY = seg.ay;
+        bestX = seg.ax;
+        bestS = seg.startS;
+      }
+    }
+    anchorS = bestS + (offsetPct / 100) * totalLen;
+  } else {
+    anchorS = totalLen * clamp(0.5 + offsetPct / 100, 0, 1);
+  }
+
+  const denseLoops = densifyLoopsForWarping(loops, clamp(bbox.height * 0.05, 0.25, 1.0));
+
+  return denseLoops.map(loop => {
+    const warped = loop.map(pt => {
+      const s = anchorS + (pt.x - textCx);
+      // Distance above the text baseline (positive = upward toward top of letter)
+      const heightAboveBaseline = (baselineY - pt.y) + normalOffsetMm;
+      const sample = sampleAtArcLength(s);
+      return {
+        x: sample.x + sample.nx * heightAboveBaseline,
+        y: sample.y + sample.ny * heightAboveBaseline
+      };
     });
     warped.closed = loop.closed !== false;
     return warped;
@@ -275,18 +913,43 @@ export function createTextShape({
   fontSizeMm = 18,
   spacingMm = 1.2,
   curve = 0,
+  customPath = null,
+  customPathClosed = false,
+  customPathSourceId = null,
+  customPathSourceName = null,
+  pathOffsetPct = 0,
+  pathNormalOffsetMm = 0,
+  pathFlip = false,
   laserMode = 'engrave'
 } = {}) {
-  const loops = generateTextPolygons({ text, fontKey, fontSizeMm, spacingMm, curve });
-  const rawBBox = computePolygonsBBox(loops);
-  const shiftedLoops = loops.map(loop => {
-    const s = loop.map(pt => ({
-      x: pt.x - rawBBox.x + x,
-      y: pt.y - rawBBox.y + y
-    }));
-    s.closed = loop.closed !== false;
-    return s;
+  const loops = generateTextPolygons({
+    text,
+    fontKey,
+    fontSizeMm,
+    spacingMm,
+    curve,
+    customPath,
+    customPathClosed,
+    pathOffsetPct,
+    pathNormalOffsetMm,
+    pathFlip
   });
+
+  const rawBBox = computePolygonsBBox(loops);
+  const hasCustomPath = Array.isArray(customPath) && customPath.length >= 2;
+
+  // When bound to a custom shape on the canvas, keep world coordinates aligned with that shape!
+  const shiftedLoops = hasCustomPath
+    ? loops
+    : loops.map(loop => {
+        const s = loop.map(pt => ({
+          x: pt.x - rawBBox.x + x,
+          y: pt.y - rawBBox.y + y
+        }));
+        s.closed = loop.closed !== false;
+        return s;
+      });
+
   const bbox = computePolygonsBBox(shiftedLoops);
   const d = polygonsToSvgPath(shiftedLoops, 3);
 
@@ -312,7 +975,14 @@ export function createTextShape({
       fontKey,
       fontSizeMm,
       spacingMm,
-      curve
+      curve,
+      customPath: hasCustomPath ? customPath : null,
+      customPathClosed: Boolean(customPathClosed),
+      customPathSourceId: customPathSourceId || null,
+      customPathSourceName: customPathSourceName || null,
+      pathOffsetPct: Number(pathOffsetPct) || 0,
+      pathNormalOffsetMm: Number(pathNormalOffsetMm) || 0,
+      pathFlip: Boolean(pathFlip)
     }
   };
 }
@@ -336,6 +1006,8 @@ export function updateTextShape(shape, newMeta) {
     laserMode: shape.laserMode
   });
   shape.name = rebuilt.name;
+  shape.x = rebuilt.x;
+  shape.y = rebuilt.y;
   shape.width = rebuilt.width;
   shape.height = rebuilt.height;
   shape.d = rebuilt.d;

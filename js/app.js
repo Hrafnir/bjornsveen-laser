@@ -25,7 +25,8 @@ import {
 
 import {
   createTextShape,
-  updateTextShape
+  updateTextShape,
+  getFontOptionsHtml
 } from './fonts.js';
 
 import {
@@ -98,6 +99,7 @@ const state = {
   spacePressed: false,
   curveModeDefault: false,
   editingGroupId: null,
+  pickingPathForTextId: null,
 
   // Modal state
   activeGeneratorTab: 'box',
@@ -151,12 +153,35 @@ function initApp() {
   }
 
   updateBedDimensionsUI();
+  const fontSelectEl = document.getElementById('text-font-select');
+  if (fontSelectEl) {
+    fontSelectEl.innerHTML = getFontOptionsHtml('sans-bold');
+  }
   bindHeaderEvents();
   bindToolbarEvents();
   bindCanvasEvents();
   bindInspectorEvents();
   bindModalEvents();
   bindKeyboardShortcuts();
+
+  // Re-vectorize text shapes once Google Web Fonts finish loading
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      let updatedAny = false;
+      const refreshTextRecursive = (list) => {
+        for (const s of list) {
+          if (s.type === 'text' && s.textMeta) {
+            updateTextShape(s, s.textMeta);
+            updatedAny = true;
+          } else if (s.type === 'group' && Array.isArray(s.children)) {
+            refreshTextRecursive(s.children);
+          }
+        }
+      };
+      refreshTextRecursive(state.shapes);
+      if (updatedAny) renderAll();
+    });
+  }
 
   window.addEventListener('resize', () => {
     fitBedToViewport();
@@ -680,6 +705,32 @@ function renderOverlay() {
         overlayLayerEl.appendChild(c);
       }
 
+      // Also show a rotation handle above the line's midpoint so lines can be rotated by dragging too!
+      const lineCx = (x1 + x2) / 2;
+      const lineCy = (y1 + y2) / 2;
+      const rotHandleY = Math.min(y1, y2, midY) - unit * 18;
+      const rotStem = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      rotStem.setAttribute('x1', lineCx);
+      rotStem.setAttribute('y1', lineCy);
+      rotStem.setAttribute('x2', lineCx);
+      rotStem.setAttribute('y2', rotHandleY);
+      rotStem.setAttribute('stroke', 'rgba(14, 165, 233, 0.55)');
+      rotStem.setAttribute('stroke-width', String(unit * 1.1));
+      rotStem.setAttribute('stroke-dasharray', `${unit * 2.5},${unit * 2}`);
+      rotStem.setAttribute('pointer-events', 'none');
+      overlayLayerEl.appendChild(rotStem);
+
+      const lineRotCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      lineRotCircle.setAttribute('cx', lineCx);
+      lineRotCircle.setAttribute('cy', rotHandleY);
+      lineRotCircle.setAttribute('r', String(unit * 4.4));
+      lineRotCircle.setAttribute('fill', '#38bdf8');
+      lineRotCircle.setAttribute('stroke', '#0f172a');
+      lineRotCircle.setAttribute('stroke-width', String(unit * 1.4));
+      lineRotCircle.style.cursor = 'grab';
+      lineRotCircle.dataset.handle = 'rotate';
+      overlayLayerEl.appendChild(lineRotCircle);
+
       appendCanvasBadge(
         (x1 + x2) / 2,
         Math.max(y1, y2, midY) + unit * 15,
@@ -687,9 +738,34 @@ function renderOverlay() {
         unit
       );
     } else {
-      const bbox = single && !single.rotation && single.type !== 'group'
+      // If a text shape is bound to a custom path/shape, draw a subtle guide along that path
+      if (single && single.type === 'text' && Array.isArray(single.textMeta?.customPath) && single.textMeta.customPath.length >= 2) {
+        const cp = single.textMeta.customPath;
+        const closed = Boolean(single.textMeta.customPathClosed);
+        const guideD = cp.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ') + (closed ? ' Z' : '');
+        const guideEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        guideEl.setAttribute('d', guideD);
+        guideEl.setAttribute('fill', 'none');
+        guideEl.setAttribute('stroke', '#38bdf8');
+        guideEl.setAttribute('stroke-width', String(unit * 1.2));
+        guideEl.setAttribute('stroke-dasharray', `${unit * 3.5},${unit * 2.5}`);
+        guideEl.setAttribute('pointer-events', 'none');
+        overlayLayerEl.appendChild(guideEl);
+      }
+
+      const useLocalRotatedBox = Boolean(single && single.type !== 'group');
+      const bbox = useLocalRotatedBox
         ? { x: single.x, y: single.y, width: single.width, height: single.height }
         : getShapesBBox(selected);
+      const rotDeg = useLocalRotatedBox ? (Number(single.rotation) || 0) : 0;
+      const boxCx = bbox.x + bbox.width / 2;
+      const boxCy = bbox.y + bbox.height / 2;
+
+      const handleGroupEl = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      if (rotDeg) {
+        handleGroupEl.setAttribute('transform', `rotate(${rotDeg} ${boxCx} ${boxCy})`);
+      }
+      overlayLayerEl.appendChild(handleGroupEl);
 
       // Selection bounding rect
       const selRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -702,14 +778,17 @@ function renderOverlay() {
       selRect.setAttribute('stroke-width', String(unit * 1.3));
       selRect.setAttribute('stroke-dasharray', `${unit * 4},${unit * 2.5}`);
       selRect.setAttribute('pointer-events', 'none');
-      overlayLayerEl.appendChild(selRect);
+      handleGroupEl.appendChild(selRect);
 
-      // Dimension readout pill below selection
-      const dimText = `${roundMm(bbox.width, 1)} × ${roundMm(bbox.height, 1)} mm`;
-      appendCanvasBadge(bbox.x + bbox.width / 2, bbox.y + bbox.height + unit * 14, dimText, unit);
+      // Dimension readout pill below selection (unrotated so text is always upright)
+      const worldBBox = rotDeg ? getShapesBBox(selected) : bbox;
+      const rotSuffix = rotDeg ? ` • ↻ ${roundMm(rotDeg, 1)}°` : '';
+      const dimText = `${roundMm(bbox.width, 1)} × ${roundMm(bbox.height, 1)} mm${rotSuffix}`;
+      appendCanvasBadge(worldBBox.x + worldBBox.width / 2, worldBBox.y + worldBBox.height + unit * 14, dimText, unit);
 
-      // 8 Resize Handles
-      if (single && !single.locked) {
+      // 8 Resize Handles & Rotation Handle (Available for single shape, group, AND multi-selection!)
+      const anyLocked = selected.some(s => s.locked);
+      if (!anyLocked) {
         const hSize = unit * 7.5;
         const handles = [
           { id: 'nw', x: bbox.x, y: bbox.y, cursor: 'nwse-resize' },
@@ -734,10 +813,10 @@ function renderOverlay() {
           r.setAttribute('stroke-width', String(unit * 1.4));
           r.style.cursor = h.cursor;
           r.dataset.handle = h.id;
-          overlayLayerEl.appendChild(r);
+          handleGroupEl.appendChild(r);
         }
 
-        // Rotation handle above top-center
+        // Rotation handle above top-center (rotates with handleGroupEl!)
         const rotY = bbox.y - unit * 18;
         const rotCx = bbox.x + bbox.width / 2;
         const stem = document.createElementNS('http://www.w3.org/2000/svg', 'line');
@@ -747,21 +826,21 @@ function renderOverlay() {
         stem.setAttribute('y2', rotY);
         stem.setAttribute('stroke', '#0ea5e9');
         stem.setAttribute('stroke-width', String(unit * 1.3));
-        overlayLayerEl.appendChild(stem);
+        handleGroupEl.appendChild(stem);
 
         const rotCircle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         rotCircle.setAttribute('cx', rotCx);
         rotCircle.setAttribute('cy', rotY);
-        rotCircle.setAttribute('r', String(unit * 4.5));
+        rotCircle.setAttribute('r', String(unit * 4.8));
         rotCircle.setAttribute('fill', '#38bdf8');
         rotCircle.setAttribute('stroke', '#0f172a');
         rotCircle.setAttribute('stroke-width', String(unit * 1.4));
         rotCircle.style.cursor = 'grab';
         rotCircle.dataset.handle = 'rotate';
-        overlayLayerEl.appendChild(rotCircle);
+        handleGroupEl.appendChild(rotCircle);
 
         // If this is a drawn path with editable nodes and curve/node handles are enabled:
-        if (single.type === 'path' && Array.isArray(single.nodes) && single.nodes.length >= 2) {
+        if (single && single.type === 'path' && Array.isArray(single.nodes) && single.nodes.length >= 2) {
           for (let idx = 0; idx < single.nodes.length; idx++) {
             const np = single.nodes[idx];
             const nc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
@@ -773,7 +852,7 @@ function renderOverlay() {
             nc.setAttribute('stroke-width', String(unit * 1.2));
             nc.style.cursor = 'pointer';
             nc.dataset.handle = `node-${idx}`;
-            overlayLayerEl.appendChild(nc);
+            handleGroupEl.appendChild(nc);
           }
         }
       }
@@ -972,13 +1051,76 @@ function renderInspector() {
     }
   };
 
+  const setValIfNotFocused = (el, val) => {
+    if (el && document.activeElement !== el) {
+      el.value = val;
+    }
+  };
+
+  // Helper to populate Text Inspector for a given text shape
+  const populateTextInspectorFor = (textShape) => {
+    if (!textShape || textShape.type !== 'text' || !textShape.textMeta) return;
+    textSection.style.display = 'block';
+    const meta = textShape.textMeta;
+    setValIfNotFocused(document.getElementById('text-content-input'), meta.text ?? '');
+    const fontSel = document.getElementById('text-font-select');
+    if (fontSel && meta.fontKey) fontSel.value = meta.fontKey;
+    setValIfNotFocused(document.getElementById('text-size-input'), meta.fontSizeMm || 18);
+    setValIfNotFocused(document.getElementById('text-spacing-input'), meta.spacingMm ?? 1.2);
+
+    const curveVal = Number(meta.curve) || 0;
+    const curveSlider = document.getElementById('text-curve-input');
+    if (curveSlider) curveSlider.value = String(curveVal);
+    const curveLbl = document.getElementById('text-curve-val-label');
+    if (curveLbl) {
+      if (Math.abs(curveVal) < 1) curveLbl.textContent = '0° (Rett)';
+      else if (Math.abs(curveVal) >= 175) curveLbl.textContent = `${curveVal > 0 ? '+' : ''}${curveVal}° (Hel sirkel)`;
+      else curveLbl.textContent = `${curveVal > 0 ? '+' : ''}${curveVal}°`;
+    }
+
+    const hasPath = Array.isArray(meta.customPath) && meta.customPath.length >= 2;
+    const statusEl = document.getElementById('text-path-status');
+    const unbindBtn = document.getElementById('btn-unbind-text-path');
+    const pathCtrls = document.getElementById('text-path-controls');
+    const bindBtn = document.getElementById('btn-bind-text-to-shape');
+
+    if (state.pickingPathForTextId === textShape.id) {
+      if (statusEl) statusEl.textContent = '🎯 Klikk på en form...';
+      if (bindBtn) bindBtn.textContent = '🎯 Klikk på sirkel/form på platen... (Esc avbryter)';
+    } else if (hasPath) {
+      if (statusEl) statusEl.textContent = `✓ Følger: ${meta.customPathSourceName || 'Form'}`;
+      if (bindBtn) bindBtn.textContent = '🔄 Bytt form / sirkel...';
+    } else {
+      if (statusEl) statusEl.textContent = 'Ikke festet';
+      if (bindBtn) bindBtn.textContent = '🔗 Fest tekst til form / sirkel...';
+    }
+
+    if (unbindBtn) unbindBtn.style.display = hasPath ? 'inline-flex' : 'none';
+    if (pathCtrls) pathCtrls.style.display = hasPath ? 'block' : 'none';
+
+    if (hasPath) {
+      const offPct = Number(meta.pathOffsetPct) || 0;
+      const normMm = Number(meta.pathNormalOffsetMm) || 0;
+      const offInput = document.getElementById('text-path-offset');
+      const normInput = document.getElementById('text-path-normal-offset');
+      const flipInput = document.getElementById('text-path-flip');
+      if (offInput) offInput.value = String(offPct);
+      if (normInput) normInput.value = String(normMm);
+      if (flipInput) flipInput.checked = Boolean(meta.pathFlip);
+      const offLbl = document.getElementById('text-path-offset-label');
+      const normLbl = document.getElementById('text-path-normal-label');
+      if (offLbl) offLbl.textContent = `${offPct > 0 ? '+' : ''}${roundMm(offPct, 0)}%`;
+      if (normLbl) normLbl.textContent = `${normMm > 0 ? '+' : ''}${roundMm(normMm, 1)} mm`;
+    }
+  };
+
   if (selected.length === 0) {
     badge.textContent = editingGroup ? `Inni: ${editingGroup.name}` : 'Ingen valgt';
-    propX.value = '';
-    propY.value = '';
-    propW.value = '';
-    propH.value = '';
-    propRot.value = '';
+    setValIfNotFocused(propX, '');
+    setValIfNotFocused(propY, '');
+    setValIfNotFocused(propW, '');
+    setValIfNotFocused(propH, '');
+    setValIfNotFocused(propRot, '');
     propX.disabled = propY.disabled = propW.disabled = propH.disabled = propRot.disabled = true;
 
     const showCurveForTool = state.activeTool === 'line' || state.activeTool === 'pen';
@@ -1001,11 +1143,10 @@ function renderInspector() {
   if (selected.length === 1) {
     const s = selected[0];
     badge.textContent = s.name || s.type;
-    propX.value = roundMm(s.x, 2);
-    propY.value = roundMm(s.y, 2);
-    propW.value = roundMm(s.width, 2);
-    propH.value = roundMm(s.height, 2);
-    propRot.value = roundMm(s.rotation || 0, 1);
+    setValIfNotFocused(propX, roundMm(s.x, 2));
+    setValIfNotFocused(propY, roundMm(s.y, 2));
+    setValIfNotFocused(propW, roundMm(s.width, 2));
+    setValIfNotFocused(propH, roundMm(s.height, 2));
 
     // Highlight active laser mode button in bottom dock
     syncLaserModeDockUI(s.laserMode);
@@ -1025,14 +1166,17 @@ function renderInspector() {
     lineWrap.style.display = isLine ? 'grid' : 'none';
     curveWrap.style.display = hasCurveToggle ? 'block' : 'none';
 
-    if (isRect) document.getElementById('prop-rx').value = roundMm(s.rx || 0, 1);
-    if (isPolyOrStar) document.getElementById('prop-sides').value = s.sides || 5;
-    if (isStar) document.getElementById('prop-inner-ratio').value = s.innerRatio || 42;
+    if (isRect) setValIfNotFocused(document.getElementById('prop-rx'), roundMm(s.rx || 0, 1));
+    if (isPolyOrStar) setValIfNotFocused(document.getElementById('prop-sides'), s.sides || 5);
+    if (isStar) setValIfNotFocused(document.getElementById('prop-inner-ratio'), s.innerRatio || 42);
     if (isLine) {
       const len = Math.hypot((s.x2 || 0) - (s.x1 || 0), (s.y2 || 0) - (s.y1 || 0));
       const ang = Math.atan2((s.y2 || 0) - (s.y1 || 0), (s.x2 || 0) - (s.x1 || 0)) * (180 / Math.PI);
-      document.getElementById('prop-line-len').value = roundMm(len, 2);
-      document.getElementById('prop-line-angle').value = roundMm(ang, 1);
+      setValIfNotFocused(document.getElementById('prop-line-len'), roundMm(len, 2));
+      setValIfNotFocused(document.getElementById('prop-line-angle'), roundMm(ang, 1));
+      setValIfNotFocused(propRot, roundMm(ang, 1));
+    } else {
+      setValIfNotFocused(propRot, roundMm(s.rotation || 0, 1));
     }
     if (hasCurveToggle) {
       curveToggle.checked = Boolean(s.curved ?? state.curveModeDefault);
@@ -1041,21 +1185,7 @@ function renderInspector() {
 
     // Text inspector
     if (s.type === 'text' && s.textMeta) {
-      textSection.style.display = 'block';
-      const textInput = document.getElementById('text-content-input');
-      if (document.activeElement !== textInput) {
-        textInput.value = s.textMeta.text ?? '';
-      }
-      document.getElementById('text-font-select').value = s.textMeta.fontKey || 'sans-bold';
-      const sizeInput = document.getElementById('text-size-input');
-      if (document.activeElement !== sizeInput) {
-        sizeInput.value = s.textMeta.fontSizeMm || 18;
-      }
-      const spacingInput = document.getElementById('text-spacing-input');
-      if (document.activeElement !== spacingInput) {
-        spacingInput.value = s.textMeta.spacingMm ?? 1.2;
-      }
-      document.getElementById('text-curve-input').value = s.textMeta.curve || 0;
+      populateTextInspectorFor(s);
     } else {
       textSection.style.display = state.activeTool === 'text' ? 'block' : 'none';
     }
@@ -1064,13 +1194,20 @@ function renderInspector() {
   } else {
     badge.textContent = `${selected.length} objekter valgt`;
     const bbox = getShapesBBox(selected);
-    propX.value = roundMm(bbox.x, 2);
-    propY.value = roundMm(bbox.y, 2);
-    propW.value = roundMm(bbox.width, 2);
-    propH.value = roundMm(bbox.height, 2);
-    propRot.value = 0;
+    setValIfNotFocused(propX, roundMm(bbox.x, 2));
+    setValIfNotFocused(propY, roundMm(bbox.y, 2));
+    setValIfNotFocused(propW, roundMm(bbox.width, 2));
+    setValIfNotFocused(propH, roundMm(bbox.height, 2));
+    setValIfNotFocused(propRot, 0);
     shapeSpecificWrap.style.display = 'none';
-    textSection.style.display = 'none';
+
+    // If 1 text shape + 1 target shape are selected together, keep Text Inspector visible so user can click "Fest tekst til form"!
+    const selectedText = selected.find(item => item.type === 'text' && item.textMeta);
+    if (selectedText && selected.length === 2) {
+      populateTextInspectorFor(selectedText);
+    } else {
+      textSection.style.display = 'none';
+    }
     const selectedGroup = selected.find(item => item.type === 'group');
     renderGroupInspectorFor(editingGroup || selectedGroup || null);
   }
@@ -1334,20 +1471,73 @@ function rotateShapeFromOrig(target, orig, deltaDeg, center) {
   }
   const origCenter = { x: orig.x + orig.width / 2, y: orig.y + orig.height / 2 };
   const newCenter = rotatePoint(origCenter, center, deltaDeg);
+  const dx = newCenter.x - origCenter.x;
+  const dy = newCenter.y - origCenter.y;
   target.x = roundMm(newCenter.x - orig.width / 2, 2);
   target.y = roundMm(newCenter.y - orig.height / 2, 2);
   target.rotation = roundMm((((orig.rotation || 0) + deltaDeg) % 360 + 360) % 360, 1);
   if (Array.isArray(orig.nodes) && Array.isArray(target.nodes)) {
     for (let i = 0; i < orig.nodes.length; i++) {
-      const rp = rotatePoint(orig.nodes[i], center, deltaDeg);
-      target.nodes[i].x = roundMm(rp.x, 2);
-      target.nodes[i].y = roundMm(rp.y, 2);
+      target.nodes[i].x = roundMm(orig.nodes[i].x + dx, 2);
+      target.nodes[i].y = roundMm(orig.nodes[i].y + dy, 2);
     }
     rebuildPathShapeFromNodes(target);
   }
 }
 
+function bindTextToTargetShape(textShape, targetShape) {
+  if (!textShape || textShape.type !== 'text' || !targetShape) return false;
+  const loops = shapeToWorldPolygons(targetShape, 0.15);
+  if (!loops || loops.length === 0) return false;
+
+  // Pick the longest contour loop of the target shape (e.g. outer ring of a circle/sign)
+  let bestLoop = loops[0];
+  let bestLen = -1;
+  for (const loop of loops) {
+    let len = 0;
+    for (let i = 0; i < loop.length - 1; i++) {
+      len += dist(loop[i], loop[i + 1]);
+    }
+    if (loop.closed !== false && loop.length > 2) {
+      len += dist(loop[loop.length - 1], loop[0]);
+    }
+    if (len > bestLen) {
+      bestLen = len;
+      bestLoop = loop;
+    }
+  }
+  if (!bestLoop || bestLoop.length < 2) return false;
+
+  pushUndoSnapshot();
+  const isClosed = bestLoop.closed !== false && targetShape.type !== 'line';
+  const cleanPts = bestLoop.map(p => ({ x: roundMm(p.x, 3), y: roundMm(p.y, 3) }));
+  textShape.rotation = 0;
+  updateTextShape(textShape, {
+    customPath: cleanPts,
+    customPathClosed: isClosed,
+    customPathSourceId: targetShape.id,
+    customPathSourceName: targetShape.name || targetShape.type,
+    pathOffsetPct: 0,
+    pathNormalOffsetMm: isClosed ? 1.5 : 1.0,
+    pathFlip: false
+  });
+  state.pickingPathForTextId = null;
+  hintBannerEl.classList.remove('visible');
+  state.selectedIds = new Set([textShape.id]);
+  saveWorkspaceToLocal(state);
+  renderAll();
+  showToast(`🔄 Teksten følger nå "${targetShape.name || targetShape.type}"! Bruk glidebryterne til høyre for å flytte den langs kanten.`);
+  return true;
+}
+
 function onCanvasPointerDown(e) {
+  // Commit any active math/dimension input in the right panel or header before handling canvas click!
+  const activeEl = document.activeElement;
+  if (activeEl && activeEl.tagName === 'INPUT' && (activeEl.closest('.right-panel') || activeEl.closest('.app-header'))) {
+    activeEl.dispatchEvent(new Event('change', { bubbles: true }));
+    activeEl.blur();
+  }
+
   if (e.button === 1 || state.spacePressed) {
     state.interaction = {
       type: 'pan',
@@ -1364,6 +1554,23 @@ function onCanvasPointerDown(e) {
   const worldPt = clientToWorldMm(e.clientX, e.clientY, true);
   const rawWorldPt = clientToWorldMm(e.clientX, e.clientY, false);
 
+  // If picking a target shape/circle for "Tekst langs form":
+  if (state.pickingPathForTextId) {
+    const activeList = getActiveContainerList();
+    const textShape = activeList.find(s => s.id === state.pickingPathForTextId && s.type === 'text');
+    const hitEl = e.target.closest('[data-id]');
+    if (textShape && hitEl) {
+      const targetShape = activeList.find(s => s.id === hitEl.dataset.id);
+      if (targetShape && targetShape.id !== textShape.id) {
+        bindTextToTargetShape(textShape, targetShape);
+        return;
+      }
+    }
+    state.pickingPathForTextId = null;
+    hintBannerEl.classList.remove('visible');
+    renderAll();
+  }
+
   // If currently in 2-click line drawing mode, this click completes the line!
   if (state.interaction && state.interaction.type === 'draw' && state.interaction.isTwoClick) {
     state.interaction = null;
@@ -1374,17 +1581,24 @@ function onCanvasPointerDown(e) {
 
   // 1. Check if clicking a resize, rotation, line endpoint, line curve, or path node handle
   const handleEl = e.target.closest('[data-handle]');
-  if (handleEl && state.selectedIds.size === 1) {
-    const s = getSelectedShapes()[0];
+  if (handleEl && state.selectedIds.size >= 1) {
+    const selected = getSelectedShapes();
+    if (selected.length === 0) return;
+    const s = selected[0];
     pushUndoSnapshot();
     const handleId = handleEl.dataset.handle;
     if (handleId === 'rotate') {
+      const bbox = selected.length === 1 && s.type !== 'group' && s.type !== 'line'
+        ? { x: s.x, y: s.y, width: s.width, height: s.height }
+        : getShapesBBox(selected);
       state.interaction = {
         type: 'rotate',
         shape: s,
+        shapes: selected,
         origSnapshot: JSON.parse(JSON.stringify(s)),
-        cx: s.x + s.width / 2,
-        cy: s.y + s.height / 2
+        origSnapshots: selected.map(item => JSON.parse(JSON.stringify(item))),
+        cx: bbox.x + bbox.width / 2,
+        cy: bbox.y + bbox.height / 2
       };
     } else if (handleId === 'line-p1' || handleId === 'line-p2' || handleId === 'line-curve') {
       state.interaction = {
@@ -1400,15 +1614,20 @@ function onCanvasPointerDown(e) {
         shape: s
       };
     } else {
+      const bbox = selected.length === 1 && s.type !== 'group'
+        ? { x: s.x, y: s.y, width: s.width, height: s.height }
+        : getShapesBBox(selected);
       state.interaction = {
         type: 'resize',
         handle: handleId,
         shape: s,
+        shapes: selected,
         origSnapshot: JSON.parse(JSON.stringify(s)),
-        origX: s.x,
-        origY: s.y,
-        origW: s.width,
-        origH: s.height
+        origSnapshots: selected.map(item => JSON.parse(JSON.stringify(item))),
+        origX: bbox.x,
+        origY: bbox.y,
+        origW: bbox.width,
+        origH: bbox.height
       };
     }
     return;
@@ -1643,8 +1862,11 @@ function onCanvasPointerMove(e) {
   if (act.type === 'path-node') {
     const s = act.shape;
     if (Array.isArray(s.nodes) && s.nodes[act.nodeIdx]) {
-      s.nodes[act.nodeIdx].x = worldPt.x;
-      s.nodes[act.nodeIdx].y = worldPt.y;
+      const rot = Number(s.rotation) || 0;
+      const center = { x: s.x + s.width / 2, y: s.y + s.height / 2 };
+      const localPt = rot ? rotatePoint(worldPt, center, -rot) : worldPt;
+      s.nodes[act.nodeIdx].x = localPt.x;
+      s.nodes[act.nodeIdx].y = localPt.y;
       rebuildPathShapeFromNodes(s);
       renderAll();
     }
@@ -1653,22 +1875,27 @@ function onCanvasPointerMove(e) {
 
   if (act.type === 'resize') {
     const s = act.shape;
+    // Transform pointer into the shape's unrotated local frame if resizing a rotated single shape
+    const rot = (act.shapes && act.shapes.length === 1 && s.type !== 'group') ? (Number(s.rotation) || 0) : 0;
+    const origCenter = { x: act.origX + act.origW / 2, y: act.origY + act.origH / 2 };
+    const pt = rot ? rotatePoint(worldPt, origCenter, -rot) : worldPt;
+
     let x = act.origX;
     let y = act.origY;
     let w = act.origW;
     let h = act.origH;
     const hId = act.handle;
 
-    if (hId.includes('e')) w = Math.max(0.5, worldPt.x - x);
-    if (hId.includes('s')) h = Math.max(0.5, worldPt.y - y);
+    if (hId.includes('e')) w = Math.max(0.5, pt.x - x);
+    if (hId.includes('s')) h = Math.max(0.5, pt.y - y);
     if (hId.includes('w')) {
       const newRight = act.origX + act.origW;
-      x = Math.min(newRight - 0.5, worldPt.x);
+      x = Math.min(newRight - 0.5, pt.x);
       w = newRight - x;
     }
     if (hId.includes('n')) {
       const newBottom = act.origY + act.origH;
-      y = Math.min(newBottom - 0.5, worldPt.y);
+      y = Math.min(newBottom - 0.5, pt.y);
       h = newBottom - y;
     }
 
@@ -1678,13 +1905,15 @@ function onCanvasPointerMove(e) {
       else h = w / aspect;
     }
 
-    if (act.origSnapshot) {
-      scaleShapeFromOrig(
-        s,
-        act.origSnapshot,
-        { x: act.origX, y: act.origY, width: act.origW, height: act.origH },
-        { x, y, width: w, height: h }
-      );
+    const origBox = { x: act.origX, y: act.origY, width: act.origW, height: act.origH };
+    const newBox = { x, y, width: w, height: h };
+
+    if (act.shapes && act.shapes.length > 1 && Array.isArray(act.origSnapshots)) {
+      for (let i = 0; i < act.shapes.length; i++) {
+        scaleShapeFromOrig(act.shapes[i], act.origSnapshots[i], origBox, newBox);
+      }
+    } else if (act.origSnapshot) {
+      scaleShapeFromOrig(s, act.origSnapshot, origBox, newBox);
     } else {
       s.x = roundMm(x, 2);
       s.y = roundMm(y, 2);
@@ -1700,7 +1929,12 @@ function onCanvasPointerMove(e) {
     let deg = angleRad * (180 / Math.PI) + 90;
     if (e.shiftKey) deg = Math.round(deg / 15) * 15;
     const targetDeg = ((deg % 360) + 360) % 360;
-    if (act.shape.type === 'group' && act.origSnapshot) {
+
+    if (act.shapes && act.shapes.length > 1 && Array.isArray(act.origSnapshots)) {
+      for (let i = 0; i < act.shapes.length; i++) {
+        rotateShapeFromOrig(act.shapes[i], act.origSnapshots[i], targetDeg, { x: act.cx, y: act.cy });
+      }
+    } else if ((act.shape.type === 'group' || act.shape.type === 'line') && act.origSnapshot) {
       const deltaDeg = targetDeg - (act.origSnapshot.rotation || 0);
       rotateShapeFromOrig(act.shape, act.origSnapshot, deltaDeg, { x: act.cx, y: act.cy });
     } else {
@@ -2102,10 +2336,10 @@ function bindInspectorEvents() {
   });
 
   // Dimension & Position Inputs (Supports full math expressions like "120 + 12mm" or "360/6")
-  const applyDimChange = (field) => {
+  const applyDimChange = (field, isLiveInput = false) => {
     const sel = getSelectedShapes();
     if (sel.length === 0) return;
-    pushUndoSnapshot();
+    if (!isLiveInput) pushUndoSnapshot();
     const lockAspect = document.getElementById('prop-lock-aspect').checked;
 
     if (sel.length === 1) {
@@ -2151,12 +2385,21 @@ function bindInspectorEvents() {
         }
       }
       if (field === 'rot') {
-        const deg = evalMathExpr(document.getElementById('prop-rot').value, s.rotation || 0);
+        const rawRotStr = document.getElementById('prop-rot').value.trim();
+        if (!rawRotStr || rawRotStr === '-' || rawRotStr === '+') return;
+        const deg = evalMathExpr(rawRotStr, NaN);
+        if (!Number.isFinite(deg)) return;
         const targetDeg = roundMm(((deg % 360) + 360) % 360, 1);
         if (s.type === 'group') {
           const orig = JSON.parse(JSON.stringify(s));
           const deltaDeg = targetDeg - (orig.rotation || 0);
           rotateShapeFromOrig(s, orig, deltaDeg, { x: orig.x + orig.width / 2, y: orig.y + orig.height / 2 });
+        } else if (s.type === 'line') {
+          const curAng = Math.atan2((s.y2 || 0) - (s.y1 || 0), (s.x2 || 0) - (s.x1 || 0)) * (180 / Math.PI);
+          const deltaDeg = deg - curAng;
+          const center = { x: ((s.x1 || 0) + (s.x2 || 0)) / 2, y: ((s.y1 || 0) + (s.y2 || 0)) / 2 };
+          const orig = JSON.parse(JSON.stringify(s));
+          rotateShapeFromOrig(s, orig, deltaDeg, center);
         } else {
           s.rotation = targetDeg;
         }
@@ -2195,7 +2438,19 @@ function bindInspectorEvents() {
           }
         }
       }
+      if (field === 'rot') {
+        const rawRotStr = document.getElementById('prop-rot').value.trim();
+        if (!rawRotStr || rawRotStr === '-' || rawRotStr === '+') return;
+        const deltaDeg = evalMathExpr(rawRotStr, NaN);
+        if (!Number.isFinite(deltaDeg) || Math.abs(deltaDeg) < 1e-4) return;
+        const center = { x: bbox.x + bbox.width / 2, y: bbox.y + bbox.height / 2 };
+        for (const s of sel) {
+          const orig = JSON.parse(JSON.stringify(s));
+          rotateShapeFromOrig(s, orig, deltaDeg, center);
+        }
+      }
     }
+    saveWorkspaceToLocal(state);
     renderAll();
   };
 
@@ -2203,7 +2458,67 @@ function bindInspectorEvents() {
   document.getElementById('prop-y').addEventListener('change', () => applyDimChange('y'));
   document.getElementById('prop-w').addEventListener('change', () => applyDimChange('w'));
   document.getElementById('prop-h').addEventListener('change', () => applyDimChange('h'));
-  document.getElementById('prop-rot').addEventListener('change', () => applyDimChange('rot'));
+  document.getElementById('prop-rot').addEventListener('change', () => applyDimChange('rot', false));
+  document.getElementById('prop-rot').addEventListener('input', () => {
+    const sel = getSelectedShapes();
+    if (sel.length === 1 && sel[0].type !== 'group' && sel[0].type !== 'line') {
+      applyDimChange('rot', true);
+    }
+  });
+
+  // Quick-Rotate Buttons (-90°, -45°, +45°, +90°, 0°)
+  document.querySelectorAll('[data-quick-rot]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const sel = getSelectedShapes();
+      if (sel.length === 0) {
+        showToast('⚠️ Velg et objekt på platen først for å rotere det');
+        return;
+      }
+      pushUndoSnapshot();
+      const action = btn.dataset.quickRot;
+      if (sel.length === 1) {
+        const s = sel[0];
+        if (action === 'reset') {
+          if (s.type === 'group') {
+            const orig = JSON.parse(JSON.stringify(s));
+            rotateShapeFromOrig(s, orig, -(orig.rotation || 0), { x: orig.x + orig.width / 2, y: orig.y + orig.height / 2 });
+          } else if (s.type === 'line') {
+            const curAng = Math.atan2((s.y2 || 0) - (s.y1 || 0), (s.x2 || 0) - (s.x1 || 0)) * (180 / Math.PI);
+            const center = { x: ((s.x1 || 0) + (s.x2 || 0)) / 2, y: ((s.y1 || 0) + (s.y2 || 0)) / 2 };
+            const orig = JSON.parse(JSON.stringify(s));
+            rotateShapeFromOrig(s, orig, -curAng, center);
+          } else {
+            s.rotation = 0;
+          }
+        } else {
+          const stepDeg = parseFloat(action) || 0;
+          if (s.type === 'group' || s.type === 'line') {
+            const center = s.type === 'line'
+              ? { x: ((s.x1 || 0) + (s.x2 || 0)) / 2, y: ((s.y1 || 0) + (s.y2 || 0)) / 2 }
+              : { x: s.x + s.width / 2, y: s.y + s.height / 2 };
+            const orig = JSON.parse(JSON.stringify(s));
+            rotateShapeFromOrig(s, orig, stepDeg, center);
+          } else {
+            s.rotation = roundMm((((s.rotation || 0) + stepDeg) % 360 + 360) % 360, 1);
+          }
+        }
+      } else {
+        const bbox = getShapesBBox(sel);
+        const center = { x: bbox.x + bbox.width / 2, y: bbox.y + bbox.height / 2 };
+        const stepDeg = action === 'reset' ? 0 : (parseFloat(action) || 0);
+        for (const s of sel) {
+          if (action === 'reset') {
+            s.rotation = 0;
+          } else {
+            const orig = JSON.parse(JSON.stringify(s));
+            rotateShapeFromOrig(s, orig, stepDeg, center);
+          }
+        }
+      }
+      saveWorkspaceToLocal(state);
+      renderAll();
+    });
+  });
 
   // Shape-specific properties (with math evaluation!)
   document.getElementById('prop-rx').addEventListener('change', (e) => {
@@ -2291,16 +2606,24 @@ function bindInspectorEvents() {
   });
 
   // Live Text Inspector updates
-  const onTextMetaUpdate = () => {
+  const getActiveTextShape = () => {
     const sel = getSelectedShapes();
-    if (sel.length === 1 && sel[0].type === 'text') {
-      const curMeta = sel[0].textMeta || {};
-      updateTextShape(sel[0], {
+    return sel.find(s => s.type === 'text' && s.textMeta) || null;
+  };
+
+  const onTextMetaUpdate = () => {
+    const textShape = getActiveTextShape();
+    if (textShape) {
+      const curMeta = textShape.textMeta || {};
+      updateTextShape(textShape, {
         text: document.getElementById('text-content-input').value,
         fontKey: document.getElementById('text-font-select').value,
         fontSizeMm: clamp(evalMathExpr(document.getElementById('text-size-input').value, curMeta.fontSizeMm || 18), 2, 400),
         spacingMm: clamp(evalMathExpr(document.getElementById('text-spacing-input').value, curMeta.spacingMm ?? 1.2), -5, 50),
-        curve: parseFloat(document.getElementById('text-curve-input').value) || 0
+        curve: parseFloat(document.getElementById('text-curve-input').value) || 0,
+        pathOffsetPct: parseFloat(document.getElementById('text-path-offset')?.value) || 0,
+        pathNormalOffsetMm: parseFloat(document.getElementById('text-path-normal-offset')?.value) || 0,
+        pathFlip: Boolean(document.getElementById('text-path-flip')?.checked)
       });
       saveWorkspaceToLocal(state);
       renderAll();
@@ -2311,6 +2634,101 @@ function bindInspectorEvents() {
   document.getElementById('text-curve-input').addEventListener('input', onTextMetaUpdate);
   document.getElementById('text-size-input').addEventListener('change', onTextMetaUpdate);
   document.getElementById('text-spacing-input').addEventListener('change', onTextMetaUpdate);
+
+  // Quick curve preset buttons (0° Rett, +55° Bue opp, -55° Bue ned, 180° Hel sirkel)
+  document.querySelectorAll('[data-curve-preset]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const val = parseFloat(btn.dataset.curvePreset) || 0;
+      const slider = document.getElementById('text-curve-input');
+      if (slider) slider.value = String(val);
+      const textShape = getActiveTextShape();
+      if (textShape) {
+        pushUndoSnapshot();
+        // If text was bound to an external shape and user clicks an arc preset, unbind customPath so the arc preset takes effect immediately
+        if (val !== 0 && textShape.textMeta?.customPath) {
+          textShape.textMeta.customPath = null;
+        }
+        onTextMetaUpdate();
+      }
+    });
+  });
+
+  // Text-on-Path / Shape controls ("🔗 Fest tekst til form / sirkel...")
+  document.getElementById('btn-bind-text-to-shape').addEventListener('click', () => {
+    const sel = getSelectedShapes();
+    const textShape = sel.find(s => s.type === 'text');
+    if (!textShape) {
+      showToast('⚠️ Velg et tekstobjekt først');
+      return;
+    }
+
+    // Case 1: User selected both the text AND a target shape (e.g. Circle + Text)
+    const otherShape = sel.find(s => s.id !== textShape.id);
+    if (otherShape) {
+      bindTextToTargetShape(textShape, otherShape);
+      return;
+    }
+
+    // Case 2: Toggle interactive pick mode if other shapes exist on the canvas
+    const activeList = getActiveContainerList();
+    const candidates = activeList.filter(s => s.id !== textShape.id && !s.hidden);
+    if (candidates.length === 1) {
+      // Only 1 other shape on the canvas -> bind to it immediately!
+      bindTextToTargetShape(textShape, candidates[0]);
+      return;
+    }
+    if (candidates.length > 1) {
+      if (state.pickingPathForTextId === textShape.id) {
+        state.pickingPathForTextId = null;
+        hintBannerEl.classList.remove('visible');
+      } else {
+        state.pickingPathForTextId = textShape.id;
+        hintBannerEl.textContent = '🎯 Klikk nå på sirkelen, linjen eller formen på platen som teksten skal følge! (Trykk Esc for å avbryte)';
+        hintBannerEl.classList.add('visible');
+        showToast('🎯 Klikk på sirkelen eller formen som teksten skal følge!');
+      }
+      renderAll();
+      return;
+    }
+
+    // Case 3: No other shape on the canvas yet -> create a 70 mm guide circle right under the text and bind to it!
+    pushUndoSnapshot();
+    const circleDiam = Math.max(50, roundMm(textShape.width * 0.9, 0));
+    const guideCircle = {
+      id: uid('ellipse'),
+      type: 'ellipse',
+      name: 'Sirkel-bane (Hjelpelinje)',
+      laserMode: 'guide',
+      x: roundMm(textShape.x + textShape.width / 2 - circleDiam / 2, 2),
+      y: roundMm(textShape.y + textShape.height, 2),
+      width: circleDiam,
+      height: circleDiam,
+      rotation: 0
+    };
+    activeList.push(guideCircle);
+    bindTextToTargetShape(textShape, guideCircle);
+  });
+
+  document.getElementById('btn-unbind-text-path').addEventListener('click', () => {
+    const textShape = getActiveTextShape();
+    if (!textShape) return;
+    pushUndoSnapshot();
+    state.pickingPathForTextId = null;
+    hintBannerEl.classList.remove('visible');
+    updateTextShape(textShape, {
+      customPath: null,
+      customPathClosed: false,
+      customPathSourceId: null,
+      customPathSourceName: null
+    });
+    saveWorkspaceToLocal(state);
+    renderAll();
+    showToast('✓ Teksten er frigjort fra formen');
+  });
+
+  document.getElementById('text-path-offset').addEventListener('input', onTextMetaUpdate);
+  document.getElementById('text-path-normal-offset').addEventListener('input', onTextMetaUpdate);
+  document.getElementById('text-path-flip').addEventListener('change', onTextMetaUpdate);
 
   // Group Inspector Controls (Rename group, Open/Edit inside group, Ungroup)
   document.getElementById('group-name-input').addEventListener('input', (e) => {
@@ -2542,6 +2960,12 @@ function moveShapesBy(shapesList, dx, dy) {
       }
       rebuildPathShapeFromNodes(s);
     }
+    if (s.type === 'text' && Array.isArray(s.textMeta?.customPath)) {
+      for (const p of s.textMeta.customPath) {
+        p.x = roundMm(p.x + dx, 3);
+        p.y = roundMm(p.y + dy, 3);
+      }
+    }
     if (s.type === 'group' && s.children) {
       moveShapesBy(s.children, dx, dy);
     }
@@ -2756,6 +3180,12 @@ function bindKeyboardShortcuts() {
       return;
     }
     if (e.key === 'Escape') {
+      if (state.pickingPathForTextId) {
+        state.pickingPathForTextId = null;
+        hintBannerEl.classList.remove('visible');
+        renderAll();
+        return;
+      }
       if (state.activeTool === 'pen') {
         state.penPoints = [];
         state.penCursor = null;
@@ -3089,13 +3519,9 @@ function renderSignGeneratorUI(container) {
           <input type="text" id="gen-sign-sub" class="input-control" value="BANK PÅ FØR DU GÅR INN" />
         </div>
         <div class="prop-field">
-          <label>Skrifttype</label>
+          <label>Skrifttype (31 fonter)</label>
           <select id="gen-sign-font" class="select-control">
-            <option value="sans-bold">Moderne Kraftig (Gravering)</option>
-            <option value="stencil">✂️ Laser Sjablong (Gjennomkutt!)</option>
-            <option value="singleline">⚡ Laser Enkelstreg (Rask Score!)</option>
-            <option value="serif">Klassisk Serif</option>
-            <option value="rounded">Avrundet</option>
+            ${getFontOptionsHtml('sans-bold')}
           </select>
         </div>
         <div class="prop-field">
