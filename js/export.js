@@ -17,6 +17,7 @@ import {
   parseSvgPathToPolygons
 } from './geometry.js';
 import { resolveXcsBitmapMode } from './icons.js';
+import { PUZZLE_CUT_STAGES, getCutStage } from './cut-order.js';
 
 
 
@@ -90,6 +91,7 @@ export function buildLaserSvgString(shapes, {
   const engravePaths = [];
   const scorePaths = [];
   const cutPaths = [];
+  const stagedCutPaths = new Map(PUZZLE_CUT_STAGES.map(stage => [stage.id, []]));
 
   for (const s of exportable) {
     const safeName = escapeXml(s.name || s.type);
@@ -121,9 +123,11 @@ export function buildLaserSvgString(shapes, {
         `    <path id="${s.id}" data-name="${safeName}" d="${d}" fill="none" stroke="#0000FF" stroke-width="0.1" stroke-linecap="round" stroke-linejoin="round" />`
       );
     } else {
-      // Default: 'cut' (#FF0000)
-      cutPaths.push(
-        `    <path id="${s.id}" data-name="${safeName}" d="${d}" fill="none" stroke="#FF0000" stroke-width="0.1" stroke-linecap="round" stroke-linejoin="round" />`
+      const stage = getCutStage(s);
+      const paths = stage ? stagedCutPaths.get(stage.id) : cutPaths;
+      const stageAttribute = stage ? ` data-cut-stage="${stage.id}"` : '';
+      paths.push(
+        `    <path id="${s.id}" data-name="${safeName}"${stageAttribute} d="${d}" fill="none" stroke="${stage?.color || '#FF0000'}" stroke-width="0.1" stroke-linecap="round" stroke-linejoin="round" />`
       );
     }
   }
@@ -157,6 +161,12 @@ export function buildLaserSvgString(shapes, {
     lines.push(`  <g id="Lag_3_Kutt_Cut">`);
     lines.push(...cutPaths);
     lines.push(`  </g>`);
+  }
+
+  for (const stage of PUZZLE_CUT_STAGES) {
+    const paths = stagedCutPaths.get(stage.id);
+    if (!paths.length) continue;
+    lines.push(`  <g id="${stage.id}" data-name="${escapeXml(stage.name)}">`, ...paths, `  </g>`);
   }
 
   lines.push(`</svg>`);
@@ -516,7 +526,7 @@ export function buildXcsProjectString(shapes, {
 
     const mode = s.laserMode || 'cut';
     const isFill = mode === 'engrave';
-    const layerColor = layerColors[mode] || layerColors.cut;
+    const layerColor = getCutStage(s)?.color || layerColors[mode] || layerColors.cut;
     const procType = mode === 'engrave'
       ? 'FILL_VECTOR_ENGRAVING'
       : (mode === 'score' ? 'VECTOR_ENGRAVING' : 'VECTOR_CUTTING');
@@ -651,6 +661,12 @@ export function buildXcsProjectString(shapes, {
       panel: 0
     }
   };
+
+  for (const stage of PUZZLE_CUT_STAGES) {
+    if (displays.some(display => display.layerTag === stage.color)) {
+      layerData[stage.color] = { name: stage.name, order: stage.order, visible: true, panel: 0 };
+    }
+  }
 
   const liftingPlatformModeData = {
     material: 0,

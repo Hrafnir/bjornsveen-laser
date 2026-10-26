@@ -3951,7 +3951,7 @@ function renderPuzzleGeneratorUI(container) {
   container.innerHTML = `
     <div class="generator-controls">
       <div class="info-box">
-        🧩 <strong>Puslespill-generator:</strong> Genererer ekte kurvede puslespillbrikker. Tips: Legg en gravering, tekst eller et sporet bilde midt oppå puslespillet før du kutter!
+        🧩 <strong>Puslespill-generator:</strong> Kutter i tre etapper: <strong>1. Vannrette → 2. Loddrette → 3. Ytterkontur.</strong> Eksporter som XCS for ferdig ordnede kuttelag. Gravering kjøres før kuttene.
       </div>
       <div class="prop-grid">
         <div class="prop-field">

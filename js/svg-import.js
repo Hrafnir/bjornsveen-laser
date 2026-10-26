@@ -1,3 +1,4 @@
+import { getCutStage } from './cut-order.js';
 import { uid, createPathShapeFromPolygons, parseSvgPathToPolygons, shapeToLocalPolygons } from './geometry.js';
 const I = [1, 0, 0, 1, 0, 0];
 export function multiply(a, b) {
@@ -109,7 +110,12 @@ export function importSvgStringToShapes(svgText) {
     const stroke=(style.stroke||'none').toLowerCase();
     const mode=['blue','#00f','#0000ff','#3b82f6'].includes(stroke)?'score':stroke==='none' && style.fill!=='none'?'engrave':'cut';
     const mapped=loops.filter(l=>l.length>=2).map(l=>{const a=l.map(p=>point(m,p));a.closed=l.closed!==false;return a;});
-    if(mapped.length) result.push(createPathShapeFromPolygons(mapped,mode,name));
+    if(mapped.length) {
+      const shape=createPathShapeFromPolygons(mapped,mode,name);
+      const stage=getCutStage({laserMode:mode,cutStage:el.getAttribute('data-cut-stage')});
+      if(stage) shape.cutStage=stage.id;
+      result.push(shape);
+    }
   };
   visit(root,initial,{fill:'black',stroke:'none'});
   result.warnings=[...warnings];

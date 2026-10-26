@@ -17,6 +17,7 @@ import {
   booleanMultiPolygons
 } from './geometry.js';
 import { createTextShape } from './fonts.js';
+import { PUZZLE_CUT_STAGES } from './cut-order.js';
 import { LASER_ICONS, createIconShape, traceImageToPolygons } from './icons.js';
 
 // ============================================================================
@@ -543,10 +544,8 @@ export function generateJigsawPuzzle({
     return (s - 1) / 2147483646;
   };
 
-  const shapes = [];
-
-  // 1. Outer rounded rectangle border
-  shapes.push({
+  // Keep the outer contour attached until both sets of internal cuts are done.
+  const outline = {
     id: uid('rect'),
     type: 'rect',
     name: `Puslespill ytterramme (${W}×${H} mm)`,
@@ -557,12 +556,13 @@ export function generateJigsawPuzzle({
     height: H,
     rx,
     rotation: 0
-  });
+  };
 
-  // 2. Internal Horizontal Jigsaw Cut Lines
+  // 1. Internal horizontal jigsaw cut lines
   const cellW = W / C;
   const cellH = H / R;
-  const allInternalLoops = [];
+  const horizontalLoops = [];
+  const verticalLoops = [];
 
   for (let r = 1; r < R; r++) {
     const y = oy + r * cellH;
@@ -577,10 +577,10 @@ export function generateJigsawPuzzle({
       rowPts.push(...seg);
     }
     rowPts.closed = false;
-    allInternalLoops.push(rowPts);
+    horizontalLoops.push(rowPts);
   }
 
-  // 3. Internal Vertical Jigsaw Cut Lines
+  // 2. Internal vertical jigsaw cut lines
   for (let c = 1; c < C; c++) {
     const x = ox + c * cellW;
     const colPts = [];
@@ -594,14 +594,15 @@ export function generateJigsawPuzzle({
       colPts.push(...seg);
     }
     colPts.closed = false;
-    allInternalLoops.push(colPts);
+    verticalLoops.push(colPts);
   }
 
-  shapes.push(
-    createPathShapeFromPolygons(allInternalLoops, 'cut', `Puslespill-brikker (${C}×${R} = ${C * R} brikker)`)
-  );
-
-  return shapes;
+  const shapes = [
+    createPathShapeFromPolygons(horizontalLoops, 'cut', `Puslespill 1 – Vannrette (${R - 1} linjer)`),
+    createPathShapeFromPolygons(verticalLoops, 'cut', `Puslespill 2 – Loddrette (${C - 1} linjer)`),
+    { ...outline, name: `Puslespill 3 – Ytterkontur (${W}×${H} mm)` }
+  ];
+  return shapes.map((shape, index) => ({ ...shape, cutStage: PUZZLE_CUT_STAGES[index].id }));
 }
 
 // ============================================================================

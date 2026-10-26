@@ -1,3 +1,4 @@
+import { generateJigsawPuzzle } from '../js/generators.js';
 import { importSvgStringToShapes } from '../js/svg-import.js';
 import { computePolygonsBBox,shapeToWorldPolygons } from '../js/geometry.js';
 import { buildLaserSvgString,buildXcsProjectString,getDefaultLaserSettings } from '../js/export.js';
@@ -36,6 +37,19 @@ await test('A photo retains original pixels and exports at requested resolution'
  await prepareBitmapExports([shape],settings);const out=new Image();out.src=shape.xcsDataUrl;await out.decode();assert(out.width===2000);assert(shape.imageMeta.originWidthPx===2000);
  const exported=JSON.parse(buildXcsProjectString([shape],{laserSettings:settings}));assert(exported.canvas[0].displays[0].data.BITMAP_ENGRAVING.parameter.customize.bitmapMode==='Stucki');
  shape.imageMeta.sharpness=0;await refreshBitmapShapeDataUrl(shape,null,settings.bitmap);assert(shape.imageMeta.sharpness===0);assert(shape.srcDataUrl===src);
+});
+await test('Puzzle SVG roundtrip preserves the three cut stages and colors',()=>{
+ const puzzle=generateJigsawPuzzle();
+ const svg=buildLaserSvgString([...puzzle].reverse());
+ assert(!new DOMParser().parseFromString(svg,'image/svg+xml').querySelector('parsererror'));
+ const imported=importSvgStringToShapes(svg);
+ assert(imported.length===3);
+ assert(imported.every((s,i)=>s.cutStage===puzzle[i].cutStage && s.laserMode==='cut'));
+ const xcs=JSON.parse(buildXcsProjectString(imported));
+ const displays=xcs.canvas[0].displays;
+ assert(new Set(displays.map(d=>d.layerTag)).size===3);
+ const orders=displays.map(d=>xcs.canvas[0].layerData[d.layerTag].order);
+ assert(orders[0]<orders[1] && orders[1]<orders[2]);
 });
 // Dependency injection gives storage tests their own database and legacy key.
 const { createWorkspaceStorage } = await import('../js/storage.js');
