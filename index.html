@@ -687,7 +687,12 @@
         <div class="action-grid-3">
           <button id="btn-flip-h" class="btn" title="Speilvend horisontalt (Nyttig ved gravering på baksiden av akryl!)">⇄ Speil H</button>
           <button id="btn-flip-v" class="btn" title="Speilvend vertikalt">⇅ Speil V</button>
-          <button id="btn-duplicate" class="btn" title="Dupliser valgt objekt (⌘D)">📋 Kopier</button>
+          <button id="btn-duplicate" class="btn" title="Dupliser valgt objekt (⌘D)">⧉ Dupliser</button>
+        </div>
+        <div class="action-grid-3" style="margin-top: 6px;">
+          <button id="btn-cut" class="btn" title="Klipp ut (⌘/Ctrl+X)">✂ Klipp ut</button>
+          <button id="btn-copy" class="btn" title="Kopier (⌘/Ctrl+C)">📋 Kopier</button>
+          <button id="btn-paste" class="btn" title="Lim inn (⌘/Ctrl+V)">📥 Lim inn</button>
         </div>
         <div class="action-grid-2" style="margin-top: 6px;">
           <button id="btn-group" class="btn" title="Grupper valgte objekter (⌘G)">📦 Grupper</button>
@@ -805,12 +810,19 @@
       <!-- 5. OBJECT / LAYER LIST -->
       <section class="panel-section" style="flex: 1; display: flex; flex-direction: column;">
         <div class="panel-section-header">
-          <div class="panel-section-title">🗂️ Objekter i tegningen (<span id="layer-count">0</span>)</div>
+          <div class="panel-section-title">🗂️ Lag og objekter (<span id="layer-count">0</span>)</div>
           <div style="display: flex; gap: 4px;">
             <button id="btn-delete-selected" class="btn btn-danger" style="padding: 3px 7px; font-size: 11px;" title="Slett valgt(e) objekt(er) (Backspace / Delete)">🗑 Slett</button>
             <button id="btn-clear-all" class="btn" style="padding: 3px 7px; font-size: 11px;" title="Tøm hele arbeidsflaten">Tøm alt</button>
           </div>
         </div>
+        <div class="layer-order-controls" role="group" aria-label="Rekkefølge på valgte objekter">
+          <button class="btn" data-order="front" title="Helt fremst (⇧⌘/Ctrl+↑)">⤒ Fremst</button>
+          <button class="btn" data-order="forward" title="Ett lag opp (⌘/Ctrl+↑)">↑ Opp</button>
+          <button class="btn" data-order="backward" title="Ett lag ned (⌘/Ctrl+↓)">↓ Ned</button>
+          <button class="btn" data-order="back" title="Helt bakerst (⇧⌘/Ctrl+↓)">⤓ Bakerst</button>
+        </div>
+        <p class="layer-order-hint">Øverst i listen ligger fremst. Øyet skjuler/viser. Shift-klikk velger flere.</p>
         <div id="layer-list" class="layer-list"></div>
       </section>
     </aside>

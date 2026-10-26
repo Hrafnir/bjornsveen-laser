@@ -125,3 +125,11 @@ I dimensjonspanelet velger **Fylt figur** flategravering, mens **Kun omriss** br
 Konturoffset bruker Clipper med 0,0001 mm koordinatoppløsning; eksport avrundes til 0,001 mm. Kurver polygoniseres, så dette er ikke en garanti for samme presisjon på alle buer. For stor innvendig offset gir en forklaring og endrer ikke tegningen.
 
 Kjør `npm test` for geometritester og `tests/browser.html` for SVG/flex/lagring. `tests/editor.html` tester faktiske peker- og tastaturhandlinger i redigeringsflaten; bruk en separat lokal serverport fordi denne testen tømmer testtegningen.
+
+### Utklippstavle, snarveier og lagrekkefølge
+
+- **⌘/Ctrl+C, X og V** kopierer, klipper ut og limer inn valgte objekter. Grupper, redigerbare noder, laserinnstillinger og rekkefølge beholdes. Hver innliming gir nye objekt-ID-er og forskyves 8 mm fra forrige kopi. Native objektdata lagres som tekst på systemets utklippstavle, så de kan limes inn i en annen LaserStudio-fane. Ekstern SVG-kode importeres som vektorer; vanlig tekst blir et nytt tekstobjekt.
+- **Kopier**, **Klipp ut** og **Lim inn** finnes også under Justering & plassering. Hvis nettleseren blokkerer lesing av utklippstavlen fra knappen, bruk tastatursnarveien. **Dupliser (⌘/Ctrl+D)** lager en kopi direkte i tegningen.
+- **Lag og objekter** viser det fremste objektet øverst. Velg ett eller flere objekter og bruk **Opp**, **Ned**, **Fremst** eller **Bakerst**. ⌘/Ctrl+↑/↓ flytter ett trinn; hold også Shift for helt fremst/bakerst. Flere valgte objekter beholder sin innbyrdes rekkefølge. Under grupperedigering gjelder handlingene delene i gruppen.
+- Øyeknappen skjuler/viser både hele objekter og deler i grupper. Rekkefølge og synlighet lagres i prosjektet og kan angres. Skjulte objekter utelates fra lasereksport. Visuell lagrekkefølge endrer ikke den særskilte kutterekkefølgen for puslespill og flex.
+- **⌘/Ctrl+A** velger synlige objekter i aktiv gruppe eller på arbeidsflaten. **⌘/Ctrl+Z**, **Shift+⌘/Ctrl+Z** og **Ctrl+Y** angrer/gjør om. **⌘/Ctrl+S** lagrer prosjekt og **⌘/Ctrl+O** åpner import. Tekstfelt beholder sine vanlige snarveier, og åpne dialoger sperrer handlinger på tegningen bak.

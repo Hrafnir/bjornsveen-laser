@@ -64,4 +64,58 @@ await test('snapping remains available for drawn curves and can be turned off',(
  click(20,30);click(60,60);click(100,30);key('Enter');assert(shapes().length===1);assert(points(shapes()[0]).length>3);
  $('object-snap-toggle').checked=false;$('object-snap-toggle').dispatchEvent(new w.Event('change'));tool('line');pointer('pointermove',100,30);assert(!$('line-snap-marker'));
 });
+const clipboard=(action, text=null, target=d)=>{
+ const data=new w.DataTransfer();if(text!==null)data.setData('text/plain',text);
+ const event=new w.ClipboardEvent(action,{clipboardData:data,bubbles:true,cancelable:true});target.dispatchEvent(event);
+ return {text:data.getData('text/plain'),handled:event.defaultPrevented};
+};
+const ids=()=>shapes().map(el=>el.dataset.id);
+const selectRow=(id,shift=false)=>d.querySelector(`#layer-list [data-id="${id}"]`).dispatchEvent(new w.MouseEvent('click',{bubbles:true,shiftKey:shift}));
+const order=direction=>d.querySelector(`[data-order="${direction}"]`).click();
+await test('copy/paste preserves a multi-selection, uses fresh IDs and offsets repeated pastes',()=>{
+ reset();tool('rect');drag([20,20],[60,50]);tool('ellipse');drag([100,30],[130,60]);tool('select');key('a',{metaKey:true});
+ const original=ids(), copy=clipboard('copy');assert(copy.handled);assert(JSON.parse(copy.text).shapes.length===2);
+ clipboard('paste',copy.text);assert(shapes().length===4);assert(ids().slice(2).every(id=>!original.includes(id)));
+ near(Number($('prop-x').value),28);clipboard('paste',copy.text);assert(shapes().length===6);near(Number($('prop-x').value),36);
+ key('z',{metaKey:true});assert(shapes().length===4);key('y',{ctrlKey:true});assert(shapes().length===6);
+});
+await test('cut removes only selected objects and undo restores them; clipboard survives deletion',()=>{
+ reset();tool('rect');drag([20,20],[60,50]);tool('ellipse');drag([100,30],[130,60]);tool('select');
+ const cut=clipboard('cut');assert(cut.handled);assert(shapes().length===1);key('z',{metaKey:true});assert(shapes().length===2);
+ clipboard('paste',cut.text);assert(shapes().length===3);
+});
+await test('groups roundtrip intact; Cmd+A, paste and order operate inside the edited group',()=>{
+ reset();tool('rect');drag([20,20],[60,50]);tool('ellipse');drag([100,30],[130,60]);tool('select');key('a',{metaKey:true});key('g',{metaKey:true});
+ const copied=clipboard('copy').text;clipboard('paste',copied);assert(shapes().length===2);assert(shapes()[1].children.length===2);
+ const groupId=ids()[1];d.querySelector(`#layer-list [data-id="${groupId}"] [data-action="edit-group"]`).click();key('a',{metaKey:true});
+ assert(JSON.parse(clipboard('copy').text).shapes.length===2);const children=JSON.parse(clipboard('copy').text).shapes;
+ selectRow(children[0].id);order('front');assert(JSON.parse(clipboard('copy').text).shapes[0].id===children[0].id);
+ key('a',{metaKey:true});const reordered=JSON.parse(clipboard('copy').text).shapes;assert(reordered[1].id===children[0].id);
+ clipboard('paste',clipboard('copy').text);key('a',{metaKey:true});assert(JSON.parse(clipboard('copy').text).shapes.length===4);
+ key('Escape');assert(shapes().length===2);assert(shapes()[1].children.length===4);
+});
+await test('front/back and step buttons change SVG paint order and list order, with undo and keyboard support',()=>{
+ reset();tool('rect');drag([20,20],[90,90]);tool('ellipse');drag([30,30],[80,80]);tool('rect');drag([40,40],[100,100]);tool('select');
+ const original=ids();selectRow(original[0]);order('forward');assert(ids().join() === [original[1],original[0],original[2]].join());
+ key('ArrowUp',{metaKey:true,shiftKey:true});assert(ids().at(-1)===original[0]);
+ assert(d.querySelector('#layer-list .layer-item').dataset.id===original[0]);
+ order('back');assert(ids().join()===original.join());key('z',{metaKey:true});assert(ids().at(-1)===original[0]);
+ selectRow(original[0]);key('ArrowDown',{ctrlKey:true});assert(ids()[1]===original[0]);
+});
+await test('visibility of objects and group children can be undone without changing their order',()=>{
+ const original=ids();d.querySelector(`#layer-list [data-id="${original[0]}"] [data-action="toggle-vis"]`).click();assert(shapes().length===2);
+ key('z',{metaKey:true});assert(ids().join()===original.join());key('a',{metaKey:true});key('g',{metaKey:true});
+ const row=d.querySelector('#layer-list .group-child'), id=row.dataset.id;row.querySelector('[data-caction="toggle-vis"]').click();assert(shapes()[0].children.length===2);
+ key('z',{metaKey:true});assert(shapes()[0].children.length===3);assert(d.querySelector(`#layer-list [data-id="${id}"]`));
+});
+await test('native text fields, contenteditable and modal dialogs keep their shortcuts',()=>{
+ const before=shapes().length,input=$('text-content-input');input.focus();assert(!clipboard('copy',null,input).handled);assert(!clipboard('paste','Hei',input).handled);
+ const event=new w.KeyboardEvent('keydown',{key:'a',metaKey:true,bubbles:true,cancelable:true});input.dispatchEvent(event);assert(!event.defaultPrevented);input.blur();
+ const editable=d.createElement('div');editable.contentEditable='true';d.body.appendChild(editable);editable.focus();assert(!clipboard('cut',null,editable).handled);editable.remove();
+ $('generator-modal').classList.add('open');assert(!clipboard('paste','Hei').handled);key('Delete');assert(shapes().length===before);key('Escape');assert(!$('generator-modal').classList.contains('open'));
+});
+await test('external SVG and plain text paste as editable objects',()=>{
+ reset();clipboard('paste','<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="10mm" viewBox="0 0 20 10"><rect width="20" height="10"/></svg>');assert(shapes().length===1);near(Number($('prop-w').value),20);
+ clipboard('paste','Hei æøå');assert(shapes().length===2);assert(JSON.parse(clipboard('copy').text).shapes[0].textMeta.text==='Hei æøå');
+});
 document.querySelector('#summary').textContent=`${passed} bestått, ${failed} feilet`;

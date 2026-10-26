@@ -1,3 +1,4 @@
+import { CLIPBOARD_MIME, encodeClipboard, decodeClipboard, cloneWithFreshIds, reorderObjects } from './object-commands.js';
 import { vectorLeaves, canFillShape, setShapeAppearance, shapeTouchesSelection, snapTranslation } from './editor-tools.js';
 import { createVectorOffset } from './vector-offset.js';
 import { findLineEndpoint, constrainLinePoint, createConnectedPath, joinOpenPaths } from './line-tools.js';
@@ -206,6 +207,7 @@ async function initApp() {
   bindInspectorEvents();
   bindModalEvents();
   bindKeyboardShortcuts();
+  bindClipboardCommands();
 
   document.addEventListener('visibilitychange', () => { if (document.hidden) { saveWorkspaceToLocal(state); void flushWorkspaceSave(); } });
   window.addEventListener('beforeunload', e => {
@@ -554,6 +556,12 @@ function renderAll() {
   renderInspector();
   renderAppearanceUI();
   renderLayerList();
+  const activeList = getActiveContainerList();
+  for (const btn of document.querySelectorAll('[data-order]')) {
+    const reordered = reorderObjects(activeList, state.selectedIds, btn.dataset.order);
+    btn.disabled = activeList.every((shape, i) => shape === reordered[i]);
+  }
+  for (const id of ['btn-copy', 'btn-cut']) document.getElementById(id).disabled = getSelectedShapes().length === 0;
   saveWorkspaceToLocal(state);
 }
 
@@ -1165,7 +1173,7 @@ function renderInspector() {
       row.innerHTML = `
         <div class="layer-item-left">
           <span class="layer-dot ${c.laserMode || 'cut'}" title="${modeLabels[c.laserMode] || 'Kutt'}"></span>
-          <span class="layer-name">${c.name || c.type}</span>
+          <span class="layer-name">${escapeObjectName(c.name || c.type)}</span>
         </div>
         <div class="layer-item-actions">
           <span class="layer-dims">${roundMm(c.width, 0)}×${roundMm(c.height, 0)}</span>
@@ -1397,6 +1405,10 @@ function renderInspector() {
   }
 }
 
+function escapeObjectName(value) {
+  return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+}
+
 function renderLayerList() {
   const listEl = document.getElementById('layer-list');
   document.getElementById('layer-count').textContent = String(state.shapes.length);
@@ -1420,17 +1432,19 @@ function renderLayerList() {
     const item = document.createElement('div');
     item.className = `layer-item ${isSelected ? 'selected' : ''} ${isEditingThisGroup ? 'editing-group' : ''}`;
 
+    item.dataset.id = s.id;
+    item.classList.toggle('is-hidden', Boolean(s.hidden));
     const isGroup = s.type === 'group' && Array.isArray(s.children);
     item.innerHTML = `
       <div class="layer-item-left">
         <span class="layer-dot ${s.laserMode || 'cut'}" title="${modeLabels[s.laserMode] || 'Kutt'}"></span>
-        <span class="layer-name">${isGroup ? '📦 ' : ''}${s.name || s.type}</span>
+        <span class="layer-name">${isGroup ? '📦 ' : ''}${escapeObjectName(s.name || s.type)}</span>
       </div>
       <div class="layer-item-actions">
         <span class="layer-dims">${roundMm(s.width, 0)}×${roundMm(s.height, 0)}</span>
         ${isGroup ? `<button class="mini-icon-btn" data-action="edit-group" title="${isEditingThisGroup ? 'Avslutt grupperedigering' : 'Rediger enkelt-deler inni gruppen'}">${isEditingThisGroup ? '✓' : '✏️'}</button>` : ''}
         ${isGroup ? `<button class="mini-icon-btn" data-action="ungroup" title="Løs opp gruppe">📤</button>` : ''}
-        <button class="mini-icon-btn" data-action="toggle-vis" title="Skjul/vis objekt">${s.hidden ? '🙈' : '👁'}</button>
+        <button class="mini-icon-btn" data-action="toggle-vis" aria-label="${s.hidden ? 'Vis objekt' : 'Skjul objekt'}" aria-pressed="${!s.hidden}" title="Skjul/vis objekt">${s.hidden ? '🙈' : '👁'}</button>
         <button class="mini-icon-btn" data-action="delete" title="Slett objekt">✕</button>
       </div>
     `;
@@ -1448,7 +1462,12 @@ function renderLayerList() {
           state.selectedIds = new Set([s.id]);
           ungroupSelectedShapes();
         } else if (act === 'toggle-vis') {
+          pushUndoSnapshot();
           s.hidden = !s.hidden;
+          if (s.hidden) {
+            state.selectedIds.delete(s.id);
+            if (state.editingGroupId === s.id) { state.editingGroupId = null; state.selectedIds.clear(); }
+          }
           renderAll();
         } else if (act === 'delete') {
           pushUndoSnapshot();
@@ -1488,13 +1507,16 @@ function renderLayerList() {
         const childRow = document.createElement('div');
         const isChildSelected = isEditingThisGroup && state.selectedIds.has(c.id);
         childRow.className = `layer-item group-child ${isChildSelected ? 'selected' : ''}`;
+        childRow.dataset.id = c.id;
+        childRow.classList.toggle('is-hidden', Boolean(c.hidden || s.hidden));
         childRow.innerHTML = `
           <div class="layer-item-left">
             <span class="layer-dot ${c.laserMode || 'cut'}" title="${modeLabels[c.laserMode] || 'Kutt'}"></span>
-            <span class="layer-name">↳ ${c.name || c.type}</span>
+            <span class="layer-name">↳ ${escapeObjectName(c.name || c.type)}</span>
           </div>
           <div class="layer-item-actions">
             <span class="layer-dims">${roundMm(c.width, 0)}×${roundMm(c.height, 0)}</span>
+            <button class="mini-icon-btn" data-caction="toggle-vis" aria-label="${c.hidden ? 'Vis del' : 'Skjul del'}" aria-pressed="${!c.hidden}" title="Skjul/vis del">${c.hidden ? '🙈' : '👁'}</button>
             <button class="mini-icon-btn" data-caction="extract" title="Ta denne delen ut av gruppen">📤</button>
             <button class="mini-icon-btn" data-caction="delete" title="Slett denne delen fra gruppen">✕</button>
           </div>
@@ -1503,7 +1525,12 @@ function renderLayerList() {
           const cBtn = e.target.closest('[data-caction]');
           if (cBtn) {
             e.stopPropagation();
-            if (cBtn.dataset.caction === 'extract') {
+            if (cBtn.dataset.caction === 'toggle-vis') {
+              pushUndoSnapshot();
+              c.hidden = !c.hidden;
+              if (c.hidden) state.selectedIds.delete(c.id);
+              renderAll();
+            } else if (cBtn.dataset.caction === 'extract') {
               removeChildFromGroup(s.id, c.id);
             } else if (cBtn.dataset.caction === 'delete') {
               pushUndoSnapshot();
@@ -3427,6 +3454,7 @@ function bindInspectorEvents() {
   });
 
   document.getElementById('btn-duplicate').addEventListener('click', duplicateSelectedShapes);
+  document.querySelectorAll('[data-order]').forEach(btn => btn.addEventListener('click', () => reorderSelectedShapes(btn.dataset.order)));
   document.getElementById('btn-group').addEventListener('click', groupSelectedShapes);
   document.getElementById('btn-ungroup').addEventListener('click', ungroupSelectedShapes);
 
@@ -3503,28 +3531,118 @@ function alignSelectedShapes(mode) {
 }
 
 function duplicateSelectedShapes() {
-  const sel = getSelectedShapes();
-  if (sel.length === 0) return;
-  pushUndoSnapshot();
-  const activeList = getActiveContainerList();
-  const newIds = new Set();
-  const assignFreshIds = (obj) => {
-    obj.id = uid(obj.type);
-    if (obj.type === 'group' && Array.isArray(obj.children)) {
-      obj.children.forEach(assignFreshIds);
-    }
-  };
-  for (const s of sel) {
-    const copy = JSON.parse(JSON.stringify(s));
-    assignFreshIds(copy);
-    copy.name = `${s.name || s.type} (kopi)`;
-    moveShapesBy([copy], 8, 8);
-    activeList.push(copy);
-    newIds.add(copy.id);
-  }
-  state.selectedIds = newIds;
-  renderAll();
+  if (!finishLineChain()) return;
+  const copies = cloneWithFreshIds(getSelectedShapes());
+  if (!copies.length) return;
+  copies.forEach(copy => { copy.name = `${copy.name || copy.type} (kopi)`; });
+  insertCopiedShapes(copies, 8);
   showToast('📋 Objekt duplisert');
+}
+
+function insertCopiedShapes(copies, offset) {
+  pushUndoSnapshot();
+  moveShapesBy(copies, offset, offset);
+  getActiveContainerList().push(...copies);
+  state.selectedIds = new Set(copies.map(copy => copy.id));
+  setActiveTool('select');
+  renderAll();
+}
+
+function reorderSelectedShapes(direction) {
+  if (!finishLineChain()) return;
+  const list = getActiveContainerList();
+  const reordered = reorderObjects(list, state.selectedIds, direction);
+  if (list.every((shape, i) => shape === reordered[i])) return;
+  pushUndoSnapshot();
+  list.splice(0, list.length, ...reordered);
+  renderAll();
+}
+
+function textEditingTarget(event) {
+  return [event?.target, document.activeElement].some(el =>
+    el instanceof Element && (el.closest('input, textarea, select') || el.isContentEditable));
+}
+
+function canvasCommandsBlocked(event) {
+  return textEditingTarget(event) || Boolean(document.querySelector('.modal-backdrop.open'));
+}
+
+let previousPaste = '', pasteCount = 0;
+function pasteObjectText(text) {
+  if (!text || !finishLineChain()) return;
+  try {
+    let shapes = decodeClipboard(text);
+    if (!shapes && /<(?:svg|\?xml)[\s>]/i.test(text)) {
+      shapes = importSvgStringToShapes(text);
+      if (shapes.warnings?.length) showToast(shapes.warnings.join(' '));
+      if (!shapes.length) throw new Error('Utklippstavlen inneholder ingen SVG-objekter som kan importeres.');
+    }
+    if (!shapes) {
+      shapes = [createTextShape({
+        x: 20, y: 20, text,
+        fontKey: document.getElementById('text-font-select').value || 'sans-bold',
+        fontSizeMm: evalMathExpr(document.getElementById('text-size-input').value, 18),
+        spacingMm: evalMathExpr(document.getElementById('text-spacing-input').value, 1.2),
+        curve: 0, laserMode: state.activeLaserMode
+      })];
+    }
+    const count = text === previousPaste ? pasteCount + 1 : 1;
+    insertCopiedShapes(cloneWithFreshIds(shapes), 8 * count);
+    previousPaste = text; pasteCount = count;
+  } catch (error) { showToast(`⚠️ Kunne ikke lime inn: ${error.message}`); }
+}
+
+function bindClipboardCommands() {
+  for (const action of ['copy', 'cut']) {
+    document.addEventListener(action, event => {
+      if (canvasCommandsBlocked(event) || !event.clipboardData || !finishLineChain()) return;
+      const selected = getSelectedShapes();
+      if (!selected.length) return;
+      try {
+        const text = encodeClipboard(selected);
+        // Plain text survives system clipboards and copying between browser tabs.
+        event.clipboardData.setData('text/plain', text);
+        try { event.clipboardData.setData(CLIPBOARD_MIME, text); } catch { /* plain text is sufficient */ }
+        event.preventDefault();
+        previousPaste = ''; pasteCount = 0;
+        if (action === 'cut') deleteSelectedShapes();
+        showToast(action === 'cut' ? '✂️ Klippet ut' : '📋 Kopiert til utklippstavlen');
+      } catch (error) { showToast(`⚠️ Kunne ikke kopiere: ${error.message}`); }
+    });
+  }
+  document.addEventListener('paste', event => {
+    if (canvasCommandsBlocked(event) || !event.clipboardData) return;
+    const text = event.clipboardData.getData(CLIPBOARD_MIME) || event.clipboardData.getData('text/plain') || event.clipboardData.getData('image/svg+xml');
+    if (!text) return;
+    event.preventDefault();
+    pasteObjectText(text);
+  });
+  for (const action of ['copy', 'cut']) {
+    document.getElementById(`btn-${action}`).addEventListener('click', async event => {
+      event.currentTarget.focus();
+      if (!finishLineChain() || !getSelectedShapes().length) return;
+      // execCommand dispatches the same native clipboard events as Cmd/Ctrl+C/X.
+      try { if (document.execCommand(action)) return; } catch { /* use asynchronous clipboard below */ }
+      const selected = getSelectedShapes();
+      const container = getActiveContainerList();
+      const text = encodeClipboard(selected);
+      try {
+        await navigator.clipboard.writeText(text);
+        if (action === 'cut' && getActiveContainerList() === container && encodeClipboard(getSelectedShapes()) === text) {
+          deleteSelectedShapes();
+        }
+        previousPaste = ''; pasteCount = 0;
+        showToast('📋 Kopiert til utklippstavlen');
+      } catch { showToast('⚠️ Bruk ⌘/Ctrl+C eller ⌘/Ctrl+X for å kopiere eller klippe ut.'); }
+    });
+  }
+  document.getElementById('btn-paste').addEventListener('click', async event => {
+    event.currentTarget.focus();
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!canvasCommandsBlocked()) pasteObjectText(text);
+    } catch { showToast('⚠️ Bruk ⌘/Ctrl+V for å lime inn fra utklippstavlen.'); }
+  });
 }
 
 function groupSelectedShapes() {
@@ -3645,8 +3763,11 @@ function deleteSelectedShapes() {
 
 function bindKeyboardShortcuts() {
   window.addEventListener('keydown', (e) => {
-    const tag = document.activeElement?.tagName?.toLowerCase();
-    const isInput = tag === 'input' || tag === 'textarea' || tag === 'select';
+    if (document.querySelector('.modal-backdrop.open') && e.key === 'Escape') {
+      document.querySelectorAll('.modal-backdrop.open').forEach(modal => modal.classList.remove('open'));
+      e.preventDefault(); return;
+    }
+    const isInput = canvasCommandsBlocked(e);
 
     if (e.code === 'Space' && !isInput) {
       state.spacePressed = true;
@@ -3662,6 +3783,17 @@ function bindKeyboardShortcuts() {
       else undo();
       return;
     }
+    if (cmd && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+    if (cmd && ['s', 'o'].includes(e.key.toLowerCase())) {
+      e.preventDefault();
+      document.getElementById(e.key.toLowerCase() === 's' ? 'btn-save-project' : 'btn-import').click();
+      return;
+    }
+    if (cmd && ['ArrowUp', 'ArrowDown'].includes(e.key)) {
+      e.preventDefault();
+      reorderSelectedShapes(e.key === 'ArrowUp' ? (e.shiftKey ? 'front' : 'forward') : (e.shiftKey ? 'back' : 'backward'));
+      return;
+    }
     if (cmd && e.key.toLowerCase() === 'd') {
       e.preventDefault();
       duplicateSelectedShapes();
@@ -3669,7 +3801,7 @@ function bindKeyboardShortcuts() {
     }
     if (cmd && e.key.toLowerCase() === 'a') {
       e.preventDefault();
-      state.selectedIds = new Set(state.shapes.map(s => s.id));
+      state.selectedIds = new Set(getActiveContainerList().filter(s => !s.hidden).map(s => s.id));
       renderAll();
       return;
     }
@@ -3724,7 +3856,7 @@ function bindKeyboardShortcuts() {
     }
 
     // Arrow key nudging (1mm or snapMm; Shift = 10mm)
-    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && state.selectedIds.size > 0) {
+    if (!cmd && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && state.selectedIds.size > 0) {
       e.preventDefault();
       pushUndoSnapshot();
       const step = e.shiftKey ? 10 : (state.snapMm || 1);
@@ -3734,6 +3866,8 @@ function bindKeyboardShortcuts() {
       renderAll();
       return;
     }
+
+    if (cmd || e.altKey) return;
 
     // Tool hotkeys
     const keyMap = {

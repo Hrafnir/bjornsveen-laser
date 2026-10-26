@@ -1111,3 +1111,11 @@ html, body {
   .mode-subtext { display: none; }
   .coords-readout { min-width: 0; }
 }
+
+/* Object paint order, independent of laser processing modes and cut stages. */
+.layer-order-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin-bottom: 6px; }
+.layer-order-controls .btn { justify-content: center; padding: 5px 2px; font-size: 11px; }
+.layer-order-hint { color: var(--text-muted); font-size: 11px; margin: 0 0 8px; }
+.layer-item.is-hidden .layer-item-left { opacity: .45; }
+.layer-item.is-hidden .layer-name { text-decoration: line-through; }
+.layer-item-actions { flex-shrink: 0; }
