@@ -224,4 +224,74 @@ await test('extending a Bézier curve with L keeps the original handles and comp
  assert(shapes().length===1);assert(copiedShape().nodes.length===4);assert((shapes()[0].getAttribute('d').match(/C /g)||[]).length>=2);
  const n=copiedShape().nodes.find(n=>Math.abs(n.x-60)<.01);near(n.in.x,before.nodes[1].in.x);near(n.out.y,before.nodes[1].out.y);
 });
+const startPen=()=>{tool('pen');$('prop-curve-toggle').checked=false;$('prop-curve-toggle').dispatchEvent(new w.Event('change'));};
+const anchorFor=(id,i)=>d.querySelector(`[data-path-shape="${id}"][data-handle="node-${i}"]`);
+const segmentFor=(id,i)=>d.querySelector(`[data-path-shape="${id}"][data-path-segment="${i}"]`);
+const pickAnchor=(id,i,shift=false)=>{const h=anchorFor(id,i);assert(h,'anchor missing');click(...handlePoint(h),h,{shiftKey:shift});};
+await test('B retains open curves when finishing with Enter, Escape, V, the finish button or double-click',()=>{
+ for(const action of ['enter','escape','tool','button','double']){
+  reset();startPen();drag([40,70],[65,30]);drag([140,70],[165,110]);
+  assert(!$('btn-pen-finish').disabled);assert(shapes().length===0);
+  if(action==='enter')key('Enter');if(action==='escape')key('Escape');if(action==='tool')tool('select');if(action==='button')$('btn-pen-finish').click();
+  if(action==='double'){pointer('pointerdown',140,70,undefined,{detail:2});pointer('pointerup',140,70);$('main-svg').dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));}
+  assert(shapes().length===1,action);const s=copiedShape();assert(s.closedPath===false);assert(s.nodes.length===2);assert(shapes()[0].getAttribute('d').includes('C '));assert(!shapes()[0].getAttribute('d').includes('Z'));
+  key('z',{metaKey:true});assert(shapes().length===0);key('z',{metaKey:true,shiftKey:true});assert(shapes().length===1);
+ }
+});
+await test('B Backspace undoes draft points; explicit Cancel discards only the draft; clipboard completes an open draft',()=>{
+ reset();chain([[20,20],[50,20]]);startPen();click(100,40);click(140,70);click(180,40);key('Backspace');
+ assert($('pen-draft-status').textContent.includes('2 punkter'));$('btn-pen-cancel').click();assert(shapes().length===1);
+ startPen();click(100,40);click(140,70);const copy=clipboard('copy');assert(copy.handled);assert(shapes().length===2);assert(JSON.parse(copy.text).shapes[0].closedPath===false);
+});
+await test('B extends an existing curved path and joins another endpoint without duplicating nodes or losing handles',()=>{
+ reset();startPen();drag([20,60],[40,30]);drag([90,60],[110,90]);$('btn-pen-finish').click();const first=copiedShape();
+ chain([[160,60],[200,60]]);startPen();click(90,60);click(130,80);click(160,60);
+ assert(shapes().length===1);const result=copiedShape();assert(result.nodes.length===5);assert(result.closedPath===false);assert(result.d.includes('C '));near(result.nodes[0].out.x,first.nodes[0].out.x);
+ key('z',{metaKey:true});assert(shapes().length===2);
+});
+await test('A connects exactly the two Shift-selected endpoints, including a gap, and can close the resulting path',()=>{
+ reset();chain([[20,40],[50,60],[80,40]]);chain([[130,40],[160,60],[190,40]]);tool('nodes');const [a,b]=ids();
+ pickAnchor(a,2);pickAnchor(b,0,true);assert(!$('btn-connect-anchors').disabled);key('j',{metaKey:true});assert(shapes().length===1);assert(copiedShape().nodes.length===6);
+ const id=ids()[0];pickAnchor(id,0);pickAnchor(id,5,true);$('btn-connect-anchors').click();assert(copiedShape().closedPath);assert(shapes()[0].getAttribute('d').endsWith('Z'));
+ key('z',{metaKey:true});assert(!points(shapes()[0]).closed);key('z',{metaKey:true});assert(shapes().length===2);
+});
+await test('deleting an anchor connects its neighbours; deleting a segment leaves a gap and creates separate paths',()=>{
+ reset();chain([[20,40],[60,60],[100,40],[140,60]]);tool('nodes');let id=ids()[0];pickAnchor(id,1);key('Delete');assert(shapes().length===1);assert(copiedShape().nodes.length===3);
+ key('z',{metaKey:true});id=ids()[0];const edge=segmentFor(id,1);click(80,50,edge);assert(!$('btn-delete-segments').disabled);$('btn-delete-segments').click();
+ assert(shapes().length===2);key('a',{metaKey:true});let all=JSON.parse(clipboard('copy').text).shapes;assert(all.every(s=>s.nodes.length===2&&!s.closedPath));
+ key('z',{metaKey:true});assert(shapes().length===1);key('z',{metaKey:true,shiftKey:true});assert(shapes().length===2);
+});
+await test('removing a closed shape segment creates an open outline, with no implicit filled closing edge',()=>{
+ reset();chain([[40,40],[120,40],[120,100],[40,100],[40,40]],false);tool('select');$('btn-shape-fill').click();tool('nodes');
+ const id=ids()[0];click(80,40,segmentFor(id,0));key('Backspace');assert(shapes().length===1);const result=copiedShape();assert(!result.closedPath);assert(result.nodes.length===4);assert(result.laserMode==='cut');assert(shapes()[0].getAttribute('fill')==='none');
+});
+await test('double-clicking a segment adds an editable anchor without changing its curve or closing it',()=>{
+ reset();startPen();drag([30,70],[50,30]);drag([130,70],[150,110]);key('Enter');tool('nodes');const id=ids()[0];
+ const edge=segmentFor(id,0);click(80,40,edge);segmentFor(id,0).dispatchEvent(new w.MouseEvent('dblclick',{...point(80,40),bubbles:true}));
+ const result=copiedShape();assert(result.nodes.length===3);assert(!result.closedPath);assert((result.d.match(/C /g)||[]).length===2);
+ key('z',{metaKey:true});assert(d.querySelectorAll('[data-handle^="node-"]').length===2);
+});
+await test('point and segment selection is cleared by whole-object selection; input shortcuts do not delete artwork',()=>{
+ reset();chain([[20,40],[60,60],[100,40]]);tool('nodes');pickAnchor(ids()[0],1);$('simplify-tolerance').focus();
+ $('simplify-tolerance').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Delete',bubbles:true}));assert(shapes().length===1);assert(d.querySelectorAll('[data-handle^="node-"]').length===3);
+ $('simplify-tolerance').blur();tool('select');selectRow(ids()[0]);key('Delete');assert(shapes().length===0);
+});
+await test('path segment edits stay inside the edited group and preserve unrelated objects',()=>{
+ reset();chain([[20,40],[60,60],[100,40],[140,60]]);tool('rect');drag([180,40],[220,70]);key('a',{metaKey:true});key('g',{metaKey:true});
+ const groupId=ids()[0];d.querySelector(`#layer-list [data-id="${groupId}"] [data-action="edit-group"]`).click();tool('nodes');
+ const edge=d.querySelector('[data-path-segment="1"]');assert(edge);click(80,50,edge);key('Delete');
+ key('a',{metaKey:true});const children=JSON.parse(clipboard('copy').text).shapes;assert(children.length===3);assert(children.filter(s=>s.type==='rect').length===1);assert(children.filter(s=>s.type==='path').every(s=>!s.closedPath));
+});
+await test('B closes only explicitly and open curves drawn with fill selected become line engraving',()=>{
+ reset();startPen();[[30,30],[90,30],[70,80]].forEach(p=>click(...p));$('btn-pen-close').click();assert(copiedShape().closedPath);
+ reset();d.querySelector('[data-mode="engrave"]').click();startPen();drag([40,70],[60,30]);drag([140,70],[160,110]);tool('select');
+ assert(copiedShape().closedPath===false);assert(copiedShape().laserMode==='score');assert(shapes()[0].getAttribute('fill')==='none');
+ d.querySelector('[data-mode="cut"]').click();
+});
+await test('Shift-click can select both overlapping endpoints before merging them once',()=>{
+ reset();$('object-snap-toggle').checked=false;$('object-snap-toggle').dispatchEvent(new w.Event('change'));
+ chain([[20,50],[70,50]]);chain([[70,50],[120,80]]);tool('nodes');const second=ids()[1];
+ pickAnchor(second,0);pickAnchor(second,0,true);assert(!$('btn-connect-anchors').disabled);$('btn-connect-anchors').click();
+ assert(shapes().length===1);assert(copiedShape().nodes.length===3);assert(!copiedShape().closedPath);
+});
 document.querySelector('#summary').textContent=`${passed} bestått, ${failed} feilet`;

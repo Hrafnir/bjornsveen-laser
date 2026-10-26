@@ -116,10 +116,18 @@ Inspirasjon: [Boxes.py RoundedBox](https://boxes.hackerspace-bamberg.de/RoundedB
 ### Bézier-kurver med ankerpunkter og håndtak
 
 - **L + Glatt kurve:** ett anker per klikk. Kurven lagres som kubiske Bézier-segmenter, uten å gjøre tegnepunktene mellom ankrene redigerbare.
-- **Penn (B):** klikk for et hjørne, eller klikk og dra for tangent-håndtak. Enter avslutter en åpen sti; klikk startpunktet for å lukke. Automatisk glatting kan brukes når ingen håndtak er tegnet manuelt.
+- **Penn (B):** klikk for et hjørne, eller klikk og dra for tangent-håndtak. Enter, Esc, knappen **Fullfør åpen sti** eller bytte av verktøy beholder en åpen sti. Bare klikk på startpunktet eller **Lukk sti** lukker figuren. **Avbryt tegning** forkaster utkastet, og Backspace angrer siste punkt. Klikk et eksisterende endepunkt for å fortsette stien; avslutt på en annen sti for å koble dem sammen. Åpne stier bruker linjegravering (score) hvis fylt gravering er valgt. Automatisk glatting kan brukes når ingen håndtak er tegnet manuelt.
 - Velg kurven med **V**. Oransje punkter er ankrene; de blå håndtakene styrer retning og bøy. Flytting av et anker tar med håndtakene. Glatte punkter holder håndtakene på samme tangent, med uavhengige lengder. **Alt + dra et håndtak** gjør det uavhengig. **Alt + klikk et anker** bytter mellom hjørne uten håndtak og et glatt punkt.
 - Eldre kurver med mange punkter kan velges og **Forenkle til Bézier-kurve** brukes i dimensjonspanelet. Toleransen i mm styrer hvor tett tilpasningen følger originalen (standard 0,1 mm). Lavere verdi beholder flere detaljer. Geometrien endres først når knappen trykkes, og kan angres med ⌘/Ctrl+Z.
 - Skalering, flytting, rotasjon, speiling, sammenkobling, utklippstavle og lagring bevarer håndtakene. Bézier-kurver eksporteres med kompakte `C`-kommandoer i SVG og XCS; polygonberegninger for eksempelvis offset bruker fortsatt beregnede kurvepunkter internt.
+
+### Redigere ankerpunkter og enkeltsegmenter
+
+- **Anker (A)** viser ankerpunkter på de tegnede stiene i gjeldende gruppe/arbeidsflate. Klikk et punkt eller linjestykke for å velge det. Blå markering viser valget; Shift-klikk velger flere. **V** velger og flytter hele objekter.
+- **Slett punkt** eller Delete fjerner valgte ankerpunkter og forbinder de gjenværende naboene. En sti uten nok punkter fjernes. Alt+klikk bytter mellom hjørne og glatt punkt; håndtakene kan fortsatt dras.
+- **Slett linjestykke** eller Delete med et segment valgt fjerner bare den valgte forbindelsen. En lukket figur blir åpen, og en åpen sti kan deles i to. Gjenværende kurver beholder formen. Åpne biter bruker omriss fremfor fyll, så hullet ikke fylles igjen.
+- **Koble 2 endepunkter** eller ⌘/Ctrl+J kobler akkurat de to endepunktene du Shift-velger. Ender på forskjellige stier forbindes med et rett segment; sammenfallende endepunkter smeltes til ett anker. Ender på samme sti lukker den. Stiene må ha samme laserlag og kutterekkefølge. Indre punkter kan festes til hverandre med snapping, men forgreninger blir ikke laget som én kontur.
+- Dobbeltklikk et linjestykke med A for å legge til et anker uten å endre kurveformen. Alle punktendringer kan angres og følger med i prosjektlagring.
 
 ### Fylt figur og offset
 

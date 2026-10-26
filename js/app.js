@@ -1,3 +1,4 @@
+import { isEditablePath, isPathEndpoint, removePathAnchors, removePathSegments, connectPathEndpoints, splitPathSegment, nearestSegmentParameter } from './path-edit.js';
 import { smoothNodes, nodesToPath, moveAnchor, moveControl, fitBezier } from './bezier.js';
 import { findObjectSnapPoint } from './point-snap.js';
 import { CLIPBOARD_MIME, encodeClipboard, decodeClipboard, cloneWithFreshIds, reorderObjects } from './object-commands.js';
@@ -120,6 +121,8 @@ const state = {
   linePress: null,
   penPoints: [],
   penCursor: null,
+  penSourceId: null,
+  pathPick: { anchors: [], segments: [] },
   measureLine: null, // { x1, y1, x2, y2 }
   spacePressed: false,
   curveModeDefault: false,
@@ -247,6 +250,11 @@ function pushUndoSnapshot() {
 }
 
 function undo() {
+  if (state.penPoints.length) {
+    state.penPoints.pop(); if (!state.penPoints.length) state.penSourceId=null;
+    state.penCursor=null; updateUndoRedoButtons(); renderAll(); return;
+  }
+  clearPathPick();
   if (state.lineDraft) {
     state.lineDraft.points.pop();
     if (!state.lineDraft.points.length) state.lineDraft = null;
@@ -265,7 +273,8 @@ function undo() {
 }
 
 function redo() {
-  if (state.lineDraft) return;
+  if (state.lineDraft || state.penPoints.length) return;
+  clearPathPick();
   if (state.redoStack.length === 0) return;
   state.undoStack.push(JSON.stringify(state.shapes));
   const next = state.redoStack.pop();
@@ -278,8 +287,8 @@ function redo() {
 }
 
 function updateUndoRedoButtons() {
-  document.getElementById('btn-undo').disabled = state.undoStack.length === 0 && !state.lineDraft;
-  document.getElementById('btn-redo').disabled = state.redoStack.length === 0 || Boolean(state.lineDraft);
+  document.getElementById('btn-undo').disabled = state.undoStack.length === 0 && !state.lineDraft && !state.penPoints.length;
+  document.getElementById('btn-redo').disabled = state.redoStack.length === 0 || Boolean(state.lineDraft) || state.penPoints.length>0;
 }
 
 // ============================================================================
@@ -540,6 +549,11 @@ function removeChildFromGroup(groupId, childId) {
 }
 
 function renderAll() {
+  const paths=getActiveContainerList();
+  for (const kind of ['anchors','segments']) state.pathPick[kind]=state.pathPick[kind].filter(p=>{
+    const shape=paths.find(s=>s.id===p.shapeId);
+    return isEditablePath(shape) && !shape.hidden && state.selectedIds.has(shape.id) && p.index>=0 && p.index<(kind==='anchors'||shape.closedPath?shape.nodes.length:shape.nodes.length-1);
+  });
   const editingGroup = getEditingGroup();
   if (editingGroup) {
     syncGroupBBox(editingGroup);
@@ -560,6 +574,7 @@ function renderAll() {
   renderShapesLayer();
   renderOverlay();
   renderInspector();
+  renderPathEditUI();
   renderAppearanceUI();
   renderLayerList();
   const activeList = getActiveContainerList();
@@ -715,6 +730,102 @@ function getSelectedShapes() {
   return list.filter(s => state.selectedIds.has(s.id));
 }
 
+function clearPathPick() { state.pathPick = {anchors:[], segments:[]}; }
+
+function replacePath(shape, replacements) {
+  const list=getActiveContainerList(), index=list.findIndex(s=>s.id===shape.id);
+  if(index<0)return;
+  list.splice(index,1,...replacements);
+  state.selectedIds.delete(shape.id);
+  for(const s of replacements)state.selectedIds.add(s.id);
+}
+
+function removePickedPathParts(kind = state.pathPick.anchors.length?'anchors':'segments') {
+  const refs=state.pathPick[kind];if(!refs.length)return;
+  const list=getActiveContainerList(), ids=new Set(refs.map(p=>p.shapeId));
+  const edits=list.filter(s=>ids.has(s.id)).map(s=>({shape:s,replacements:
+    (kind==='anchors'?removePathAnchors:removePathSegments)(s,refs.filter(p=>p.shapeId===s.id).map(p=>p.index))}));
+  if(!edits.length)return;
+  pushUndoSnapshot();
+  for(const edit of edits)replacePath(edit.shape,edit.replacements);
+  clearPathPick();
+  const group=getEditingGroup();
+  if(group&&!group.children.length){state.shapes=state.shapes.filter(s=>s.id!==group.id);state.editingGroupId=null;}
+  renderAll();
+  showToast(kind==='anchors'?'Ankerpunkt fjernet. Naboene er koblet sammen.':'Linjestykke fjernet. Åpningene er beholdt.');
+}
+
+function connectPickedAnchors() {
+  if(state.pathPick.anchors.length!==2){showToast('Velg to endepunkter med A og Shift-klikk.');return;}
+  const [a,b]=state.pathPick.anchors,list=getActiveContainerList();
+  const first=list.find(s=>s.id===a.shapeId),second=list.find(s=>s.id===b.shapeId);
+  try {
+    const result=connectPathEndpoints(first,a.index,second,b.index);
+    pushUndoSnapshot();replacePath(first,[result]);
+    if(first.id!==second.id){const index=list.findIndex(s=>s.id===second.id);list.splice(index,1);}
+    state.selectedIds=new Set([result.id]);clearPathPick();renderAll();
+    showToast(result.closedPath?'Endepunktene er koblet til en lukket sti.':'Endepunktene er koblet til én åpen sti.');
+  } catch(error){showToast(error.message);}
+}
+
+function renderPathEditUI() {
+  const pen=state.activeTool==='pen', nodes=state.activeTool==='nodes';
+  const selected=getSelectedShapes().some(isEditablePath);
+  const anchors=state.pathPick.anchors, segments=state.pathPick.segments;
+  document.getElementById('path-edit-section').style.display=pen||nodes||selected?'block':'none';
+  document.getElementById('pen-actions').style.display=pen?'block':'none';
+  document.getElementById('anchor-actions').style.display=pen?'none':'block';
+  document.getElementById('pen-draft-status').textContent=`${state.penPoints.length} punkter${state.penSourceId?' – fortsetter eksisterende sti':''}`;
+  document.getElementById('btn-pen-finish').disabled=state.penPoints.length<2;
+  document.getElementById('btn-pen-close').disabled=state.penPoints.length<3||Boolean(state.penSourceId);
+  document.getElementById('btn-delete-anchors').disabled=!anchors.length;
+  document.getElementById('btn-delete-segments').disabled=!segments.length;
+  document.getElementById('btn-connect-anchors').disabled=anchors.length!==2||anchors.some(p=>!isPathEndpoint(getActiveContainerList().find(s=>s.id===p.shapeId),p.index));
+  document.getElementById('path-pick-status').textContent=anchors.length?`${anchors.length} ankerpunkt valgt`:
+    segments.length?`${segments.length} linjestykke valgt`:'Velg ankerpunkter eller linjestykker med A.';
+}
+
+function renderPathHandles(unit) {
+  if(!['select','nodes'].includes(state.activeTool))return;
+  const direct=state.activeTool==='nodes';
+  const shapes=(direct?getActiveContainerList():getSelectedShapes()).filter(s=>isEditablePath(s)&&!s.hidden&&!s.guideLabel);
+  const ns='http://www.w3.org/2000/svg';
+  // Hit areas for individual segments sit underneath every anchor handle.
+  if(direct)for(const shape of shapes){
+    const nodes=pathNodesInWorld(shape), count=shape.closedPath?nodes.length:nodes.length-1;
+    for(let i=0;i<count;i++){
+      const a=nodes[i],b=nodes[(i+1)%nodes.length];
+      const chosen=state.pathPick.segments.some(p=>p.shapeId===shape.id&&p.index===i);
+      const d=nodesToPath([a,b]);
+      if(chosen){
+        const mark=document.createElementNS(ns,'path');mark.setAttribute('d',d);mark.setAttribute('fill','none');
+        mark.setAttribute('stroke','#0ea5e9');mark.setAttribute('stroke-width',unit*3);mark.style.pointerEvents='none';overlayLayerEl.appendChild(mark);
+      }
+      const hit=document.createElementNS(ns,'path');hit.setAttribute('d',d);hit.setAttribute('fill','none');
+      hit.setAttribute('stroke','transparent');hit.setAttribute('stroke-width',unit*12);hit.style.pointerEvents='stroke';
+      hit.dataset.pathShape=shape.id;hit.dataset.pathSegment=i;hit.style.cursor='pointer';overlayLayerEl.appendChild(hit);
+    }
+  }
+  for(const shape of shapes){
+    const nodes=pathNodesInWorld(shape);
+    for(let i=0;i<nodes.length;i++){
+      const n=nodes[i],chosen=state.pathPick.anchors.some(p=>p.shapeId===shape.id&&p.index===i);
+      if(!direct||chosen)for(const side of ['in','out'])if(n[side]){
+        const h=n[side],stem=document.createElementNS(ns,'line');
+        stem.setAttribute('x1',n.x);stem.setAttribute('y1',n.y);stem.setAttribute('x2',h.x);stem.setAttribute('y2',h.y);
+        stem.setAttribute('stroke','#0ea5e9');stem.setAttribute('stroke-width',unit);stem.style.pointerEvents='none';overlayLayerEl.appendChild(stem);
+        const control=document.createElementNS(ns,'circle');control.setAttribute('cx',h.x);control.setAttribute('cy',h.y);
+        control.setAttribute('r',unit*3.3);control.setAttribute('fill','#fff');control.setAttribute('stroke','#0284c7');control.setAttribute('stroke-width',unit*1.3);
+        control.dataset.handle=`control-${i}-${side}`;control.dataset.pathShape=shape.id;control.style.cursor='crosshair';overlayLayerEl.appendChild(control);
+      }
+      const anchor=document.createElementNS(ns,'circle');anchor.setAttribute('cx',n.x);anchor.setAttribute('cy',n.y);
+      anchor.setAttribute('r',unit*(chosen?5:4.2));anchor.setAttribute('fill',chosen?'#38bdf8':'#f59e0b');
+      anchor.setAttribute('stroke','#0f172a');anchor.setAttribute('stroke-width',unit*1.2);
+      anchor.dataset.handle=`node-${i}`;anchor.dataset.pathShape=shape.id;anchor.style.cursor='pointer';overlayLayerEl.appendChild(anchor);
+    }
+  }
+}
+
 function renderOverlay() {
   overlayLayerEl.innerHTML = '';
   const unit = state.viewW / 900; // Screen-independent size unit in mm
@@ -740,7 +851,7 @@ function renderOverlay() {
 
   // 1. Selected Shapes Bounding Box, Resize Handles, Line Endpoint/Curve Handles & Node Handles
   const selected = getSelectedShapes();
-  if (selected.length > 0) {
+  if (selected.length > 0 && state.activeTool !== 'nodes') {
     const single = selected.length === 1 ? selected[0] : null;
 
     if (single && single.type === 'line') {
@@ -943,40 +1054,12 @@ function renderOverlay() {
         rotCircle.dataset.handle = 'rotate';
         handleGroupEl.appendChild(rotCircle);
 
-        // If this is a drawn path with editable nodes and curve/node handles are enabled:
-        if (single && single.type === 'path' && Array.isArray(single.nodes) && single.nodes.length >= 2) {
-          const displayNodes = pathNodesInWorld(single);
-          for (let idx = 0; idx < displayNodes.length; idx++) {
-            const np = displayNodes[idx];
-            for (const side of ['in', 'out']) {
-              const h = np[side]; if (!h) continue;
-              const stem = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-              stem.setAttribute('x1', np.x); stem.setAttribute('y1', np.y);
-              stem.setAttribute('x2', h.x); stem.setAttribute('y2', h.y);
-              stem.setAttribute('stroke', '#0ea5e9'); stem.setAttribute('stroke-width', unit);
-              stem.style.pointerEvents = 'none'; overlayLayerEl.appendChild(stem);
-              const control = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-              control.setAttribute('cx', h.x); control.setAttribute('cy', h.y);
-              control.setAttribute('r', unit * 3.3); control.setAttribute('fill', '#fff');
-              control.setAttribute('stroke', '#0284c7'); control.setAttribute('stroke-width', unit * 1.3);
-              control.dataset.handle = `control-${idx}-${side}`; control.style.cursor = 'crosshair';
-              overlayLayerEl.appendChild(control);
-            }
-            const nc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-            nc.setAttribute('cx', np.x);
-            nc.setAttribute('cy', np.y);
-            nc.setAttribute('r', String(unit * 4.2));
-            nc.setAttribute('fill', '#f59e0b');
-            nc.setAttribute('stroke', '#0f172a');
-            nc.setAttribute('stroke-width', String(unit * 1.2));
-            nc.style.cursor = 'pointer';
-            nc.dataset.handle = `node-${idx}`;
-            overlayLayerEl.appendChild(nc);
-          }
-        }
+
       }
     }
   }
+
+  renderPathHandles(unit);
 
   // 2. Rubber-band Marquee Selection Box
   if (state.interaction && state.interaction.type === 'marquee') {
@@ -1528,6 +1611,7 @@ function renderLayerList() {
         }
         return;
       }
+      clearPathPick();
       if (editingGroup && editingGroup.id !== s.id) {
         state.editingGroupId = null;
       }
@@ -1599,6 +1683,7 @@ function renderLayerList() {
           if (state.editingGroupId !== s.id) {
             enterGroupEditMode(s.id, c.id);
           } else {
+            clearPathPick();
             if (e.shiftKey) {
               if (state.selectedIds.has(c.id)) state.selectedIds.delete(c.id);
               else state.selectedIds.add(c.id);
@@ -1684,6 +1769,17 @@ function bindCanvasEvents() {
   window.addEventListener('pointerup', onCanvasPointerUp);
 
   viewportEl.addEventListener('dblclick', (e) => {
+    const segment=e.target.closest('[data-path-segment]');
+    if (state.activeTool==='nodes' && segment) {
+      const shape=getActiveContainerList().find(s=>s.id===segment.dataset.pathShape);
+      const index=Number(segment.dataset.pathSegment);
+      if(shape){
+        const t=nearestSegmentParameter(shape,index,clientToWorldMm(e.clientX,e.clientY,false));
+        const result=splitPathSegment(shape,index,t); pushUndoSnapshot(); replacePath(shape,[result]);
+        state.pathPick={anchors:[{shapeId:shape.id,index:index+1}],segments:[]};renderAll();
+      }
+      return;
+    }
     if (state.activeTool === 'line') { finishLineChain(); return; }
     if (state.activeTool === 'pen' && state.penPoints.length >= 2) {
       finishPenPath(false);
@@ -1866,6 +1962,54 @@ function onCanvasPointerDown(e) {
     return;
   }
 
+  if (state.activeTool==='select' || state.activeTool==='nodes') {
+    const nodeHandle=e.target.closest('[data-path-shape][data-handle]');
+    if(nodeHandle){
+      const shape=getActiveContainerList().find(s=>s.id===nodeHandle.dataset.pathShape);
+      if(!isEditablePath(shape))return;
+      const handleId=nodeHandle.dataset.handle, index=Number(handleId.split('-')[1]);
+      const ref={shapeId:shape.id,index};
+      const control=handleId.startsWith('control-');
+      if(!control && e.shiftKey) {
+        let picked=ref;
+        const alreadySelected=state.pathPick.anchors.some(p=>p.shapeId===ref.shapeId&&p.index===index);
+        // Endpoints that have snapped together overlap on screen. A second
+        // Shift-click must reach the other endpoint, not just deselect the top one.
+        if(alreadySelected){
+          const at=pathNodesInWorld(shape)[index];
+          for(const candidate of getActiveContainerList().filter(s=>isEditablePath(s)&&!s.hidden)){
+            const other=pathNodesInWorld(candidate).findIndex((n,i)=>dist(n,at)<1e-5&&!state.pathPick.anchors.some(p=>p.shapeId===candidate.id&&p.index===i));
+            if(other>=0){picked={shapeId:candidate.id,index:other};break;}
+          }
+        }
+        const found=state.pathPick.anchors.findIndex(p=>p.shapeId===picked.shapeId&&p.index===picked.index);
+        if(found<0)state.pathPick.anchors.push(picked);else state.pathPick.anchors.splice(found,1);
+        state.pathPick.segments=[];
+        state.selectedIds=new Set(state.pathPick.anchors.map(p=>p.shapeId));
+        renderAll();return;
+      }
+      state.pathPick={anchors:[ref],segments:[]}; state.selectedIds=new Set([shape.id]);
+      pushUndoSnapshot();
+      shape.nodes=pathNodesInWorld(shape);shape.nodeModel='bezier';shape.rotation=0;shape.flipX=false;shape.flipY=false;
+      rebuildPathShapeFromNodes(shape);
+      state.interaction={type:control?'path-control':'path-node',shape,nodeIdx:index,side:handleId.split('-')[2],
+        altClick:!control&&e.altKey,startClientX:e.clientX,startClientY:e.clientY,moved:false};
+      renderAll();return;
+    }
+    if(state.activeTool==='nodes') {
+      const segment=e.target.closest('[data-path-segment]');
+      if(segment){
+        const ref={shapeId:segment.dataset.pathShape,index:Number(segment.dataset.pathSegment)};
+        if(!e.shiftKey)state.pathPick={anchors:[],segments:[]};
+        state.pathPick.anchors=[];
+        const found=state.pathPick.segments.findIndex(p=>p.shapeId===ref.shapeId&&p.index===ref.index);
+        if(found<0)state.pathPick.segments.push(ref);else state.pathPick.segments.splice(found,1);
+        state.selectedIds=new Set(state.pathPick.segments.map(p=>p.shapeId));
+      } else { clearPathPick(); state.selectedIds.clear(); }
+      renderAll();return;
+    }
+  }
+
   // 1. Check if clicking a resize, rotation, line endpoint, line curve, or path node handle
   const handleEl = e.target.closest('[data-handle]');
   if (handleEl && state.activeTool === 'select' && state.selectedIds.size >= 1) {
@@ -1893,21 +2037,6 @@ function onCanvasPointerDown(e) {
         handle: handleId,
         shape: s
       };
-    } else if (handleId.startsWith('node-') || handleId.startsWith('control-')) {
-      const nodeIdx = parseInt(handleId.split('-')[1], 10);
-      // Bake the displayed transform before editing a node so changing its
-      // bounding-box center cannot move the other nodes or the snapped point.
-      s.nodes = pathNodesInWorld(s); s.nodeModel = 'bezier';
-      s.rotation = 0; s.flipX = false; s.flipY = false;
-      rebuildPathShapeFromNodes(s);
-      state.interaction = {
-        type: handleId.startsWith('control-') ? 'path-control' : 'path-node',
-        side: handleId.split('-')[2],
-        altClick: handleId.startsWith('node-') && e.altKey,
-        startClientX: e.clientX, startClientY: e.clientY, moved: false,
-        nodeIdx,
-        shape: s
-      };
     } else {
       const bbox = selected.length === 1 && s.type !== 'group'
         ? { x: s.x, y: s.y, width: s.width, height: s.height }
@@ -1930,6 +2059,7 @@ function onCanvasPointerDown(e) {
 
   // 2. Active Tool Handling
   if (state.activeTool === 'select') {
+    clearPathPick();
     const shapeEl = e.target.closest('[data-id]');
     if (shapeEl) {
       const id = shapeEl.dataset.id;
@@ -2023,20 +2153,30 @@ function onCanvasPointerDown(e) {
     return;
   }
 
-  // 5. Pen / Polygon Path Tool
+  // 5. Pen: open paths are the default; endpoints can extend existing paths.
   if (state.activeTool === 'pen') {
-    if (state.penPoints.length >= 3 && dist(worldPt, state.penPoints[0]) < (state.viewW / 90)) {
-      finishPenPath(true);
+    e.preventDefault();
+    if (e.detail>1) return;
+    const radius=state.viewW/Math.max(1,svgEl.getBoundingClientRect().width)*8;
+    const source=getActiveContainerList().find(s=>s.id===state.penSourceId);
+    const endpoint=state.objectSnap&&!e.altKey ? findLineEndpoint(getActiveContainerList(),rawWorldPt,radius,
+      source?{laserMode:source.laserMode,cutStage:source.cutStage}:{}) : null;
+    if (!state.penSourceId && state.penPoints.length>=3 && dist(rawWorldPt,state.penPoints[0])<radius) {
+      finishPenPath(true);return;
+    }
+    const snap=state.objectSnap&&!e.altKey?findObjectSnapPoint(getActiveContainerList(),rawWorldPt,radius):null;
+    const destination=endpoint?.point||snap?.point||worldPt;
+    if (state.penPoints.length && dist(destination,state.penPoints.at(-1))<1e-6) return;
+    if (!state.penPoints.length) { state.penSourceId=endpoint?.shapeId||null; state.selectedIds.clear(); }
+    state.penPoints.push({...destination});
+    state.penCursor=destination;
+    if (endpoint && state.penPoints.length>=2 && !(endpoint.shapeId===state.penSourceId && dist(destination,state.penPoints[0])<1e-6)) {
+      if(!finishPenPath(false,true,endpoint.shapeId))state.penPoints.pop();
       return;
     }
-    const snap = state.objectSnap && !e.altKey ? findObjectSnapPoint(getActiveContainerList(), clientToWorldMm(e.clientX, e.clientY, false), state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8) : null;
-    const destination = snap ? snap.point : worldPt;
-    state.penPoints.push({...destination});
-    state.interaction = { type: 'pen-handle', node: state.penPoints.at(-1), startClientX:e.clientX, startClientY:e.clientY };
-    state.penCursor = destination;
-    state.objectSnapFeedback = snap ? { point: snap.point } : null;
-    renderOverlay();
-    return;
+    state.interaction={type:'pen-handle',node:state.penPoints.at(-1),startClientX:e.clientX,startClientY:e.clientY};
+    state.objectSnapFeedback=snap?{point:snap.point}:null;
+    updateUndoRedoButtons(); renderAll();return;
   }
 
   // 6. Shape Drawing Tools (rect, ellipse, polygon, star, heart, line)
@@ -2426,7 +2566,7 @@ function finishLineChain(closed = false, targetId = null) {
 }
 
 function joinSelectedLines() {
-  if (!finishLineChain()) return;
+  if (!finishDrawing()) return;
   try {
     const selected = getSelectedShapes();
     const result = joinOpenPaths(selected, evalMathExpr(document.getElementById('join-distance-input').value, NaN));
@@ -2438,29 +2578,41 @@ function joinSelectedLines() {
   } catch (error) { showToast(error.message); }
 }
 
-function finishPenPath(closed = true) {
+function finishPenPath(closed = false, selectAfter = true, targetId = null) {
   if (state.penPoints.length < 2) {
-    state.penPoints = [];
-    state.penCursor = null;
-    renderOverlay();
-    return;
+    state.penPoints=[];state.penCursor=null;state.penSourceId=null;state.interaction=null;
+    updateUndoRedoButtons();renderAll();return true;
   }
-  const isClosed = closed && state.penPoints.length >= 3;
+  const list=getActiveContainerList(), source=list.find(s=>s.id===state.penSourceId);
+  const ids=new Set([state.penSourceId,targetId].filter(Boolean));
+  const originals=list.filter(s=>ids.has(s.id));
   let newShape;
-  try { newShape = createConnectedPath(state.penPoints, {
-    closed:isClosed, curved:state.curveModeDefault && !state.penPoints.some(n => n.in || n.out),
-    laserMode:state.activeLaserMode, name:isClosed?'Tegnet form':'Tegnet kurve'
-  }); } catch (error) { showToast(error.message); return; }
+  try {
+    if(ids.size!==originals.length)throw new Error('En av stiene er endret. Avbryt tegningen og prøv igjen.');
+    if(closed && source)throw new Error('Fullfør stien først. Velg deretter de to endepunktene med A for å lukke.');
+    newShape=createConnectedPath(state.penPoints,{
+      closed:closed&&state.penPoints.length>=3,
+      curved:state.curveModeDefault&&!state.penPoints.some(n=>n.in||n.out),
+      laserMode:source?.laserMode||state.activeLaserMode,cutStage:source?.cutStage,
+      name:closed?'Tegnet form':'Åpen sti'
+    });
+    if(originals.length)newShape=joinOpenPaths([...originals,newShape],.002);
+  } catch(error){showToast(error.message);return false;}
   pushUndoSnapshot();
+  if(originals.length){
+    const index=list.findIndex(s=>ids.has(s.id));
+    for(let i=list.length-1;i>=0;i--)if(ids.has(list[i].id))list.splice(i,1);
+    list.splice(index,0,newShape);
+  } else list.push(newShape);
+  state.selectedIds=new Set([newShape.id]);clearPathPick();
+  state.penPoints=[];state.penCursor=null;state.penSourceId=null;state.interaction=null;
+  updateUndoRedoButtons();
+  if(selectAfter)setActiveTool('select');else renderAll();
+  return true;
+}
 
-  getActiveContainerList().push(newShape);
-  state.selectedIds.clear();
-  state.selectedIds.add(newShape.id);
-  state.penPoints = [];
-  state.penCursor = null;
-  setActiveTool('select');
-  saveWorkspaceToLocal(state);
-  renderAll();
+function finishDrawing() {
+  return finishLineChain() && (!state.penPoints.length || finishPenPath(false,false));
 }
 
 // ============================================================================
@@ -2478,31 +2630,34 @@ function renderAppearanceUI() {
 }
 
 function setActiveTool(toolName) {
+  if (state.activeTool==='pen' && state.penPoints.length && !finishPenPath(false,false)) return;
+  clearPathPick();
   if (state.activeTool === 'line' && toolName !== 'line') {
-    if (!finishLineChain()) return;
+    if (!finishDrawing()) return;
   }
   state.lineHoverSnap = null; state.linePress = null; state.objectSnapFeedback = null;
 
   state.activeTool = toolName;
   state.penPoints = [];
-  state.penCursor = null;
+  state.penCursor = null; state.penSourceId=null;
   if (toolName !== 'measure') state.measureLine = null;
 
   document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tool === toolName);
   });
 
-  viewportEl.classList.toggle('crosshair', toolName !== 'select');
+  viewportEl.classList.toggle('crosshair', !['select','nodes'].includes(toolName));
 
   const hints = {
     select: '',
+    nodes: 'Klikk et anker eller linjestykke. Shift velger flere. Delete fjerner valget. Velg to endepunkter og koble med ⌘/Ctrl+J. Dobbeltklikk en linje for nytt anker.',
     rect: 'Klikk og dra for å tegne rektangel (Hold Shift for kvadrat)',
     ellipse: 'Klikk og dra for å tegne sirkel/ellipse (Hold Shift for perfekt sirkel)',
     polygon: 'Klikk og dra for å tegne mangekant (Endre antall kanter til høyre, f.eks. 360/60)',
     star: 'Klikk og dra for å tegne stjerne (Endre antall tagger til høyre)',
     heart: 'Klikk og dra for å tegne hjerte',
     line: 'Klikk videre for flere linjestykker (eller dra). Grønn ring fester til endepunkt. Klikk start for lukket form. Enter/dobbeltklikk fullfører, Esc avslutter, Backspace angrer punkt. Shift: 15°.',
-    pen: 'Klikk for hjørner. Klikk og dra for Bézier-håndtak. Enter fullfører; klikk startpunktet for å lukke.',
+    pen: 'Klikk for hjørner, dra for buer. Enter, Esc eller V fullfører en åpen sti. Klikk et eksisterende endepunkt for å fortsette eller koble. Kun klikk på startpunktet lukker figuren.',
     text: 'Klikk hvor som helst på platen for å sette inn tekst',
     measure: 'Klikk og dra mellom to punkter for å måle nøyaktig avstand i millimeter'
   };
@@ -2518,10 +2673,21 @@ function setActiveTool(toolName) {
 }
 
 function bindToolbarEvents() {
+  document.getElementById('btn-pen-finish').addEventListener('click',()=>finishPenPath(false));
+  document.getElementById('btn-pen-close').addEventListener('click',()=>finishPenPath(true));
+  document.getElementById('btn-pen-cancel').addEventListener('click',()=>{
+    state.penPoints=[];state.penCursor=null;state.penSourceId=null;state.interaction=null;
+    setActiveTool('select');updateUndoRedoButtons();
+  });
+  document.getElementById('btn-edit-anchors').addEventListener('click',()=>setActiveTool('nodes'));
+  document.getElementById('btn-connect-anchors').addEventListener('click',connectPickedAnchors);
+  document.getElementById('btn-delete-anchors').addEventListener('click',()=>removePickedPathParts('anchors'));
+  document.getElementById('btn-delete-segments').addEventListener('click',()=>removePickedPathParts('segments'));
+
   document.getElementById('object-snap-toggle').addEventListener('change', e => { state.objectSnap = e.target.checked; state.objectSnapFeedback = null; state.lineHoverSnap = null; renderAll(); });
   for (const [id, filled] of [['btn-shape-fill', true], ['btn-shape-outline', false]]) {
     document.getElementById(id).addEventListener('click', () => {
-      if (!finishLineChain()) return;
+      if (!finishDrawing()) return;
       const selected = getSelectedShapes();
       try {
         setShapeAppearance(JSON.parse(JSON.stringify(selected)), filled); // Validate before undo/mutation.
@@ -2530,13 +2696,13 @@ function bindToolbarEvents() {
     });
   }
   document.getElementById('btn-offset-tool').addEventListener('click', () => {
-    if (!finishLineChain()) return;
+    if (!finishDrawing()) return;
     document.getElementById('offset-controls').scrollIntoView({ block: 'center', behavior: 'smooth' });
     document.getElementById('offset-dist-input').focus();
   });
 
   for (const id of ['btn-save-project', 'btn-export-svg', 'btn-export-xcs', 'btn-preflight']) {
-    document.getElementById(id).addEventListener('click', e => { if (!finishLineChain()) e.stopImmediatePropagation(); }, true);
+    document.getElementById(id).addEventListener('click', e => { if (!finishDrawing()) e.stopImmediatePropagation(); }, true);
   }
   document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
     btn.addEventListener('click', () => setActiveTool(btn.dataset.tool));
@@ -3055,7 +3221,7 @@ function bindInspectorEvents() {
     const nodes = fitBezier(loop, tolerance, s.closedPath);
     const before = s.nodes.length;
     if (nodes.length >= before && s.nodeModel === 'bezier') { showToast('Kurven har allerede få ankerpunkter ved denne toleransen.'); return; }
-    pushUndoSnapshot(); s.nodes=nodes; s.nodeModel='bezier'; s.rotation=0; s.flipX=false; s.flipY=false;
+    pushUndoSnapshot(); clearPathPick(); s.nodes=nodes; s.nodeModel='bezier'; s.rotation=0; s.flipX=false; s.flipY=false;
     rebuildPathShapeFromNodes(s); renderAll();
     showToast(`Forenklet fra ${before} til ${nodes.length} ankerpunkter. Angre med ⌘Z / Ctrl+Z.`);
   });
@@ -3632,7 +3798,7 @@ function alignSelectedShapes(mode) {
 }
 
 function duplicateSelectedShapes() {
-  if (!finishLineChain()) return;
+  if (!finishDrawing()) return;
   const copies = cloneWithFreshIds(getSelectedShapes());
   if (!copies.length) return;
   copies.forEach(copy => { copy.name = `${copy.name || copy.type} (kopi)`; });
@@ -3650,7 +3816,7 @@ function insertCopiedShapes(copies, offset) {
 }
 
 function reorderSelectedShapes(direction) {
-  if (!finishLineChain()) return;
+  if (!finishDrawing()) return;
   const list = getActiveContainerList();
   const reordered = reorderObjects(list, state.selectedIds, direction);
   if (list.every((shape, i) => shape === reordered[i])) return;
@@ -3670,7 +3836,7 @@ function canvasCommandsBlocked(event) {
 
 let previousPaste = '', pasteCount = 0;
 function pasteObjectText(text) {
-  if (!text || !finishLineChain()) return;
+  if (!text || !finishDrawing()) return;
   try {
     let shapes = decodeClipboard(text);
     if (!shapes && /<(?:svg|\?xml)[\s>]/i.test(text)) {
@@ -3697,7 +3863,7 @@ function pasteObjectText(text) {
 function bindClipboardCommands() {
   for (const action of ['copy', 'cut']) {
     document.addEventListener(action, event => {
-      if (canvasCommandsBlocked(event) || !event.clipboardData || !finishLineChain()) return;
+      if (canvasCommandsBlocked(event) || !event.clipboardData || !finishDrawing()) return;
       const selected = getSelectedShapes();
       if (!selected.length) return;
       try {
@@ -3722,7 +3888,7 @@ function bindClipboardCommands() {
   for (const action of ['copy', 'cut']) {
     document.getElementById(`btn-${action}`).addEventListener('click', async event => {
       event.currentTarget.focus();
-      if (!finishLineChain() || !getSelectedShapes().length) return;
+      if (!finishDrawing() || !getSelectedShapes().length) return;
       // execCommand dispatches the same native clipboard events as Cmd/Ctrl+C/X.
       try { if (document.execCommand(action)) return; } catch { /* use asynchronous clipboard below */ }
       const selected = getSelectedShapes();
@@ -3902,7 +4068,7 @@ function bindKeyboardShortcuts() {
       return;
     }
     if (cmd && e.key.toLowerCase() === 'a') {
-      e.preventDefault();
+      e.preventDefault(); clearPathPick();
       state.selectedIds = new Set(getActiveContainerList().filter(s => !s.hidden).map(s => s.id));
       renderAll();
       return;
@@ -3914,16 +4080,19 @@ function bindKeyboardShortcuts() {
       return;
     }
 
+    if (state.activeTool==='pen' && state.penPoints.length && (e.key==='Backspace'||e.key==='Delete')) { e.preventDefault();undo();return; }
+    if (cmd && e.key.toLowerCase()==='j') {e.preventDefault();connectPickedAnchors();return;}
     if (state.activeTool === 'line' && state.lineDraft && (e.key === 'Backspace' || e.key === 'Delete')) { e.preventDefault(); undo(); return; }
     if (e.key === 'Enter' && state.activeTool === 'line') { e.preventDefault(); finishLineChain(); return; }
     if (e.key === 'Backspace' || e.key === 'Delete') {
       e.preventDefault();
-      deleteSelectedShapes();
+      if (state.pathPick.anchors.length || state.pathPick.segments.length) removePickedPathParts();
+      else if(state.activeTool!=='nodes')deleteSelectedShapes();
       return;
     }
 
     if (e.key === 'Enter' && state.activeTool === 'pen') {
-      finishPenPath(false);
+      e.preventDefault();finishPenPath(false);
       return;
     }
     if (e.key === 'Escape') {
@@ -3938,9 +4107,9 @@ function bindKeyboardShortcuts() {
         return;
       }
       if (state.activeTool === 'pen') {
-        state.penPoints = [];
-        state.penCursor = null;
+        if(finishPenPath(false,false))setActiveTool('select');return;
       }
+      if(state.pathPick.anchors.length||state.pathPick.segments.length){clearPathPick();renderAll();return;}
       if (state.interaction && state.interaction.type === 'draw' && state.interaction.shape) {
         const activeList = getActiveContainerList();
         const idx = activeList.findIndex(s => s.id === state.interaction.shape.id);
@@ -3964,7 +4133,15 @@ function bindKeyboardShortcuts() {
       const step = e.shiftKey ? 10 : (state.snapMm || 1);
       const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
       const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-      moveShapesBy(getSelectedShapes(), dx, dy);
+      if(state.pathPick.anchors.length) {
+        for(const shape of getSelectedShapes()) {
+          shape.nodes=pathNodesInWorld(shape);shape.nodeModel='bezier';shape.rotation=0;shape.flipX=false;shape.flipY=false;
+          for(const ref of state.pathPick.anchors.filter(p=>p.shapeId===shape.id)) {
+            const n=shape.nodes[ref.index];moveAnchor(n,{x:n.x+dx,y:n.y+dy});
+          }
+          rebuildPathShapeFromNodes(shape);
+        }
+      } else moveShapesBy(getSelectedShapes(), dx, dy);
       renderAll();
       return;
     }
@@ -3974,6 +4151,7 @@ function bindKeyboardShortcuts() {
     // Tool hotkeys
     const keyMap = {
       v: 'select',
+      a: 'nodes',
       r: 'rect',
       c: 'ellipse',
       p: 'polygon',
@@ -4097,7 +4275,7 @@ function bindModalEvents() {
 }
 
 function openGeneratorModal(tabName) {
-  if (!finishLineChain()) return;
+  if (!finishDrawing()) return;
   state.activeGeneratorTab = tabName;
   document.querySelectorAll('.modal-tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);

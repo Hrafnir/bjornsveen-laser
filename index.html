@@ -90,6 +90,12 @@
         <span>Velg</span>
       </button>
 
+      <button class="tool-btn" data-tool="nodes" title="Velg, koble og slett ankerpunkter eller enkeltsegmenter (A)">
+        <span class="shortcut-hint">A</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 19Q8 3 19 5"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="5" r="3"/></svg>
+        <span>Anker</span>
+      </button>
+
       <button class="tool-btn" data-tool="rect" title="Tegn rektangel eller kvadrat (Hold Shift for kvadrat) (Snarvei: R)">
         <span class="shortcut-hint">R</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
@@ -301,6 +307,23 @@
 
     <!-- RIGHT INSPECTOR PANEL -->
     <aside class="right-panel">
+      <section id="path-edit-section" class="panel-section" style="display:none">
+        <div class="panel-section-header"><div class="panel-section-title">Stier og ankerpunkter</div></div>
+        <div id="pen-actions">
+          <div id="pen-draft-status" class="box-help"></div>
+          <button id="btn-pen-finish" class="btn primary-btn" style="width:100%;margin:6px 0" title="Behold linjen eller buen uten å koble endene (Enter)">✓ Fullfør åpen sti</button>
+          <div class="action-grid-2"><button id="btn-pen-close" class="btn">Lukk sti</button><button id="btn-pen-cancel" class="btn">Avbryt tegning</button></div>
+          <div class="box-help">Enter, Esc eller bytte av verktøy beholder en åpen sti. Klikk startpunktet for en lukket figur. Backspace angrer siste punkt.</div>
+        </div>
+        <div id="anchor-actions">
+          <button id="btn-edit-anchors" class="btn" style="width:100%">Rediger punkter og linjer (A)</button>
+          <div id="path-pick-status" class="box-help" aria-live="polite"></div>
+          <button id="btn-connect-anchors" class="btn" style="width:100%;margin:6px 0" title="Velg to endepunkter med Shift-klikk, også på forskjellige stier (⌘/Ctrl+J)">Koble 2 endepunkter</button>
+          <div class="action-grid-2"><button id="btn-delete-anchors" class="btn" title="Fjern valgte ankerpunkter og forbind naboene">Slett punkt</button><button id="btn-delete-segments" class="btn" title="Fjern valgte linjestykker; behold en åpning eller del stien i to">Slett linjestykke</button></div>
+          <div class="box-help">Klikk et punkt eller en linje. Shift velger flere; Delete sletter valget. Dobbeltklikk en linje for et nytt anker. Koble endepunkter lukker én sti eller forbinder to stier.</div>
+        </div>
+      </section>
+
       <!-- 1. PRECISION DIMENSIONS (MM) -->
       <section class="panel-section">
         <div class="panel-section-header">

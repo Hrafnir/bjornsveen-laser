@@ -53,7 +53,10 @@ export function createConnectedPath(points, { closed = false, curved = false, la
   if (closed && nodes.length > 2 && dist(nodes[0], nodes.at(-1)) < 1e-6) nodes.pop();
   if (nodes.length < (closed ? 3 : 2)) throw new Error('Legg til flere forskjellige punkter før du fullfører.');
   const loop = nodes.map(p => ({ ...p })); loop.closed = closed;
-  const shape = createPathShapeFromPolygons([loop], laserMode, name || (closed ? 'Sammenkoblet form' : 'Sammenhengende linje'));
+  // Filled SVG paths implicitly close their ends. Open drawings use line
+  // engraving when the drawing mode is fill, preserving an actually open path.
+  const pathMode = !closed && laserMode === 'engrave' ? 'score' : laserMode;
+  const shape = createPathShapeFromPolygons([loop], pathMode, name || (closed ? 'Sammenkoblet form' : 'Sammenhengende linje'));
   // Keep snapping exact even when original endpoints are off the grid.
   Object.assign(shape, shape.origBBox);
   shape.nodes = curved ? smoothNodes(nodes, closed) : nodes; shape.closedPath = closed; shape.nodeModel = 'bezier';
