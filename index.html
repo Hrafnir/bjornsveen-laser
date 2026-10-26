@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Bjørnsveen LaserStudio – Vektorverktøy for CO2- og UV-laser</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <!-- ================= TOP HEADER ================= -->
+  <header class="app-header">
+    <div class="brand-group">
+      <div class="brand-logo" title="Bjørnsveen Skaperverksted">⚡</div>
+      <div class="brand-title">
+        <h1>Bjørnsveen LaserStudio <span class="brand-badge">xTool P3 &amp; F2</span></h1>
+        <span class="brand-subtitle">Skaperverksted – Vektordesign i millimeter</span>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <!-- Machine / Bed Selector -->
+      <div class="machine-selector-wrap">
+        <label for="machine-select">Maskin / Plate:</label>
+        <select id="machine-select" class="select-control">
+          <option value="xtool-p3">xTool P3 CO2 (914 × 457 mm)</option>
+          <option value="xtool-f2">xTool F2 Ultra UV (220 × 220 mm)</option>
+          <option value="sheet-600x400" selected>Kryssfiner / Plate (600 × 400 mm)</option>
+          <option value="sheet-450x300">Kryssfiner / Plate (450 × 300 mm)</option>
+          <option value="sheet-300x200">Kryssfiner / Plate (300 × 200 mm)</option>
+          <option value="sheet-a3">A3-plate (420 × 297 mm)</option>
+          <option value="sheet-a4">A4-plate (297 × 210 mm)</option>
+          <option value="custom">Egendefinert (mm)...</option>
+        </select>
+        <div id="custom-bed-wrap" class="custom-bed-inputs" style="display: none;">
+          <input type="text" inputmode="decimal" id="bed-width-input" class="input-control math-input" value="600" title="Bredde i mm (Støtter regnestykker som 300*2)" />
+          <span style="color: var(--text-muted)">×</span>
+          <input type="text" inputmode="decimal" id="bed-height-input" class="input-control math-input" value="400" title="Høyde i mm" />
+          <span style="font-size: 11px; color: var(--text-subtle)">mm</span>
+        </div>
+      </div>
+
+      <!-- Grid & Snap -->
+      <div class="machine-selector-wrap">
+        <label for="snap-select">Fest til rutenett:</label>
+        <select id="snap-select" class="select-control">
+          <option value="0">Av (Fri)</option>
+          <option value="0.5">0,5 mm</option>
+          <option value="1" selected>1 mm</option>
+          <option value="2">2 mm</option>
+          <option value="5">5 mm</option>
+          <option value="10">10 mm</option>
+        </select>
+      </div>
+
+      <div class="header-divider"></div>
+
+      <!-- Undo / Redo -->
+      <button id="btn-undo" class="btn btn-icon-only" title="Angre (⌘Z)" disabled>↩ Angre</button>
+      <button id="btn-redo" class="btn btn-icon-only" title="Gjør om (⇧⌘Z)" disabled>↪</button>
+    </div>
+
+    <div class="header-actions">
+      <input type="file" id="file-import-input" accept=".svg,.json,image/*" style="display: none;" />
+      <button id="btn-import" class="btn" title="Importer SVG-fil, bilde eller lagret prosjekt">📂 Åpne / Importer</button>
+      <button id="btn-save-project" class="btn" title="Lagre prosjektfil (.json) på Macen">💾 Lagre prosjekt</button>
+      <button id="btn-preflight" class="btn btn-success" title="Sjekk tegningen for feil før laserkutting">✅ Lasersjekk</button>
+      <button id="btn-export-svg" class="btn btn-laser-export" title="Last ned ferdig 1:1 millimeter SVG-fil for xTool Creative Space">⬇ Eksporter SVG til Laser</button>
+    </div>
+  </header>
+
+  <!-- ================= MAIN BODY ================= -->
+  <div class="app-body">
+    <!-- LEFT TOOLBAR -->
+    <aside class="left-toolbar">
+      <div class="tool-section-label">Verktøy</div>
+
+      <button class="tool-btn active" data-tool="select" title="Velg, flytt, skaler og roter objekter (Snarvei: V)">
+        <span class="shortcut-hint">V</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 4l7.07 17 2.51-7.39L21 11.07z"/></svg>
+        <span>Velg</span>
+      </button>
+
+      <button class="tool-btn" data-tool="rect" title="Tegn rektangel eller kvadrat (Hold Shift for kvadrat) (Snarvei: R)">
+        <span class="shortcut-hint">R</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="5" width="18" height="14" rx="2"/></svg>
+        <span>Rektangel</span>
+      </button>
+
+      <button class="tool-btn" data-tool="ellipse" title="Tegn sirkel eller ellipse (Hold Shift for sirkel) (Snarvei: C)">
+        <span class="shortcut-hint">C</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="9"/></svg>
+        <span>Sirkel</span>
+      </button>
+
+      <button class="tool-btn" data-tool="polygon" title="Tegn mangekant (3–12 kanter) (Snarvei: P)">
+        <span class="shortcut-hint">P</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 21 8.5 17.5 19.5 6.5 19.5 3 8.5"/></svg>
+        <span>Mangekant</span>
+      </button>
+
+      <button class="tool-btn" data-tool="star" title="Tegn stjerne (juster tagger i høyre panel) (Snarvei: S)">
+        <span class="shortcut-hint">S</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></svg>
+        <span>Stjerne</span>
+      </button>
+
+      <button class="tool-btn" data-tool="heart" title="Tegn hjerte (Snarvei: H)">
+        <span class="shortcut-hint">H</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        <span>Hjerte</span>
+      </button>
+
+      <button class="tool-btn" data-tool="line" title="Tegn rett linje (Hold Shift for 45°/90°) (Snarvei: L)">
+        <span class="shortcut-hint">L</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="4" y1="20" x2="20" y2="4"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="4" r="2"/></svg>
+        <span>Linje</span>
+      </button>
+
+      <button class="tool-btn" data-tool="pen" title="Tegn punkt-for-punkt-stier eller frihånd (Dobbeltklikk eller Enter for å fullføre) (Snarvei: B)">
+        <span class="shortcut-hint">B</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
+        <span>Sti / Penn</span>
+      </button>
+
+      <button class="tool-btn" data-tool="text" title="Sett inn tekst (inkl. Sjablong- og Enkelstreg-font for laser) (Snarvei: T)">
+        <span class="shortcut-hint">T</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>
+        <span>Tekst</span>
+      </button>
+
+      <button class="tool-btn" data-tool="measure" title="Målebånd – mål nøyaktig avstand og vinkel i mm mellom punkter (Snarvei: M)">
+        <span class="shortcut-hint">M</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M2 12h20M2 12l4-4M2 12l4 4M22 12l-4-4M22 12l-4 4"/></svg>
+        <span>Målebånd</span>
+      </button>
+
+      <div class="toolbar-sep"></div>
+      <div class="tool-section-label">Generator</div>
+
+      <button class="tool-btn generator-btn" data-generator="box" title="Finger-joint Boks-generator (med/uten lokk, materialtykkelse og kerf)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+        <span>Boks</span>
+      </button>
+
+      <button class="tool-btn generator-btn" data-generator="sign" title="Dørskilt- og Nøkkelring-generator">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="6" width="20" height="12" rx="3"/><circle cx="6" cy="12" r="1.5"/><line x1="10" y1="10" x2="18" y2="10"/><line x1="10" y1="14" x2="16" y2="14"/></svg>
+        <span>Dørskilt</span>
+      </button>
+
+      <button class="tool-btn generator-btn" data-generator="puzzle" title="Puslespill-generator med ekte kurvede låsebrikker">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 0 1-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 1 0-3.214 3.214c.446.166.855.497.925.968a.979.979 0 0 1-.276.837l-1.61 1.61a2.404 2.404 0 0 1-1.705.707 2.402 2.402 0 0 1-1.704-.706l-1.568-1.568a1.026 1.026 0 0 0-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 1 1-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 0 0-.289-.877l-1.568-1.568A2.402 2.402 0 0 1 1.998 12c0-.617.236-1.234.706-1.704L4.315 8.685a.98.98 0 0 1 .837-.276c.47.07.802.48.968.925a2.501 2.501 0 1 0 3.214-3.214c-.446-.166-.855-.497-.925-.968a.979.979 0 0 1 .276-.837l1.61-1.61a2.404 2.404 0 0 1 1.705-.707c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 1 1 3.237 3.237c-.464.18-.894.527-.967 1.02Z"/></svg>
+        <span>Puslespill</span>
+      </button>
+
+      <button class="tool-btn generator-btn" data-generator="gear" title="Tannhjul-generator (Evolvent-tannhjul & tannpar)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        <span>Tannhjul</span>
+      </button>
+
+      <button class="tool-btn generator-btn" data-generator="mandala" title="Dekorasjon, Snøkrystall, Mandala & Smykke-generator">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/><line x1="19.07" y1="4.93" x2="4.93" y2="19.07"/><circle cx="12" cy="12" r="4"/></svg>
+        <span>Dekor</span>
+      </button>
+
+      <button class="tool-btn generator-btn" data-generator="icons" title="Innebygd bibliotek med laser-klare symboler, dyr, gaming og ikoner">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        <span>Symboler</span>
+      </button>
+
+      <button class="tool-btn generator-btn" data-generator="trace" title="Bilde-til-vektor (Image Trace) – konverter tegning eller logo til laservektor">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <span>Bildespor</span>
+      </button>
+    </aside>
+
+    <!-- CENTER WORKSPACE -->
+    <main class="workspace-area">
+      <div class="ruler-corner">mm</div>
+      <canvas id="ruler-top" class="ruler-top"></canvas>
+      <canvas id="ruler-left" class="ruler-left"></canvas>
+
+      <div id="workspace-hint" class="workspace-hint"></div>
+
+      <div id="canvas-viewport" class="canvas-viewport">
+        <svg id="main-svg" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="grid-1mm" width="1" height="1" patternUnits="userSpaceOnUse">
+              <path d="M 1 0 L 0 0 0 1" fill="none" stroke="rgba(148, 163, 184, 0.08)" stroke-width="0.06" />
+            </pattern>
+            <pattern id="grid-10mm" width="10" height="10" patternUnits="userSpaceOnUse">
+              <rect width="10" height="10" fill="url(#grid-1mm)" />
+              <path d="M 10 0 L 0 0 0 10" fill="none" stroke="rgba(148, 163, 184, 0.22)" stroke-width="0.12" />
+            </pattern>
+            <pattern id="grid-50mm" width="50" height="50" patternUnits="userSpaceOnUse">
+              <rect width="50" height="50" fill="url(#grid-10mm)" />
+              <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(56, 189, 248, 0.32)" stroke-width="0.22" />
+            </pattern>
+          </defs>
+
+          <!-- Outer Workspace Backdrop -->
+          <rect id="svg-backdrop" x="-5000" y="-5000" width="12000" height="12000" fill="#0b1120" />
+
+          <!-- Laser Bed Group -->
+          <g id="laser-bed-group">
+            <!-- Shadow & Bed Surface -->
+            <rect id="bed-shadow" x="2" y="3" width="600" height="400" rx="2" fill="rgba(0,0,0,0.55)" />
+            <rect id="bed-surface" x="0" y="0" width="600" height="400" fill="#f8fafc" />
+            <rect id="bed-grid" x="0" y="0" width="600" height="400" fill="url(#grid-50mm)" />
+            <rect id="bed-border" x="0" y="0" width="600" height="400" fill="none" stroke="#475569" stroke-width="0.6" />
+            <!-- F2 Ultra Galvo Crosshair & Safe Circle (shown when xTool F2 is selected) -->
+            <g id="f2-galvo-guides" style="display: none;" pointer-events="none">
+              <line x1="110" y1="0" x2="110" y2="220" stroke="rgba(14, 165, 233, 0.35)" stroke-width="0.3" stroke-dasharray="2,2" />
+              <line x1="0" y1="110" x2="220" y2="110" stroke="rgba(14, 165, 233, 0.35)" stroke-width="0.3" stroke-dasharray="2,2" />
+              <rect x="0" y="0" width="220" height="220" rx="18" fill="none" stroke="rgba(14, 165, 233, 0.45)" stroke-width="0.4" stroke-dasharray="3,2" />
+            </g>
+            <!-- Machine Label on Bed -->
+            <text id="bed-label" x="4" y="-3" fill="#94a3b8" font-size="4.5" font-family="sans-serif" font-weight="600">
+              Kryssfiner / Plate (600 × 400 mm) — Origin (0,0 mm)
+            </text>
+          </g>
+
+          <!-- User Shapes Layer -->
+          <g id="shapes-layer"></g>
+
+          <!-- Interactive Overlay Layer (Selection Box, Handles, Pen Preview, Measure Tool) -->
+          <g id="overlay-layer"></g>
+        </svg>
+      </div>
+
+      <!-- BOTTOM FLOATING LASER MODE & ZOOM DOCK -->
+      <div class="bottom-dock">
+        <!-- Laser Operation Mode Buttons -->
+        <div class="dock-card" title="Velg hva laseren skal gjøre med valgt objekt (eller neste figur du tegner)">
+          <span style="font-size: 11px; font-weight: 700; color: var(--text-muted); margin-right: 4px;">LASERLAG:</span>
+          <button class="laser-mode-btn mode-cut active" data-mode="cut">
+            <span class="swatch"></span>
+            <div>
+              <div>KUTT (Rød)</div>
+              <div class="mode-subtext">Skjærer gjennom</div>
+            </div>
+          </button>
+          <button class="laser-mode-btn mode-score" data-mode="score">
+            <span class="swatch"></span>
+            <div>
+              <div>LINJE / SCORE (Blå)</div>
+              <div class="mode-subtext">Rask overflatestrek</div>
+            </div>
+          </button>
+          <button class="laser-mode-btn mode-engrave" data-mode="engrave">
+            <span class="swatch"></span>
+            <div>
+              <div>GRAVERING (Svart)</div>
+              <div class="mode-subtext">Fylt flategravering</div>
+            </div>
+          </button>
+          <button class="laser-mode-btn mode-guide" data-mode="guide">
+            <span class="swatch"></span>
+            <div>
+              <div>HJELPELINJE</div>
+              <div class="mode-subtext">Kutter ikke</div>
+            </div>
+          </button>
+        </div>
+
+        <!-- Zoom & Cursor Coordinates -->
+        <div class="dock-card">
+          <div id="coords-display" class="coords-readout">X: 0.0  Y: 0.0 mm</div>
+          <button id="btn-zoom-out" class="btn btn-icon-only" title="Zoom ut (-)">−</button>
+          <span id="zoom-label" style="min-width: 48px; text-align: center; font-weight: 700; font-size: 12px;">100%</span>
+          <button id="btn-zoom-in" class="btn btn-icon-only" title="Zoom inn (+)">+</button>
+          <button id="btn-zoom-fit" class="btn" title="Tilpass hele arbeidsflaten til skjermen">Tilpass</button>
+          <button id="btn-zoom-selection" class="btn" title="Zoom inn på valgt objekt">Fokus</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- RIGHT INSPECTOR PANEL -->
+    <aside class="right-panel">
+      <!-- 1. PRECISION DIMENSIONS (MM) -->
+      <section class="panel-section">
+        <div class="panel-section-header">
+          <div class="panel-section-title" title="Du kan skrive regnestykker i alle felt, f.eks. 120 + 12mm eller 360/6">📏 Dimensjoner &amp; Posisjon (∑ matte)</div>
+          <span id="selection-badge" style="font-size: 11px; color: #38bdf8; font-weight: 600;">Ingen valgt</span>
+        </div>
+
+        <div class="prop-grid">
+          <div class="prop-field">
+            <label for="prop-x">X-posisjon (venstre)</label>
+            <div class="input-with-unit">
+              <input type="text" inputmode="decimal" id="prop-x" class="input-control math-input" placeholder="f.eks. 10+5" disabled />
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="prop-field">
+            <label for="prop-y">Y-posisjon (topp)</label>
+            <div class="input-with-unit">
+              <input type="text" inputmode="decimal" id="prop-y" class="input-control math-input" placeholder="f.eks. 20" disabled />
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="prop-field">
+            <label for="prop-w">Bredde (B)</label>
+            <div class="input-with-unit">
+              <input type="text" inputmode="decimal" id="prop-w" class="input-control math-input" placeholder="f.eks. 120+12mm" disabled />
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="prop-field">
+            <label for="prop-h">Høyde (H)</label>
+            <div class="input-with-unit">
+              <input type="text" inputmode="decimal" id="prop-h" class="input-control math-input" placeholder="f.eks. 80/2" disabled />
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="prop-field">
+            <label for="prop-rot">Rotasjon</label>
+            <div class="input-with-unit">
+              <input type="text" inputmode="decimal" id="prop-rot" class="input-control math-input" placeholder="f.eks. 360/8" disabled />
+              <span class="unit">°</span>
+            </div>
+          </div>
+          <div class="prop-field" style="justify-content: flex-end;">
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 0;">
+              <input type="checkbox" id="prop-lock-aspect" />
+              <span>🔒 Lås forhold (B/H)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Dynamic Shape-Specific Controls (Corner Radius, Polygon Sides, Star Points, Line & Curve) -->
+        <div id="shape-specific-props" style="margin-top: 10px; display: none;">
+          <div id="prop-rx-wrap" class="prop-field" style="display: none;">
+            <label for="prop-rx">Hjørneradius (Avrundede hjørner)</label>
+            <div class="input-with-unit">
+              <input type="text" inputmode="decimal" id="prop-rx" class="input-control math-input" value="0" />
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div id="prop-sides-wrap" class="prop-field" style="display: none;">
+            <label for="prop-sides">Antall kanter / tagger (f.eks. 360/60)</label>
+            <input type="text" inputmode="decimal" id="prop-sides" class="input-control math-input" value="5" />
+          </div>
+          <div id="prop-inner-wrap" class="prop-field" style="display: none; margin-top: 6px;">
+            <label for="prop-inner-ratio">Stjerne spisshet (Indre radius %)</label>
+            <input type="range" id="prop-inner-ratio" min="15" max="85" value="42" />
+          </div>
+
+          <!-- Line Length & Angle Controls -->
+          <div id="prop-line-wrap" class="prop-grid" style="display: none; margin-top: 6px;">
+            <div class="prop-field">
+              <label for="prop-line-len">Linjelengde</label>
+              <div class="input-with-unit">
+                <input type="text" inputmode="decimal" id="prop-line-len" class="input-control math-input" value="50" />
+                <span class="unit">mm</span>
+              </div>
+            </div>
+            <div class="prop-field">
+              <label for="prop-line-angle">Linjevinkel</label>
+              <div class="input-with-unit">
+                <input type="text" inputmode="decimal" id="prop-line-angle" class="input-control math-input" value="0" />
+                <span class="unit">°</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Optional Vector Curve Toggle (Hidden unless Line/Pen/Path is active or selected) -->
+          <div id="prop-curve-wrap" style="display: none; margin-top: 8px; padding: 7px 9px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
+            <label style="display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; font-size: 11.5px; font-weight: 600; color: #38bdf8;">
+              <span style="display: flex; align-items: center; gap: 6px;">
+                <input type="checkbox" id="prop-curve-toggle" />
+                <span>〰️ Lag vektorkurve / Vis kurvehåndtak</span>
+              </span>
+              <button type="button" id="btn-reset-curve" class="mini-icon-btn" style="display: none; font-size: 10.5px; color: var(--text-muted); border: 1px solid var(--border-color); padding: 1px 6px;" title="Rett ut linjen igjen">Rett ut</button>
+            </label>
+            <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px;">
+              Dra i det oransje kurvehåndtaket på streken for å bøye den!
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. TEXT PROPERTIES (Shown when text tool active or text shape selected) -->
+      <section id="text-inspector-section" class="panel-section" style="display: none;">
+        <div class="panel-section-header">
+          <div class="panel-section-title">🔤 Tekst &amp; Laser-fonter</div>
+        </div>
+        <div class="prop-grid">
+          <div class="prop-field full-width">
+            <label for="text-content-input">Tekstinnhold</label>
+            <input type="text" id="text-content-input" class="input-control" value="BJØRNSVEEN" placeholder="Skriv tekst her..." />
+          </div>
+          <div class="prop-field full-width">
+            <label for="text-font-select">Skrifttype (Font)</label>
+            <select id="text-font-select" class="select-control">
+              <option value="stencil">✂️ Laser Sjablong (Stencil – Faller ikke ut ved kutt!)</option>
+              <option value="singleline">⚡ Laser Enkelstreg (10x raskere Score-linje!)</option>
+              <option value="sans-bold" selected>Moderne Kraftig (Arial Black / Impact)</option>
+              <option value="rounded">Avrundet Skiltfont (Trebuchet / Rund)</option>
+              <option value="serif">Klassisk Dørskilt (Georgia / Serif)</option>
+              <option value="mono">Teknisk Blokkschrift (Monospace)</option>
+              <option value="script">Dekor / Kursiv (Snell / Apple Chancery)</option>
+            </select>
+          </div>
+          <div class="prop-field">
+            <label for="text-size-input">Bokstavhøyde</label>
+            <div class="input-with-unit">
+              <input type="text" inputmode="decimal" id="text-size-input" class="input-control math-input" value="18" />
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="prop-field">
+            <label for="text-spacing-input">Bokstavavstand</label>
+            <div class="input-with-unit">
+              <input type="text" inputmode="decimal" id="text-spacing-input" class="input-control math-input" value="1.2" />
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="prop-field full-width">
+            <label for="text-curve-input">Buet tekst (0 = rett linje, + = bue opp, − = bue ned)</label>
+            <input type="range" id="text-curve-input" min="-100" max="100" value="0" step="5" />
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. MAGIC LASER TOOLS (BOOLEAN, OFFSET, KEYRING TAB, CLONE) -->
+      <section class="panel-section">
+        <div class="panel-section-header">
+          <div class="panel-section-title">✨ Magiske Laserverktøy</div>
+        </div>
+
+        <!-- Boolean Actions -->
+        <div class="action-grid-3" style="margin-bottom: 10px;">
+          <button id="btn-bool-union" class="btn" title="Slå sammen 2 eller flere overlappende figurer til én ytterkant (Weld / Union)">
+            🔗 Slå sammen
+          </button>
+          <button id="btn-bool-subtract" class="btn" title="Trekk siste/øverste figur fra den nederste (Lag hull / utstansing)">
+            ✂️ Trekk fra
+          </button>
+          <button id="btn-bool-intersect" class="btn" title="Behold kun området der figurene overlapper">
+            🎯 Snitt
+          </button>
+        </div>
+
+        <!-- Offset / Outline Generator -->
+        <div style="background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px; margin-bottom: 8px;">
+          <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">
+            ⭕ Lag ytterkant / kuttelinje rundt (Offset)
+          </div>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <div class="input-with-unit" style="flex: 1;">
+              <input type="text" inputmode="decimal" id="offset-dist-input" class="input-control math-input" value="3.0" title="Positivt tall = utvendig kant, Negativt tall = innvendig kant" />
+              <span class="unit">mm</span>
+            </div>
+            <button id="btn-create-offset" class="btn btn-primary" title="Lager en rød kuttelinje i valgt millimeter-avstand rundt valgt objekt">
+              + Lag kutt-kant
+            </button>
+          </div>
+        </div>
+
+        <!-- One-Click Keyring Ear & Array Clone -->
+        <div class="action-grid-2">
+          <button id="btn-add-keyring" class="btn" title="Sveiser automatisk på et nøkkelring-øre (Ø 4,5 mm hull) på valgt figur!">
+            🔑 + Nøkkelring-øye
+          </button>
+          <button id="btn-clone-grid" class="btn" title="Dupliser valgt figur i rutenett eller sirkel">
+            💠 Dupliser mønster...
+          </button>
+        </div>
+      </section>
+
+      <!-- 4. ALIGNMENT, MIRROR & ORDER -->
+      <section class="panel-section">
+        <div class="panel-section-header">
+          <div class="panel-section-title">📐 Justering &amp; Plassering</div>
+        </div>
+        <div class="action-grid-6" style="margin-bottom: 6px;">
+          <button class="btn btn-icon-only" data-align="left" title="Juster venstre">⫷</button>
+          <button class="btn btn-icon-only" data-align="center-h" title="Midtstill horisontalt">⫿</button>
+          <button class="btn btn-icon-only" data-align="right" title="Juster høyre">⫸</button>
+          <button class="btn btn-icon-only" data-align="top" title="Juster topp">⊤</button>
+          <button class="btn btn-icon-only" data-align="center-v" title="Midtstill vertikalt">⊶</button>
+          <button class="btn btn-icon-only" data-align="bottom" title="Juster bunn">⊥</button>
+        </div>
+        <div class="action-grid-2" style="margin-bottom: 6px;">
+          <button id="btn-center-bed" class="btn" title="Flytt valgt(e) objekt(er) midt på arbeidsflaten">🎯 Midt på platen</button>
+          <button id="btn-pack-origin" class="btn" title="Plasser oppe i venstre hjørne (5 mm fra kant) for å spare materiale">↖ Øverst til venstre</button>
+        </div>
+        <div class="action-grid-3">
+          <button id="btn-flip-h" class="btn" title="Speilvend horisontalt (Nyttig ved gravering på baksiden av akryl!)">⇄ Speil H</button>
+          <button id="btn-flip-v" class="btn" title="Speilvend vertikalt">⇅ Speil V</button>
+          <button id="btn-duplicate" class="btn" title="Dupliser valgt objekt (⌘D)">📋 Kopier</button>
+        </div>
+        <div class="action-grid-2" style="margin-top: 6px;">
+          <button id="btn-group" class="btn" title="Grupper valgte objekter (⌘G)">📦 Grupper</button>
+          <button id="btn-ungroup" class="btn" title="Løs opp gruppe (⇧⌘G)">📤 Løs opp</button>
+        </div>
+      </section>
+
+      <!-- 5. OBJECT / LAYER LIST -->
+      <section class="panel-section" style="flex: 1; display: flex; flex-direction: column;">
+        <div class="panel-section-header">
+          <div class="panel-section-title">🗂️ Objekter i tegningen (<span id="layer-count">0</span>)</div>
+          <div style="display: flex; gap: 4px;">
+            <button id="btn-delete-selected" class="btn btn-danger" style="padding: 3px 7px; font-size: 11px;" title="Slett valgt(e) objekt(er) (Backspace / Delete)">🗑 Slett</button>
+            <button id="btn-clear-all" class="btn" style="padding: 3px 7px; font-size: 11px;" title="Tøm hele arbeidsflaten">Tøm alt</button>
+          </div>
+        </div>
+        <div id="layer-list" class="layer-list"></div>
+      </section>
+    </aside>
+  </div>
+
+  <!-- ================= MAKERSPACE GENERATOR MODAL ================= -->
+  <div id="generator-modal" class="modal-backdrop">
+    <div class="modal-window">
+      <div class="modal-header">
+        <h2 id="modal-title">⚡ Skaperverksted-generatorer</h2>
+        <button id="btn-close-modal" class="btn btn-icon-only">✕</button>
+      </div>
+
+      <div class="modal-tabs">
+        <button class="modal-tab-btn active" data-tab="box">📦 Finger-joint Boks</button>
+        <button class="modal-tab-btn" data-tab="sign">🪧 Dørskilt &amp; Nøkkelring</button>
+        <button class="modal-tab-btn" data-tab="puzzle">🧩 Puslespill</button>
+        <button class="modal-tab-btn" data-tab="gear">⚙️ Tannhjul (Evolvent)</button>
+        <button class="modal-tab-btn" data-tab="mandala">❄️ Dekor &amp; Mandala</button>
+        <button class="modal-tab-btn" data-tab="icons">🦌 Symbolbibliotek</button>
+        <button class="modal-tab-btn" data-tab="trace">🖼️ Bilde-til-vektor</button>
+      </div>
+
+      <div id="modal-body-content" class="modal-body">
+        <!-- Dynamically populated by generators.js -->
+      </div>
+
+      <div class="modal-footer">
+        <div id="modal-footer-info" style="font-size: 12px; color: var(--text-muted);">
+          Alle mål genereres i eksakte millimeter (1:1) tilpasset xTool P3 / F2 Ultra.
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-modal-cancel" class="btn">Avbryt</button>
+          <button id="btn-modal-insert" class="btn btn-primary">✨ Sett inn på arbeidsflaten</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= CLONE / ARRAY MODAL ================= -->
+  <div id="clone-modal" class="modal-backdrop">
+    <div class="modal-window" style="max-width: 480px;">
+      <div class="modal-header">
+        <h2>💠 Dupliser i rutenett eller sirkel</h2>
+        <button id="btn-close-clone" class="btn btn-icon-only">✕</button>
+      </div>
+      <div class="modal-body single-col">
+        <div class="prop-grid">
+          <div class="prop-field full-width">
+            <label for="clone-type">Mønstertype</label>
+            <select id="clone-type" class="select-control">
+              <option value="grid">Rutenett (Rader × Kolonner – f.eks. flere brikker/nøkkelringer)</option>
+              <option value="radial">Sirkulært mønster (Roter rundt senter – rosett/stjerne)</option>
+            </select>
+          </div>
+        </div>
+        <div id="clone-grid-fields" class="prop-grid" style="margin-top: 8px;">
+          <div class="prop-field">
+            <label>Antall kolonner (X)</label>
+            <input type="text" inputmode="decimal" id="clone-cols" class="input-control math-input" value="3" />
+          </div>
+          <div class="prop-field">
+            <label>Antall rader (Y)</label>
+            <input type="text" inputmode="decimal" id="clone-rows" class="input-control math-input" value="2" />
+          </div>
+          <div class="prop-field">
+            <label>Mellomrom X (mm)</label>
+            <input type="text" inputmode="decimal" id="clone-gap-x" class="input-control math-input" value="3" />
+          </div>
+          <div class="prop-field">
+            <label>Mellomrom Y (mm)</label>
+            <input type="text" inputmode="decimal" id="clone-gap-y" class="input-control math-input" value="3" />
+          </div>
+        </div>
+        <div id="clone-radial-fields" class="prop-grid" style="margin-top: 8px; display: none;">
+          <div class="prop-field">
+            <label>Antall kopier i sirkel</label>
+            <input type="text" inputmode="decimal" id="clone-radial-count" class="input-control math-input" value="6" />
+          </div>
+          <div class="prop-field">
+            <label>Radius fra senter (mm)</label>
+            <input type="text" inputmode="decimal" id="clone-radial-radius" class="input-control math-input" value="25" />
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <span></span>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-cancel-clone" class="btn">Avbryt</button>
+          <button id="btn-apply-clone" class="btn btn-primary">Lag kopier</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= PRE-FLIGHT & EXPORT MODAL ================= -->
+  <div id="export-modal" class="modal-backdrop">
+    <div class="modal-window" style="max-width: 600px;">
+      <div class="modal-header">
+        <h2>✅ Lasersjekk &amp; Eksport til xTool</h2>
+        <button id="btn-close-export" class="btn btn-icon-only">✕</button>
+      </div>
+      <div id="export-modal-body" class="modal-body single-col">
+        <!-- Populated dynamically by export.js -->
+      </div>
+      <div class="modal-footer">
+        <button id="btn-fix-duplicates" class="btn" style="display: none;">🧹 Fjern duplikate linjer</button>
+        <div style="display: flex; gap: 8px; margin-left: auto;">
+          <button id="btn-cancel-export" class="btn">Lukk</button>
+          <button id="btn-confirm-download-svg" class="btn btn-laser-export">⬇ Last ned .SVG-fil (1:1 mm)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- Application ES Modules -->
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
