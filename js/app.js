@@ -1,3 +1,4 @@
+import { findObjectSnapPoint, pathNodeWorldPoints } from './point-snap.js';
 import { CLIPBOARD_MIME, encodeClipboard, decodeClipboard, cloneWithFreshIds, reorderObjects } from './object-commands.js';
 import { vectorLeaves, canFillShape, setShapeAppearance, shapeTouchesSelection, snapTranslation } from './editor-tools.js';
 import { createVectorOffset } from './vector-offset.js';
@@ -939,8 +940,9 @@ function renderOverlay() {
 
         // If this is a drawn path with editable nodes and curve/node handles are enabled:
         if (single && single.type === 'path' && Array.isArray(single.nodes) && single.nodes.length >= 2) {
-          for (let idx = 0; idx < single.nodes.length; idx++) {
-            const np = single.nodes[idx];
+          const displayNodes = pathNodeWorldPoints(single);
+          for (let idx = 0; idx < displayNodes.length; idx++) {
+            const np = displayNodes[idx];
             const nc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             nc.setAttribute('cx', np.x);
             nc.setAttribute('cy', np.y);
@@ -950,7 +952,7 @@ function renderOverlay() {
             nc.setAttribute('stroke-width', String(unit * 1.2));
             nc.style.cursor = 'pointer';
             nc.dataset.handle = `node-${idx}`;
-            handleGroupEl.appendChild(nc);
+            overlayLayerEl.appendChild(nc);
           }
         }
       }
@@ -1858,6 +1860,11 @@ function onCanvasPointerDown(e) {
       };
     } else if (handleId.startsWith('node-')) {
       const nodeIdx = parseInt(handleId.split('-')[1], 10);
+      // Bake the displayed transform before editing a node so changing its
+      // bounding-box center cannot move the other nodes or the snapped point.
+      s.nodes = pathNodeWorldPoints(s).map(p => ({ x: p.x, y: p.y }));
+      s.rotation = 0; s.flipX = false; s.flipY = false;
+      rebuildPathShapeFromNodes(s);
       state.interaction = {
         type: 'path-node',
         nodeIdx,
@@ -1983,8 +1990,11 @@ function onCanvasPointerDown(e) {
       finishPenPath(true);
       return;
     }
-    state.penPoints.push(worldPt);
-    state.penCursor = worldPt;
+    const snap = state.objectSnap && !e.altKey ? findObjectSnapPoint(activeList, clientToWorldMm(e.clientX, e.clientY, false), state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8) : null;
+    const destination = snap ? snap.point : worldPt;
+    state.penPoints.push(destination);
+    state.penCursor = destination;
+    state.objectSnapFeedback = snap ? { point: snap.point } : null;
     renderOverlay();
     return;
   }
@@ -2032,8 +2042,10 @@ function onCanvasPointerMove(e) {
   document.getElementById('coords-display').textContent =
     `X: ${rawWorldPt.x.toFixed(1)}  Y: ${rawWorldPt.y.toFixed(1)} mm`;
 
-  if (state.activeTool === 'pen' && state.penPoints.length > 0) {
-    state.penCursor = worldPt;
+  if (state.activeTool === 'pen' && !state.interaction) {
+    const snap = state.objectSnap && !e.altKey ? findObjectSnapPoint(getActiveContainerList(), rawWorldPt, state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8) : null;
+    state.penCursor = snap ? snap.point : worldPt;
+    state.objectSnapFeedback = snap ? { point: snap.point } : null;
     renderOverlay();
   }
 
@@ -2078,6 +2090,7 @@ function onCanvasPointerMove(e) {
 
   if (act.type === 'line-handle') {
     const s = act.shape;
+    state.objectSnapFeedback = null;
     if (act.handle === 'line-curve') {
       s.curved = true;
       s.cx = worldPt.x;
@@ -2110,7 +2123,7 @@ function onCanvasPointerMove(e) {
       s.y2 = ny;
     }
     if (act.handle !== 'line-curve' && state.objectSnap && !e.altKey) {
-      const snap = findLineEndpoint(getActiveContainerList(), rawWorldPt, state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8, { excludeIds: new Set([s.id]) });
+      const snap = findObjectSnapPoint(getActiveContainerList(), rawWorldPt, state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8, { excludeIds: new Set([s.id]) });
       if (snap) { const end = act.handle === 'line-p1' ? '1' : '2'; s['x' + end] = snap.point.x; s['y' + end] = snap.point.y; }
       state.objectSnapFeedback = snap ? { point: snap.point } : null;
     }
@@ -2126,8 +2139,8 @@ function onCanvasPointerMove(e) {
       const center = { x: s.x + s.width / 2, y: s.y + s.height / 2 };
       let destination = worldPt;
       state.objectSnapFeedback = null;
-      if (!s.closedPath && (act.nodeIdx === 0 || act.nodeIdx === s.nodes.length - 1) && state.objectSnap && !e.altKey) {
-        const snap = findLineEndpoint(getActiveContainerList(), rawWorldPt, state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8, { excludeIds: new Set([s.id]) });
+      if (state.objectSnap && !e.altKey) {
+        const snap = findObjectSnapPoint(getActiveContainerList(), rawWorldPt, state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8, { excludeIds: new Set([s.id]) });
         if (snap) { destination = snap.point; state.objectSnapFeedback = { point: snap.point }; }
       }
       const localPt = rot ? rotatePoint(destination, center, -rot) : destination;
@@ -2295,7 +2308,13 @@ function linePointerPoint(e) {
   const grid = clientToWorldMm(e.clientX, e.clientY, true);
   const draft = state.lineDraft;
   const radius = state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8;
-  let snap = state.objectSnap && !e.altKey ? findLineEndpoint(getActiveContainerList(), raw, radius, draft ? { laserMode: draft.mode, cutStage: draft.cutStage } : {}) : null;
+  let snap = null;
+  if (state.objectSnap && !e.altKey) {
+    const list = getActiveContainerList();
+    snap = findObjectSnapPoint(list, raw, radius);
+    const join = findLineEndpoint(list.filter(s => !s.guideLabel), raw, radius, draft ? { laserMode: draft.mode, cutStage: draft.cutStage } : {});
+    if (join && (!snap || join.distance <= snap.distance + 1e-7)) snap = { ...join, joinShapeId: join.shapeId };
+  }
   if (draft && !draft.sourceId && draft.points.length >= 3 && dist(raw, draft.points[0]) <= radius) snap = { point: draft.points[0], close: true };
   return { point: snap ? { ...snap.point } : constrainLinePoint(draft?.points.at(-1), grid, e.shiftKey), snap };
 }
@@ -2304,19 +2323,19 @@ function addLinePoint(e) {
   const hit = linePointerPoint(e);
   state.lineHoverSnap = hit.snap;
   if (!state.lineDraft) {
-    const source = getActiveContainerList().find(s => s.id === hit.snap?.shapeId);
+    const source = getActiveContainerList().find(s => s.id === hit.snap?.joinShapeId);
     state.lineDraft = { points: [hit.point], cursor: hit.point, sourceId: source?.id, mode: source?.laserMode || state.activeLaserMode, cutStage: source?.cutStage, curved: state.curveModeDefault };
     state.selectedIds.clear(); updateUndoRedoButtons(); renderAll(); return;
   }
   const draft = state.lineDraft;
   if (dist(draft.points.at(-1), hit.point) < 0.001) return;
   if (hit.snap?.close) { finishLineChain(true); return; }
-  if (hit.snap?.shapeId === draft.sourceId && dist(draft.points[0], hit.point) < 0.001) {
+  if (hit.snap?.joinShapeId && hit.snap.joinShapeId === draft.sourceId && dist(draft.points[0], hit.point) < 0.001) {
     showToast('Velg det andre endepunktet for å lukke den eksisterende linjen.'); return;
   }
   draft.points.push(hit.point); draft.cursor = hit.point;
-  if (hit.snap?.shapeId) {
-    if (!finishLineChain(false, hit.snap.shapeId)) draft.points.pop();
+  if (hit.snap?.joinShapeId) {
+    if (!finishLineChain(false, hit.snap.joinShapeId)) draft.points.pop();
   }
   updateUndoRedoButtons(); renderOverlay();
 }
@@ -2409,7 +2428,7 @@ function setActiveTool(toolName) {
   if (state.activeTool === 'line' && toolName !== 'line') {
     if (!finishLineChain()) return;
   }
-  state.lineHoverSnap = null; state.linePress = null;
+  state.lineHoverSnap = null; state.linePress = null; state.objectSnapFeedback = null;
 
   state.activeTool = toolName;
   state.penPoints = [];

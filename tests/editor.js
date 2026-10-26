@@ -118,4 +118,27 @@ await test('external SVG and plain text paste as editable objects',()=>{
  reset();clipboard('paste','<svg xmlns="http://www.w3.org/2000/svg" width="20mm" height="10mm" viewBox="0 0 20 10"><rect width="20" height="10"/></svg>');assert(shapes().length===1);near(Number($('prop-w').value),20);
  clipboard('paste','Hei æøå');assert(shapes().length===2);assert(JSON.parse(clipboard('copy').text).shapes[0].textMeta.text==='Hei æøå');
 });
+await test('L snaps to rectangle corners without joining or modifying the rectangle',()=>{
+ reset();tool('rect');drag([100,80],[180,140]);const rectangle=shapes()[0].getAttribute('d');
+ tool('line');click(40,150);pointer('pointermove',99,81);assert($('line-snap-marker'),'corner preview missing');click(99,81);key('Enter');
+ assert(shapes().length===2);assert(shapes()[0].getAttribute('d')===rectangle);const p=points(shapes()[1]).at(-1);near(p.x,100,.001);near(p.y,80,.001);
+ tool('line');click(179,139);click(220,170);key('Enter');assert(shapes().length===3);near(points(shapes()[2])[0].x,180,.001);near(points(shapes()[2])[0].y,140,.001);
+});
+await test('dragging a line node snaps to a corner, supports undo, Alt and the on/off switch',()=>{
+ reset();tool('rect');drag([100,80],[180,140]);chain([[20,180],[80,100]]);tool('select');
+ const handle=()=>d.querySelector('[data-handle="node-1"]');pointer('pointerdown',80,100,handle());pointer('pointermove',99,81);assert($('object-snap-marker'));pointer('pointerup',99,81);
+ near(points(shapes()[1]).at(-1).x,100,.001);near(points(shapes()[1]).at(-1).y,80,.001);key('z',{metaKey:true});near(points(shapes()[1]).at(-1).x,80);
+ selectRow(ids()[1]);pointer('pointerdown',80,100,handle());pointer('pointermove',99,81,undefined,{altKey:true});assert(!$('object-snap-marker'));pointer('pointerup',99,81,undefined,{altKey:true});near(points(shapes()[1]).at(-1).x,99);
+ $('object-snap-toggle').checked=false;$('object-snap-toggle').dispatchEvent(new w.Event('change'));drag([99,81],[101,79],handle());near(points(shapes()[1]).at(-1).x,101);near(points(shapes()[1]).at(-1).y,79);
+});
+await test('rotated path node editing preserves other nodes while snapping exactly to a corner',()=>{
+ reset();tool('rect');drag([140,80],[180,120]);chain([[20,180],[80,140]]);tool('select');edit('prop-rot','30');
+ const before=points(shapes()[1]), last=before.at(-1);drag([last.x,last.y],[139,81],d.querySelector('[data-handle="node-1"]'));
+ const after=points(shapes()[1]);near(after[0].x,before[0].x,.002);near(after[0].y,before[0].y,.002);near(after.at(-1).x,140,.002);near(after.at(-1).y,80,.002);
+});
+await test('legacy line handles and moving a complete line snap to rectangle corners',()=>{
+ reset();tool('rect');drag([100,80],[180,140]);clipboard('paste',JSON.stringify({format:'bjornsveen-laserstudio/clipboard',version:1,shapes:[{id:'legacy',type:'line',x:20,y:120,width:40,height:40,x1:20,y1:160,x2:60,y2:120,laserMode:'cut'}]}));
+ drag([68,128],[99,81],d.querySelector('[data-handle="line-p2"]'));const shape=JSON.parse(clipboard('copy').text).shapes[0];near(shape.x2,100,.001);near(shape.y2,80,.001);
+ reset();tool('rect');drag([100,80],[180,140]);chain([[20,180],[60,120]]);tool('select');drag([40,150],[79,111],shapes()[1]);near(points(shapes()[1]).at(-1).x,100,.001);near(points(shapes()[1]).at(-1).y,80,.001);
+});
 document.querySelector('#summary').textContent=`${passed} bestått, ${failed} feilet`;

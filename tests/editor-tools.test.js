@@ -45,7 +45,7 @@ test('rotated curve and line geometry survives joining in world coordinates and 
 test('moving objects snaps endpoints before edges, and supports adjacency for groups and rectangles',()=>{
  const a=line(P(0,0),P(10,10)),b=line(P(30.123,20.456),P(50,30));
  const endpoint=snapTranslation([a],[b],P(20,10),2);near(endpoint.x,20.123);near(endpoint.y,10.456);assert.ok(endpoint.point);
- const edge=snapTranslation([rect()],[rect(40,0)],P(19.6,0),1);near(edge.x,20);assert.equal(edge.guideX,40);
+ const edge=snapTranslation([rect()],[rect(40,0)],P(19.6,3),1);near(edge.x,20);assert.equal(edge.guideX,40);
  const group={type:'group',children:[a]};assert.ok(snapTranslation([group],[b],P(20,10),2).point);
  const far=snapTranslation([rect()],[rect(100,100)],P(20,0),1);assert.equal(far.snapX,false);assert.equal(far.snapY,false);
 });

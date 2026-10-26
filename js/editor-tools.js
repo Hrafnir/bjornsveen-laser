@@ -1,5 +1,5 @@
 import { shapeToWorldPolygons, getShapesBBox, pointInMultiPolygon, dist } from './geometry.js';
-import { openLinePoints } from './line-tools.js';
+import { objectSnapPoints } from './point-snap.js';
 
 export function vectorLeaves(shapes) {
   return shapes.flatMap(s => s.hidden || s.guideLabel || s.laserMode === 'guide' ? [] : s.type === 'group' ? vectorLeaves(s.children || []) : s.type === 'image' ? [] : [s]);
@@ -48,21 +48,26 @@ export function shapeTouchesSelection(shape, rect) {
   return false;
 }
 
-function endpoints(shapes) {
-  return shapes.flatMap(s => {
-    if (s.hidden || s.guideLabel || s.laserMode === 'guide') return [];
-    if (s.type === 'group') return endpoints(s.children || []);
-    const points = openLinePoints(s);
-    return points ? [points[0], points.at(-1)] : [];
-  });
-}
 export function snapTranslation(moving, targets, delta, radius) {
   const result = { ...delta, snapX: false, snapY: false, guides: [] };
-  const targetPoints = endpoints(targets), movingPoints = endpoints(moving);
+  const targetPoints = objectSnapPoints(targets).map(hit => hit.point), movingPoints = objectSnapPoints(moving).map(hit => hit.point);
+  // Search nearby cells instead of comparing every vertex pair in large boxes/flex patterns.
+  const cellSize = Math.max(radius, 1e-7), cells = new Map();
+  for (const q of targetPoints) {
+    const key = `${Math.floor(q.x / cellSize)},${Math.floor(q.y / cellSize)}`;
+    if (!cells.has(key)) cells.set(key, []);
+    cells.get(key).push(q);
+  }
   let best = null;
-  for (const p of movingPoints) for (const q of targetPoints) {
-    const distance = dist({ x: p.x + delta.x, y: p.y + delta.y }, q);
-    if (distance <= radius && (!best || distance < best.distance)) best = { distance, p, q };
+  for (const p of movingPoints) {
+    const moved = { x: p.x + delta.x, y: p.y + delta.y };
+    const cx = Math.floor(moved.x / cellSize), cy = Math.floor(moved.y / cellSize);
+    for (let x = cx - 1; x <= cx + 1; x++) for (let y = cy - 1; y <= cy + 1; y++) {
+      for (const q of cells.get(`${x},${y}`) || []) {
+        const distance = dist(moved, q);
+        if (distance <= radius && (!best || distance < best.distance)) best = { distance, p, q };
+      }
+    }
   }
   if (best) return { x: best.q.x - best.p.x, y: best.q.y - best.p.y, snapX: true, snapY: true, point: best.q, guides: [] };
   const b = getShapesBBox(moving);
