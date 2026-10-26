@@ -173,7 +173,7 @@ export function shapeToLocalPolygons(shape, curveToleranceMm = 0.2) {
       }
       // Rounded rectangle sampled smoothly at corners
       const pts = [];
-      const steps = Math.max(6, Math.ceil((Math.PI * rx * 0.5) / curveToleranceMm));
+      const steps = clamp(Math.ceil((Math.PI * rx * 0.5) / curveToleranceMm), 8, 36);
       const corners = [
         { cx: x + w - rx, cy: y + rx, startAngle: -Math.PI / 2, endAngle: 0 },
         { cx: x + w - rx, cy: y + h - rx, startAngle: 0, endAngle: Math.PI / 2 },
@@ -892,11 +892,17 @@ export function booleanMultiPolygons(loopsA, loopsB, op = 'union') {
 
   for (const e of allEdges) {
     e.splits.sort((a, b) => a - b);
-    const uniqueT = [e.splits[0]];
-    for (let k = 1; k < e.splits.length; k++) {
-      if (e.splits[k] - uniqueT[uniqueT.length - 1] > 1e-5) {
-        uniqueT.push(e.splits[k]);
+    const uniqueT = [0];
+    for (let k = 0; k < e.splits.length; k++) {
+      const tVal = clamp(e.splits[k], 0, 1);
+      if (tVal - uniqueT[uniqueT.length - 1] > 1e-6) {
+        uniqueT.push(tVal);
       }
+    }
+    if (1 - uniqueT[uniqueT.length - 1] > 1e-6) {
+      uniqueT.push(1);
+    } else {
+      uniqueT[uniqueT.length - 1] = 1;
     }
 
     const dx = e.b.x - e.a.x;
@@ -910,7 +916,7 @@ export function booleanMultiPolygons(loopsA, loopsB, op = 'union') {
     for (let k = 0; k < uniqueT.length - 1; k++) {
       const t0 = uniqueT[k];
       const t1 = uniqueT[k + 1];
-      if ((t1 - t0) * len < 1e-4) continue;
+      if ((t1 - t0) * len < 1e-5) continue;
       const p0 = { x: e.a.x + dx * t0, y: e.a.y + dy * t0 };
       const p1 = { x: e.a.x + dx * t1, y: e.a.y + dy * t1 };
       const midX = (p0.x + p1.x) * 0.5;
@@ -948,7 +954,7 @@ export function booleanMultiPolygons(loopsA, loopsB, op = 'union') {
 function chainDirectedSegmentsToPolygons(segments) {
   const loops = [];
   if (!segments || segments.length === 0) return loops;
-  const snapTol = 0.025; // 0.025 mm vertex snap tolerance
+  const snapTol = 0.04; // 0.04 mm vertex snap tolerance
   const cellSize = snapTol * 2;
 
   // Build spatial hash map of segment start points (seg.a)
@@ -1001,6 +1007,19 @@ function chainDirectedSegmentsToPolygons(segments) {
         }
       }
 
+      // Fallback search with slightly wider tolerance if a vertex has micro-gap
+      if (bestIdx === -1) {
+        let fallbackDist = 0.2;
+        for (let j = 0; j < segments.length; j++) {
+          if (segments[j].used) continue;
+          const d = Math.hypot(segments[j].a.x - tail.x, segments[j].a.y - tail.y);
+          if (d < fallbackDist) {
+            fallbackDist = d;
+            bestIdx = j;
+          }
+        }
+      }
+
       if (bestIdx !== -1) {
         segments[bestIdx].used = true;
         loop.push(segments[bestIdx].b);
@@ -1010,7 +1029,7 @@ function chainDirectedSegmentsToPolygons(segments) {
     }
 
     if (loop.length >= 3) {
-      const simplified = simplifyCollinearPolygon(loop, 0.015);
+      const simplified = simplifyRdpPolygon(loop, 0.012);
       if (simplified.length >= 3) {
         simplified.closed = true;
         loops.push(simplified);
@@ -1231,20 +1250,8 @@ export function weldKeyringTabToShape(shape, holeDiamMm = 4.5, borderMm = 3.0) {
 // 6. POLYGON SIMPLIFICATION & SMOOTHING HELPERS
 // ============================================================================
 
-export function simplifyCollinearPolygon(pts, tolerance = 0.02) {
-  if (!pts || pts.length <= 3) return pts;
-  const out = [];
-  const n = pts.length;
-  for (let i = 0; i < n; i++) {
-    const prev = pts[(i - 1 + n) % n];
-    const curr = pts[i];
-    const next = pts[(i + 1) % n];
-    const dSq = pointToSegmentDistSq(curr.x, curr.y, prev.x, prev.y, next.x, next.y);
-    if (dSq > tolerance * tolerance) {
-      out.push(curr);
-    }
-  }
-  return out.length >= 3 ? out : pts;
+export function simplifyCollinearPolygon(pts, tolerance = 0.015) {
+  return simplifyRdpPolygon(pts, tolerance);
 }
 
 export function simplifyRdpPolygon(pts, epsilon = 0.1) {
