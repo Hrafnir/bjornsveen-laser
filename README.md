@@ -171,3 +171,11 @@ Hver bokstav flyttes og roteres som én samlet form langs banen. Konturer, hull,
 Skriftretning for rett tekst og tekst langs bane er separate oppsett. Velger du oppover/nedover, frigjøres teksten fra bue/omriss. Binder du den til en form eller velger en bue, brukes vannrett grunntekst langs banen. Byttene kan angres.
 
 Eksisterende lagrede konturer endres ikke automatisk. For tekst fra en eldre versjon: velg tekstobjektet og trykk **Oppdater tekstform** for å bruke den nye formen og millimeteravstanden. Handlingen kan angres. Vanlig redigering av teksten bruker også den nye metoden.
+
+### Objektfarger og hull i former
+
+Velg en figur, linje eller flere objekter og bruk **Objektfarge** i høyrepanelet. Paletten og fargevelgeren endrer visningsfargen for gravering eller omriss. Lag-listens fargeprikker følger objektfargen. **Bruk lagfarge** tilbakestiller til standardfargen for laserlaget. Bilder beholder bildefargene.
+
+Fargene følger med i prosjektlagring, kopiering og angre. De endrer ikke kutt, score eller gravering; lasereksport bruker fortsatt laserlagenes vanlige farger.
+
+For å fjerne for eksempel en stjerne fra en trekant: legg stjerna foran trekanten, Shift-velg begge og trykk **Lag hull** under **Kombiner former**. Stjerna kan være kun omriss. Den nederste valgte figuren beholder farge, laseroperasjon og plassering i lagrekkefølgen. De andre valgte figurene trekkes fra. Dette virker også når du redigerer deler inne i en gruppe. Angre gjenoppretter de opprinnelige figurene.

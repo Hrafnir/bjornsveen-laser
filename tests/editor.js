@@ -294,4 +294,39 @@ await test('Shift-click can select both overlapping endpoints before merging the
  pickAnchor(second,0);pickAnchor(second,0,true);assert(!$('btn-connect-anchors').disabled);$('btn-connect-anchors').click();
  assert(shapes().length===1);assert(copiedShape().nodes.length===3);assert(!copiedShape().closedPath);
 });
+const paint = color => d.querySelector(`[data-object-color="${color}"]`).click();
+await test('individual colors render fills, strokes and layer swatches; undo and reset retain laser operation',()=>{
+ reset();tool('rect');drag([30,30],[130,110]);$('btn-shape-fill').click();paint('#a855f7');
+ const id=ids()[0];assert(shapes()[0].getAttribute('fill')==='#a855f7');assert(copiedShape().laserMode==='engrave');
+ assert(d.querySelector(`#layer-list [data-id="${id}"] .layer-dot`).style.background.includes('168'));
+ tool('star');drag([65,55],[95,85]);$('btn-shape-outline').click();edit('object-color','#22c55e');
+ assert(shapes()[1].getAttribute('stroke')==='#22c55e');assert(copiedShape().laserMode==='cut');
+ $('btn-undo').click();selectRow(ids()[1]);assert(shapes()[1].getAttribute('stroke')==='#ff1e1e');
+ paint('#22c55e');$('btn-color-reset').click();assert(shapes()[1].getAttribute('stroke')==='#ff1e1e');
+});
+await test('mixed group colors can be changed together and survive copy/paste',()=>{
+ reset();tool('rect');drag([30,30],[130,110]);$('btn-shape-fill').click();paint('#a855f7');tool('star');drag([65,55],[95,85]);paint('#22c55e');
+ tool('select');key('a',{metaKey:true});assert($('object-color-status').textContent.includes('Flere farger'));key('g',{metaKey:true});
+ assert(d.querySelector('#layer-list .layer-dot').style.background.includes('conic-gradient'));paint('#3b82f6');
+ assert([...shapes()[0].children].every(el=>el.getAttribute('fill')==='#3b82f6'||el.getAttribute('stroke')==='#3b82f6'));
+ clipboard('paste',clipboard('copy').text);assert(copiedShape().children.every(s=>s.displayColor==='#3b82f6'));
+});
+const triangleAndStar=()=>{
+ reset();tool('polygon');drag([30,20],[150,140]);edit('prop-sides','3');$('btn-shape-fill').click();paint('#a855f7');
+ tool('star');drag([78,75],[102,99]);$('btn-shape-outline').click();paint('#22c55e');tool('select');
+};
+await test('Lag hull subtracts an outline star from an engraving while preserving unrelated stacking and undo',()=>{
+ triangleAndStar();const originals=ids();tool('rect');drag([180,30],[220,60]);const unrelated=ids()[2];tool('select');
+ selectRow(originals[0]);selectRow(originals[1],true);assert($('boolean-status').textContent.includes('øverste'));$('btn-bool-subtract').click();
+ assert(shapes().length===2);assert(ids()[1]===unrelated);assert(shapes()[0].getAttribute('fill')==='#a855f7');
+ assert(parseSvgPathToPolygons(shapes()[0].getAttribute('d')).length===2,'star hole missing');assert(shapes()[0].getAttribute('fill-rule')==='evenodd');
+ $('btn-undo').click();assert(ids().join() === [...originals,unrelated].join());$('btn-redo').click();assert(shapes().length===2);
+});
+await test('Lag hull edits children inside a group, keeps the group and rejects open lines without deleting them',()=>{
+ triangleAndStar();key('a',{metaKey:true});key('g',{metaKey:true});const group=ids()[0];
+ d.querySelector(`#layer-list [data-id="${group}"] [data-action="edit-group"]`).click();key('a',{metaKey:true});$('btn-bool-subtract').click();
+ const result=copiedShape();assert(result.displayColor==='#a855f7');assert(parseSvgPathToPolygons(result.d).length===2);
+ key('Escape');assert(ids()[0]===group);assert(shapes()[0].children.length===1);
+ reset();chain([[30,30],[60,60]]);tool('rect');drag([30,30],[90,90]);tool('select');key('a',{metaKey:true});$('btn-bool-subtract').click();assert(shapes().length===2);
+});
 document.querySelector('#summary').textContent=`${passed} bestått, ${failed} feilet`;

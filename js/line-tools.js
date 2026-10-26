@@ -1,3 +1,4 @@
+import { inheritDisplayColor } from './appearance.js';
 import { mapNodes, smoothNodes, moveAnchor } from './bezier.js';
 import { shapeToWorldPolygons, pathNodesInWorld, rebuildPathShapeFromNodes, createPathShapeFromPolygons, rotatePoint, dist } from './geometry.js';
 
@@ -99,5 +100,5 @@ export function joinOpenPaths(shapes, tolerance = 0.5) {
     const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     moveAnchor(a,mid); moveAnchor(b,mid); a.in=b.in; a.smooth=false; nodes.pop();
   }
-  return createConnectedPath(nodes, { closed, laserMode: mode, cutStage: stage });
+  return inheritDisplayColor(createConnectedPath(nodes, { closed, laserMode: mode, cutStage: stage }), shapes[0]);
 }

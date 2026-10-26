@@ -1,3 +1,4 @@
+import { normalizeDisplayColor, colorLeaves, displayColor, selectionColors } from './appearance.js';
 import { isEditablePath, isPathEndpoint, removePathAnchors, removePathSegments, connectPathEndpoints, splitPathSegment, nearestSegmentParameter } from './path-edit.js';
 import { smoothNodes, nodesToPath, moveAnchor, moveControl, fitBezier } from './bezier.js';
 import { findObjectSnapPoint } from './point-snap.js';
@@ -695,20 +696,20 @@ function createSvgElementForShape(s, sw) {
   pathEl.style.cursor = state.activeTool === 'select' ? 'move' : 'crosshair';
 
   if (s.laserMode === 'engrave') {
-    pathEl.setAttribute('fill', '#111827');
+    pathEl.setAttribute('fill', displayColor(s));
     pathEl.setAttribute('fill-rule', 'evenodd');
     pathEl.setAttribute('stroke', 'none');
   } else if (s.laserMode === 'score') {
     pathEl.setAttribute('fill', 'none');
     pathEl.setAttribute('pointer-events', 'all');
     pathEl.setAttribute('fill-rule', 'evenodd');
-    pathEl.setAttribute('stroke', '#2563eb');
+    pathEl.setAttribute('stroke', displayColor(s));
     pathEl.setAttribute('stroke-width', String(sw));
     pathEl.setAttribute('stroke-linecap', 'round');
     pathEl.setAttribute('stroke-linejoin', 'round');
   } else if (s.laserMode === 'guide') {
     pathEl.setAttribute('fill', 'none');
-    pathEl.setAttribute('stroke', '#10b981');
+    pathEl.setAttribute('stroke', displayColor(s));
     pathEl.setAttribute('stroke-width', String(sw * 0.85));
     if (s.type !== 'text') pathEl.setAttribute('stroke-dasharray', `${sw * 3},${sw * 2}`);
   } else {
@@ -716,7 +717,7 @@ function createSvgElementForShape(s, sw) {
     pathEl.setAttribute('fill', 'none');
     pathEl.setAttribute('pointer-events', 'all');
     pathEl.setAttribute('fill-rule', 'evenodd');
-    pathEl.setAttribute('stroke', '#ff1e1e');
+    pathEl.setAttribute('stroke', displayColor(s));
     pathEl.setAttribute('stroke-width', String(sw));
     pathEl.setAttribute('stroke-linecap', 'round');
     pathEl.setAttribute('stroke-linejoin', 'round');
@@ -1285,7 +1286,7 @@ function renderInspector() {
       row.style.fontSize = '11px';
       row.innerHTML = `
         <div class="layer-item-left">
-          <span class="layer-dot ${c.laserMode || 'cut'}" title="${modeLabels[c.laserMode] || 'Kutt'}"></span>
+          <span class="layer-dot ${c.laserMode || 'cut'}" style="${layerColorStyle(c)}" title="${modeLabels[c.laserMode] || 'Kutt'}"></span>
           <span class="layer-name">${escapeObjectName(c.name || c.type)}</span>
         </div>
         <div class="layer-item-actions">
@@ -1570,7 +1571,7 @@ function renderLayerList() {
     const isGroup = s.type === 'group' && Array.isArray(s.children);
     item.innerHTML = `
       <div class="layer-item-left">
-        <span class="layer-dot ${s.laserMode || 'cut'}" title="${modeLabels[s.laserMode] || 'Kutt'}"></span>
+        <span class="layer-dot ${s.laserMode || 'cut'}" style="${layerColorStyle(s)}" title="${modeLabels[s.laserMode] || 'Kutt'}"></span>
         <span class="layer-name">${isGroup ? '📦 ' : ''}${escapeObjectName(s.name || s.type)}</span>
       </div>
       <div class="layer-item-actions">
@@ -1645,7 +1646,7 @@ function renderLayerList() {
         childRow.classList.toggle('is-hidden', Boolean(c.hidden || s.hidden));
         childRow.innerHTML = `
           <div class="layer-item-left">
-            <span class="layer-dot ${c.laserMode || 'cut'}" title="${modeLabels[c.laserMode] || 'Kutt'}"></span>
+            <span class="layer-dot ${c.laserMode || 'cut'}" style="${layerColorStyle(c)}" title="${modeLabels[c.laserMode] || 'Kutt'}"></span>
             <span class="layer-name">↳ ${escapeObjectName(c.name || c.type)}</span>
           </div>
           <div class="layer-item-actions">
@@ -2619,7 +2620,23 @@ function finishDrawing() {
 // TOOLBAR, HEADER & INSPECTOR EVENT BINDINGS
 // ============================================================================
 
+function layerColorStyle(shape) {
+  const colors = selectionColors([shape]);
+  return colors.length > 1 ? 'background:conic-gradient(#f97316 0 25%,#22c55e 25% 50%,#3b82f6 50% 75%,#a855f7 75%);' : colors.length ? `background:${colors[0]};` : '';
+}
+
 function renderAppearanceUI() {
+  const selected = getSelectedShapes(), targets = colorLeaves(selected), colors = selectionColors(selected);
+  const picker = document.getElementById('object-color');
+  picker.disabled = !targets.length;
+  picker.value = colors.length === 1 ? colors[0] : '#111827';
+  document.getElementById('object-color-status').textContent = !targets.length ? 'Velg en figur eller linje.' : colors.length > 1 ? 'Flere farger – velg en farge for hele utvalget.' : colors[0].toUpperCase();
+  document.querySelectorAll('[data-object-color]').forEach(btn => {
+    btn.disabled = !targets.length;
+    btn.setAttribute('aria-pressed', String(colors.length === 1 && colors[0] === btn.dataset.objectColor));
+  });
+  document.getElementById('btn-color-reset').disabled = !targets.some(s => normalizeDisplayColor(s.displayColor));
+  document.getElementById('boolean-status').textContent = selected.length < 2 ? 'Velg to figurer med Shift-klikk. Figuren som lager hull, kan være kun omriss.' : `Lag hull: trekk ${selected.length === 2 ? 'den øverste figuren' : `de ${selected.length - 1} øverste figurene`} fra «${selected[0].name || 'nederste figur'}».`;
   const leaves = vectorLeaves(getSelectedShapes());
   const filled = leaves.length > 0 && leaves.every(s => s.laserMode === 'engrave');
   const outline = leaves.length > 0 && leaves.every(s => s.laserMode === 'cut' || s.laserMode === 'score');
@@ -2683,6 +2700,22 @@ function bindToolbarEvents() {
   document.getElementById('btn-connect-anchors').addEventListener('click',connectPickedAnchors);
   document.getElementById('btn-delete-anchors').addEventListener('click',()=>removePickedPathParts('anchors'));
   document.getElementById('btn-delete-segments').addEventListener('click',()=>removePickedPathParts('segments'));
+
+  const applyObjectColor = value => {
+    if (!finishDrawing()) return;
+    const leaves = colorLeaves(getSelectedShapes()), color = normalizeDisplayColor(value);
+    if (!leaves.length || (value !== null && !color)) return;
+    if (leaves.every(s => color ? s.displayColor === color : !s.displayColor)) return;
+    pushUndoSnapshot();
+    for (const shape of leaves) {
+      if (color) shape.displayColor = color;
+      else delete shape.displayColor;
+    }
+    renderAll();
+  };
+  document.getElementById('object-color').addEventListener('change', e => applyObjectColor(e.target.value));
+  document.querySelectorAll('[data-object-color]').forEach(btn => btn.addEventListener('click', () => applyObjectColor(btn.dataset.objectColor)));
+  document.getElementById('btn-color-reset').addEventListener('click', () => applyObjectColor(null));
 
   document.getElementById('object-snap-toggle').addEventListener('change', e => { state.objectSnap = e.target.checked; state.objectSnapFeedback = null; state.lineHoverSnap = null; renderAll(); });
   for (const [id, filled] of [['btn-shape-fill', true], ['btn-shape-outline', false]]) {
@@ -3586,20 +3619,28 @@ function bindInspectorEvents() {
 
   // Magic Boolean Tools
   const runBoolean = (op) => {
+    if (!finishDrawing()) return;
     const sel = getSelectedShapes();
     if (sel.length < 2) {
       showToast('⚠️ Velg minst 2 overlappende objekter først (Hold Shift eller dra en boks rundt dem)');
       return;
     }
-    pushUndoSnapshot();
+    if (sel.some(s => s.type === 'image' || !canFillShape(s))) {
+      showToast('Velg lukkede vektorfigurer. De kan være fylte eller kun omriss.');
+      return;
+    }
     const res = performBooleanOnShapes(sel, op);
     if (!res) {
       showToast('⚠️ Kunne ikke kombinere formene – sjekk at de overlapper');
       return;
     }
     const selIds = new Set(sel.map(s => s.id));
-    state.shapes = state.shapes.filter(s => !selIds.has(s.id));
-    state.shapes.push(res);
+    pushUndoSnapshot();
+    const list = getActiveContainerList(), index = list.findIndex(s => selIds.has(s.id));
+    const remaining = list.filter(s => !selIds.has(s.id));
+    remaining.splice(index, 0, res);
+    list.splice(0, list.length, ...remaining);
+    clearPathPick();
     state.selectedIds = new Set([res.id]);
     renderAll();
     showToast('✨ Former kombinert!');

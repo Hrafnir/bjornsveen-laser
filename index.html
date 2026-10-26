@@ -390,6 +390,41 @@
           <div id="shape-appearance-status" class="box-help"></div>
           <div class="box-help">Fylt = flategravering. Omriss = kutt eller score. Åpne linjer må lukkes før de kan fylles.</div>
         </div>
+        <div class="object-color-controls">
+          <label for="object-color">Objektfarge</label>
+          <div class="object-color-row"><input type="color" id="object-color" value="#111827" aria-describedby="object-color-status"/><span id="object-color-status" class="box-help"></span></div>
+          <div class="object-color-palette" role="group" aria-label="Fargepalett">
+            <button type="button" class="color-swatch" data-object-color="#111827" style="--swatch:#111827" title="Mørk" aria-label="Mørk" aria-pressed="false"></button>
+            <button type="button" class="color-swatch" data-object-color="#ef4444" style="--swatch:#ef4444" title="Rød" aria-label="Rød" aria-pressed="false"></button>
+            <button type="button" class="color-swatch" data-object-color="#f97316" style="--swatch:#f97316" title="Oransje" aria-label="Oransje" aria-pressed="false"></button>
+            <button type="button" class="color-swatch" data-object-color="#eab308" style="--swatch:#eab308" title="Gul" aria-label="Gul" aria-pressed="false"></button>
+            <button type="button" class="color-swatch" data-object-color="#22c55e" style="--swatch:#22c55e" title="Grønn" aria-label="Grønn" aria-pressed="false"></button>
+            <button type="button" class="color-swatch" data-object-color="#14b8a6" style="--swatch:#14b8a6" title="Turkis" aria-label="Turkis" aria-pressed="false"></button>
+            <button type="button" class="color-swatch" data-object-color="#3b82f6" style="--swatch:#3b82f6" title="Blå" aria-label="Blå" aria-pressed="false"></button>
+            <button type="button" class="color-swatch" data-object-color="#a855f7" style="--swatch:#a855f7" title="Lilla" aria-label="Lilla" aria-pressed="false"></button>
+            <button type="button" class="color-swatch" data-object-color="#ec4899" style="--swatch:#ec4899" title="Rosa" aria-label="Rosa" aria-pressed="false"></button>
+          </div>
+          <button id="btn-color-reset" class="btn">Bruk lagfarge</button>
+          <div class="box-help">Fargen gjør overlapp synlig. Laserlaget er uendret; lasereksport bruker lagfargene.</div>
+        </div>
+        <div class="boolean-controls">
+          <div class="control-caption">Kombiner former</div>
+        <!-- Boolean Actions -->
+        <div class="action-grid-3" style="margin-bottom: 10px;">
+          <button id="btn-bool-union" class="btn" title="Slå sammen 2 eller flere overlappende figurer til én ytterkant (Weld / Union)">
+            🔗 Slå sammen
+          </button>
+          <button id="btn-bool-subtract" class="btn" title="Trekk de øverste valgte figurene fra den nederste. Fungerer også med omriss.">
+            ✂️ Lag hull
+          </button>
+          <button id="btn-bool-intersect" class="btn" title="Behold kun området der figurene overlapper">
+            🎯 Snitt
+          </button>
+        </div>
+
+          <div id="boolean-status" class="box-help"></div>
+          <div class="box-help">Den nederste valgte figuren beholdes. Figurene over lager hull i den. Flytt objekter frem/bak i Lag-listen for å bytte rekkefølge.</div>
+        </div>
         <!-- Dynamic Shape-Specific Controls (Corner Radius, Polygon Sides, Star Points, Line & Curve) -->
         <div id="shape-specific-props" style="margin-top: 10px; display: none;">
           <div id="prop-rx-wrap" class="prop-field" style="display: none;">
@@ -672,19 +707,6 @@
       <section class="panel-section">
         <div class="panel-section-header">
           <div class="panel-section-title">✨ Magiske Laserverktøy</div>
-        </div>
-
-        <!-- Boolean Actions -->
-        <div class="action-grid-3" style="margin-bottom: 10px;">
-          <button id="btn-bool-union" class="btn" title="Slå sammen 2 eller flere overlappende figurer til én ytterkant (Weld / Union)">
-            🔗 Slå sammen
-          </button>
-          <button id="btn-bool-subtract" class="btn" title="Trekk siste/øverste figur fra den nederste (Lag hull / utstansing)">
-            ✂️ Trekk fra
-          </button>
-          <button id="btn-bool-intersect" class="btn" title="Behold kun området der figurene overlapper">
-            🎯 Snitt
-          </button>
         </div>
 
         <div class="line-join-controls">

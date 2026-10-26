@@ -1,3 +1,4 @@
+import { inheritDisplayColor } from './appearance.js';
 import { mapNodes, smoothNodes, nodesToPath, nodesBounds } from './bezier.js';
 // ============================================================================
 // Bjørnsveen LaserStudio – 2D Geometry, SVG Path, Boolean & Offset Engine
@@ -1081,7 +1082,10 @@ export function performBooleanOnShapes(shapes, op = 'union') {
     subtract: 'Utstanset form',
     intersect: 'Snittform'
   };
-  return createPathShapeFromPolygons(accLoops, shapes[0].laserMode || 'cut', opNames[op] || 'Kombinert form');
+  const result = createPathShapeFromPolygons(accLoops, shapes[0].laserMode || 'cut', opNames[op] || 'Kombinert form');
+  if (shapes[0].cutStage) result.cutStage = shapes[0].cutStage;
+  if (shapes[0].outlineLaserMode) result.outlineLaserMode = shapes[0].outlineLaserMode;
+  return inheritDisplayColor(result, shapes[0]);
 }
 
 // ============================================================================

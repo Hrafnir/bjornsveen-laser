@@ -1,3 +1,4 @@
+import { inheritDisplayColor } from './appearance.js';
 import Clipper from '../vendor/clipper.module.js';
 import { shapeToWorldPolygons, createPathShapeFromPolygons } from './geometry.js';
 import { openLinePoints, createConnectedPath } from './line-tools.js';
@@ -37,7 +38,7 @@ export function createVectorOffset(shapes, offsetMm, { kind = 'contour', join = 
       const a=out[i],b=out[i+1],c=out[j],d=out[j+1];
       if(cross(a,b,c)*cross(a,b,d)<-1e-10 && cross(c,d,a)*cross(c,d,b)<-1e-10) throw new Error('Offsetlinjen krysser seg selv. Bruk mindre avstand.');
     }
-    return createConnectedPath(out, { laserMode, name: `Parallell offset (${offsetMm} mm)` });
+    return inheritDisplayColor(createConnectedPath(out, { laserMode, name: `Parallell offset (${offsetMm} mm)` }), shapes[0]);
   }
   if (kind !== 'contour' || !['miter', 'round'].includes(join)) throw new Error('Ukjent offsettype.');
   const closed = [], open = [];
@@ -60,5 +61,5 @@ export function createVectorOffset(shapes, offsetMm, { kind = 'contour', join = 
   const loops = output.map(p => p.map(q => ({ x: q.X / SCALE, y: q.Y / SCALE })));
   const result = createPathShapeFromPolygons(loops, laserMode, `Offset (${offsetMm > 0 ? '+' : ''}${offsetMm} mm)`);
   Object.assign(result, result.origBBox);
-  return result;
+  return inheritDisplayColor(result, shapes[0]);
 }
