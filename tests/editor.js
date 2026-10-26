@@ -1,4 +1,4 @@
-import { parseSvgPathToPolygons } from '../js/geometry.js';
+import { buildSmoothSplineLoop, createPathShapeFromPolygons, pathNodesInWorld, parseSvgPathToPolygons } from '../js/geometry.js';
 const frame=document.querySelector('#editor');
 await new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
 const w=frame.contentWindow,d=frame.contentDocument,$=id=>d.getElementById(id);
@@ -170,5 +170,58 @@ await test('text follows a rounded outline with rigid glyphs; direction and path
  selectRow(rectangleId,true);$('btn-bind-text-to-shape').click();assert(textMeta().customPath.length>4);assert(textMeta().writingDirection==='horizontal');
  edit('text-direction-select','down');assert(textMeta().customPath===null);assert(textMeta().writingDirection==='down');
  key('z',{metaKey:true});selectRow(textId);assert(textMeta().customPath.length>4);assert(textMeta().writingDirection==='horizontal');
+});
+const copiedShape=()=>JSON.parse(clipboard('copy').text).shapes[0];
+const handle=name=>d.querySelector(`[data-handle="${name}"]`);
+const handlePoint=el=>[Number(el.getAttribute('cx')),Number(el.getAttribute('cy'))];
+await test('curved L keeps four anchors, exports cubic commands to the canvas and edits tangent handles',()=>{
+ reset();tool('line');$('prop-curve-toggle').checked=true;$('prop-curve-toggle').dispatchEvent(new w.Event('change'));
+ [[20,30],[120,35],[45,90],[130,100]].forEach(p=>click(...p));key('Enter');tool('select');
+ assert(copiedShape().nodes.length===4);assert(d.querySelectorAll('[data-handle^="node-"]').length===4);
+ assert((shapes()[0].getAttribute('d').match(/C /g)||[]).length===3);
+ const h=handle('control-1-out'),before=copiedShape(),start=handlePoint(h);
+ drag(start,[start[0]+10,start[1]+15],h);
+ const after=copiedShape();assert(after.nodes.length===4);near(after.nodes[1].out.x,start[0]+10);near(after.nodes[1].out.y,start[1]+15);
+ const n=after.nodes[1];near((n.in.x-n.x)*(n.out.y-n.y)-(n.in.y-n.y)*(n.out.x-n.x),0,.001);
+ key('z',{metaKey:true});selectRow(ids()[0]);assert(JSON.stringify(copiedShape().nodes)===JSON.stringify(before.nodes));
+});
+await test('Alt handle drag is independent and Alt anchor click toggles corner/smooth',()=>{
+ const h=handle('control-1-out'),start=handlePoint(h),before=copiedShape().nodes[1];
+ drag(start,[start[0]+8,start[1]+5],h,{altKey:true});let n=copiedShape().nodes[1];
+ near(n.in.x,before.in.x);near(n.in.y,before.in.y);assert(n.smooth===false);
+ click(n.x,n.y,handle('node-1'),{altKey:true});n=copiedShape().nodes[1];assert(!n.in&&!n.out);
+ click(n.x,n.y,handle('node-1'),{altKey:true});assert(copiedShape().nodes[1].smooth);
+});
+await test('B click-drag creates explicit handles with two anchors and Enter completes one curve',()=>{
+ reset();tool('pen');$('prop-curve-toggle').checked=false;$('prop-curve-toggle').dispatchEvent(new w.Event('change'));
+ drag([40,60],[65,20]);drag([140,60],[165,100]);key('Enter');
+ assert(shapes().length===1);const s=copiedShape();assert(s.nodes.length===2);assert(s.curved);assert(s.nodes[0].out&&s.nodes[1].in);
+ assert(shapes()[0].getAttribute('d').includes('C '));assert(handle('control-0-out'));assert(handle('control-1-in'));
+});
+await test('resize, rotate, mirror and paste preserve handles; anchor drag translates its handles only',()=>{
+ edit('prop-w','150');edit('prop-rot','35');$('btn-flip-h').click();
+ const original=copiedShape(),world=pathNodesInWorld(original),data=clipboard('copy').text;
+ clipboard('paste',data);let copy=copiedShape(),copyWorld=pathNodesInWorld(copy);
+ world.forEach((n,i)=>{near(copyWorld[i].x,n.x+8);near(copyWorld[i].out.x,n.out.x+8);near(copyWorld[i].out.y,n.out.y+8)});
+ const h=handle('node-0'),start=handlePoint(h),other=copyWorld[1];
+ drag(start,[start[0]+5,start[1]+7],h,{altKey:true});
+ copy=copiedShape();assert(copy.rotation===0);near(copy.nodes[0].out.x,copyWorld[0].out.x+5);near(copy.nodes[0].out.y,copyWorld[0].out.y+7);
+ near(copy.nodes[1].x,other.x);near(copy.nodes[1].y,other.y);
+});
+await test('old sampled curves simplify explicitly with undo; ordinary selection does not change stored geometry',()=>{
+ reset();chain([[10,10],[20,20]]);tool('select');const payload=JSON.parse(clipboard('copy').text);
+ const loop=buildSmoothSplineLoop([{x:20,y:30},{x:120,y:35},{x:45,y:90},{x:130,y:100}],false,.05);
+ const old=createPathShapeFromPolygons([loop]);old.nodes=loop.map(p=>({...p}));old.curved=false;old.closedPath=false;
+ payload.shapes=[old];clipboard('paste',JSON.stringify(payload));assert(copiedShape().nodes.length>100);
+ const before=copiedShape();edit('simplify-tolerance','0.1');$('btn-simplify-path').click();assert(copiedShape().nodes.length<20);assert(copiedShape().nodeModel==='bezier');
+ key('z',{metaKey:true});selectRow(ids()[1]);assert(copiedShape().nodes.length===before.nodes.length);assert(copiedShape().d===before.d);
+});
+await test('extending a Bézier curve with L keeps the original handles and compact node count',()=>{
+ reset();tool('line');$('prop-curve-toggle').checked=true;$('prop-curve-toggle').dispatchEvent(new w.Event('change'));
+ [[20,40],[60,65],[100,40]].forEach(p=>click(...p));key('Enter');tool('select');const before=copiedShape();
+ // Start extension at the old endpoint, then finish away from it.
+ tool('line');click(100,40);click(150,50);key('Enter');tool('select');
+ assert(shapes().length===1);assert(copiedShape().nodes.length===4);assert((shapes()[0].getAttribute('d').match(/C /g)||[]).length>=2);
+ const n=copiedShape().nodes.find(n=>Math.abs(n.x-60)<.01);near(n.in.x,before.nodes[1].in.x);near(n.out.y,before.nodes[1].out.y);
 });
 document.querySelector('#summary').textContent=`${passed} bestått, ${failed} feilet`;

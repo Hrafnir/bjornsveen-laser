@@ -1,10 +1,10 @@
-import { shapeToWorldPolygons, polygonsToSvgPath, rotatePoint, dist } from './geometry.js';
+import { shapeToWorldPolygons, pathNodesInWorld, rotatePoint, dist } from './geometry.js';
 
 // Use the same box/flip/rotation transform as the rendered path, but keep only
 // its editable nodes, not the tessellation points between curve nodes.
 export function pathNodeWorldPoints(shape) {
   if (!Array.isArray(shape.nodes) || !shape.nodes.length) return [];
-  return shapeToWorldPolygons({ ...shape, d: polygonsToSvgPath([shape.nodes], 9) }, 0.05)[0] || [];
+  return pathNodesInWorld(shape).map(p => ({x:p.x,y:p.y}));
 }
 
 function shapePoints(shape) {

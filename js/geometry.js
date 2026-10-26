@@ -1,3 +1,4 @@
+import { mapNodes, smoothNodes, nodesToPath, nodesBounds } from './bezier.js';
 // ============================================================================
 // Bjørnsveen LaserStudio – 2D Geometry, SVG Path, Boolean & Offset Engine
 // All coordinates are in exact millimeters (1 unit = 1.0 mm)
@@ -408,6 +409,7 @@ export function polygonsToSvgPath(loops, decimals = 2) {
  * Converts any shape to its world-space SVG `d` string.
  */
 export function shapeToWorldSvgPath(shape) {
+  if (shape.type === 'path' && shape.nodeModel === 'bezier' && shape.nodes?.length) return nodesToPath(pathNodesInWorld(shape), shape.closedPath);
   const loops = shapeToWorldPolygons(shape, 0.15);
   return polygonsToSvgPath(loops, 3);
 }
@@ -553,13 +555,11 @@ export function buildSmoothSplineLoop(nodes, closed = false, stepMm = 0.25) {
 export function rebuildPathShapeFromNodes(shape) {
   if (!shape || !Array.isArray(shape.nodes) || shape.nodes.length < 2) return shape;
   const closed = Boolean(shape.closedPath);
-  const loop = shape.curved
-    ? buildSmoothSplineLoop(shape.nodes, closed, 0.2)
-    : shape.nodes.map(p => ({ x: p.x, y: p.y }));
-  loop.closed = closed;
-
-  const bbox = computePolygonsBBox([loop]);
-  shape.d = polygonsToSvgPath([loop], 3);
+  if (shape.curved && shape.nodeModel !== 'bezier') shape.nodes = smoothNodes(shape.nodes, closed);
+  shape.nodeModel = 'bezier';
+  shape.curved = shape.nodes.some(n => n.in || n.out);
+  const bbox = nodesBounds(shape.nodes, closed);
+  shape.d = nodesToPath(shape.nodes, closed);
   shape._cachedD = null;
   shape._cachedRawLoops = null;
   shape.x = bbox.x;
@@ -1435,4 +1435,20 @@ export function analyzeShapesForLaser(shapes, bedWidth, bedHeight) {
     tinyShapes,
     duplicateShapeIds: Array.from(duplicateShapeIds)
   };
+}
+
+// Full node model transformed together, including tangent handles.
+export function pathNodesInWorld(shape) {
+  let nodes = shape.nodes || [];
+  if (shape.curved && shape.nodeModel !== 'bezier') nodes = smoothNodes(nodes, shape.closedPath);
+  const box = shape.origBBox || nodesBounds(nodes, shape.closedPath);
+  const ow = Math.max(.001, box.width), oh = Math.max(.001, box.height);
+  const w = Number(shape.width) || ow, h = Number(shape.height) || oh;
+  const center = {x:shape.x + shape.width/2,y:shape.y + shape.height/2};
+  return mapNodes(nodes, p => {
+    let x=(p.x-box.x)/ow, y=(p.y-box.y)/oh;
+    if(shape.flipX)x=1-x;
+    if(shape.flipY)y=1-y;
+    return rotatePoint({x:shape.x+x*w,y:shape.y+y*h},center,Number(shape.rotation)||0);
+  });
 }

@@ -1,3 +1,4 @@
+import { mapNodes, nodesBounds, nodesToPath } from './bezier.js';
 const escapeXml = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
 // ============================================================================
 // Bjørnsveen LaserStudio – xTool (.xcs) Project Exporter/Importer,
@@ -10,6 +11,7 @@ import {
   clamp,
   roundMm,
   shapeToWorldSvgPath,
+  pathNodesInWorld,
   shapeToWorldPolygons,
   polygonsToSvgPath,
   computePolygonsBBox,
@@ -510,7 +512,8 @@ export function buildXcsProjectString(shapes, {
     // 2. VECTOR PATH ELEMENT (Cut, Score, Engrave)
     const loops = shapeToWorldPolygons(s, 0.15);
     if (!loops || loops.length === 0) return null;
-    const bbox = computePolygonsBBox(loops);
+    const bezierNodes = s.type === 'path' && s.nodeModel === 'bezier' && s.nodes?.length ? pathNodesInWorld(s) : null;
+    const bbox = bezierNodes ? nodesBounds(bezierNodes, s.closedPath) : computePolygonsBBox(loops);
 
     // Localize dPath relative to (bbox.x, bbox.y) because xTool Studio translates PATH displays by (dispObj.x, dispObj.y)!
     const localLoops = loops.map(loop => {
@@ -521,7 +524,7 @@ export function buildXcsProjectString(shapes, {
       shifted.closed = loop.closed !== false;
       return shifted;
     });
-    const dPath = polygonsToSvgPath(localLoops, 3);
+    const dPath = bezierNodes ? nodesToPath(mapNodes(bezierNodes, p => ({x:p.x-bbox.x,y:p.y-bbox.y})), s.closedPath) : polygonsToSvgPath(localLoops, 3);
     if (!dPath) return null;
 
     const mode = s.laserMode || 'cut';

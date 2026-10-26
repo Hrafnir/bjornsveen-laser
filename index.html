@@ -126,7 +126,7 @@
         <span>Linje</span>
       </button>
 
-      <button class="tool-btn" data-tool="pen" title="Tegn punkt-for-punkt-stier eller frihånd (Dobbeltklikk eller Enter for å fullføre) (Snarvei: B)">
+      <button class="tool-btn" data-tool="pen" title="Bézier-penn: Klikk for hjørner, dra for kurvehåndtak. Enter fullfører (B)">
         <span class="shortcut-hint">B</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/></svg>
         <span>Sti / Penn</span>
@@ -404,16 +404,23 @@
           </div>
 
           <!-- Optional Vector Curve Toggle (Hidden unless Line/Pen/Path is active or selected) -->
+          <div id="bezier-tools" style="display:none; margin-top:8px">
+            <div id="bezier-node-count" class="box-help"></div>
+            <label for="simplify-tolerance" class="box-help">Forenkling: toleranse (mm)</label>
+            <input id="simplify-tolerance" type="text" inputmode="decimal" value="0.1" class="input-control math-input" style="max-width:75px; margin:4px 0" />
+            <button id="btn-simplify-path" class="btn" type="button">Forenkle til Bézier-kurve</button>
+            <div class="box-help">Reduserer ankerpunkter i eldre kurver. Lav toleranse følger originalen tettere. Kan angres.</div>
+          </div>
           <div id="prop-curve-wrap" style="display: none; margin-top: 8px; padding: 7px 9px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
             <label style="display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; font-size: 11.5px; font-weight: 600; color: #38bdf8;">
               <span style="display: flex; align-items: center; gap: 6px;">
                 <input type="checkbox" id="prop-curve-toggle" />
-                <span>〰️ Lag vektorkurve / Vis kurvehåndtak</span>
+                <span>〰️ Glatt kurve med Bézier-håndtak</span>
               </span>
               <button type="button" id="btn-reset-curve" class="mini-icon-btn" style="display: none; font-size: 10.5px; color: var(--text-muted); border: 1px solid var(--border-color); padding: 1px 6px;" title="Rett ut linjen igjen">Rett ut</button>
             </label>
             <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px;">
-              Dra i det oransje kurvehåndtaket på streken for å bøye den!
+              B: Klikk for hjørner, klikk og dra for kurver. Enter avslutter. Dra i de blå håndtakene for å bøye kurven. Alt + dra løsner ett håndtak; Alt + klikk på et anker bytter mellom hjørne og glatt punkt.
             </div>
           </div>
         </div>

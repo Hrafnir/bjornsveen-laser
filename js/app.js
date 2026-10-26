@@ -1,4 +1,5 @@
-import { findObjectSnapPoint, pathNodeWorldPoints } from './point-snap.js';
+import { smoothNodes, nodesToPath, moveAnchor, moveControl, fitBezier } from './bezier.js';
+import { findObjectSnapPoint } from './point-snap.js';
 import { CLIPBOARD_MIME, encodeClipboard, decodeClipboard, cloneWithFreshIds, reorderObjects } from './object-commands.js';
 import { vectorLeaves, canFillShape, setShapeAppearance, shapeTouchesSelection, snapTranslation } from './editor-tools.js';
 import { createVectorOffset } from './vector-offset.js';
@@ -25,6 +26,7 @@ import {
   syncLineBBox,
   buildSmoothSplineLoop,
   rebuildPathShapeFromNodes,
+  pathNodesInWorld,
   performBooleanOnShapes,
   weldKeyringTabToShape,
   removeDuplicateShapes,
@@ -943,9 +945,23 @@ function renderOverlay() {
 
         // If this is a drawn path with editable nodes and curve/node handles are enabled:
         if (single && single.type === 'path' && Array.isArray(single.nodes) && single.nodes.length >= 2) {
-          const displayNodes = pathNodeWorldPoints(single);
+          const displayNodes = pathNodesInWorld(single);
           for (let idx = 0; idx < displayNodes.length; idx++) {
             const np = displayNodes[idx];
+            for (const side of ['in', 'out']) {
+              const h = np[side]; if (!h) continue;
+              const stem = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+              stem.setAttribute('x1', np.x); stem.setAttribute('y1', np.y);
+              stem.setAttribute('x2', h.x); stem.setAttribute('y2', h.y);
+              stem.setAttribute('stroke', '#0ea5e9'); stem.setAttribute('stroke-width', unit);
+              stem.style.pointerEvents = 'none'; overlayLayerEl.appendChild(stem);
+              const control = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+              control.setAttribute('cx', h.x); control.setAttribute('cy', h.y);
+              control.setAttribute('r', unit * 3.3); control.setAttribute('fill', '#fff');
+              control.setAttribute('stroke', '#0284c7'); control.setAttribute('stroke-width', unit * 1.3);
+              control.dataset.handle = `control-${idx}-${side}`; control.style.cursor = 'crosshair';
+              overlayLayerEl.appendChild(control);
+            }
             const nc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             nc.setAttribute('cx', np.x);
             nc.setAttribute('cy', np.y);
@@ -984,10 +1000,8 @@ function renderOverlay() {
   if (state.activeTool === 'pen' && state.penPoints.length > 0) {
     const rawPts = [...state.penPoints];
     if (state.penCursor) rawPts.push(state.penCursor);
-    const previewPts = state.curveModeDefault && rawPts.length >= 3
-      ? buildSmoothSplineLoop(rawPts, false, 0.3)
-      : rawPts;
-    const d = previewPts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+    const previewNodes = state.curveModeDefault && !rawPts.some(n => n.in || n.out) ? smoothNodes(rawPts) : rawPts;
+    const d = nodesToPath(previewNodes);
     const pEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
     pEl.setAttribute('d', d);
     pEl.setAttribute('fill', 'none');
@@ -997,6 +1011,14 @@ function renderOverlay() {
 
     for (let i = 0; i < state.penPoints.length; i++) {
       const pt = state.penPoints[i];
+      for (const side of ['in','out']) if (pt[side]) {
+        const h=pt[side], stem=document.createElementNS('http://www.w3.org/2000/svg','line');
+        stem.setAttribute('x1',pt.x); stem.setAttribute('y1',pt.y); stem.setAttribute('x2',h.x); stem.setAttribute('y2',h.y);
+        stem.setAttribute('stroke','#0284c7'); stem.setAttribute('stroke-width',unit); overlayLayerEl.appendChild(stem);
+        const dot=document.createElementNS('http://www.w3.org/2000/svg','circle');
+        dot.setAttribute('cx',h.x); dot.setAttribute('cy',h.y); dot.setAttribute('r',unit*3);
+        dot.setAttribute('fill','#38bdf8'); overlayLayerEl.appendChild(dot);
+      }
       const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
       c.setAttribute('cx', pt.x);
       c.setAttribute('cy', pt.y);
@@ -1138,6 +1160,9 @@ function renderInspector() {
   const sidesWrap = document.getElementById('prop-sides-wrap');
   const innerWrap = document.getElementById('prop-inner-wrap');
   const lineWrap = document.getElementById('prop-line-wrap');
+  const editable = selected.length === 1 && selected[0].type === 'path' && selected[0].nodes?.length >= 2;
+  document.getElementById('bezier-tools').style.display = editable ? 'block' : 'none';
+  document.getElementById('bezier-node-count').textContent = editable ? `${selected[0].nodes.length} ankerpunkter` : '';
   const curveWrap = document.getElementById('prop-curve-wrap');
   const curveToggle = document.getElementById('prop-curve-toggle');
   const resetCurveBtn = document.getElementById('btn-reset-curve');
@@ -1684,6 +1709,8 @@ function bindCanvasEvents() {
   });
 }
 
+// Path anchors and handles stay in source coordinates. Box transforms apply
+// to both, and are baked together only when editing a point.
 function scaleShapeFromOrig(target, orig, origBox, newBox) {
   const sx = newBox.width / Math.max(0.01, origBox.width);
   const sy = newBox.height / Math.max(0.01, origBox.height);
@@ -1703,13 +1730,6 @@ function scaleShapeFromOrig(target, orig, origBox, newBox) {
       target.cy = roundMm(newBox.y + (orig.cy - origBox.y) * sy, 2);
     }
     syncLineBBox(target);
-  }
-  if (Array.isArray(orig.nodes) && Array.isArray(target.nodes)) {
-    for (let i = 0; i < orig.nodes.length; i++) {
-      target.nodes[i].x = roundMm(newBox.x + (orig.nodes[i].x - origBox.x) * sx, 2);
-      target.nodes[i].y = roundMm(newBox.y + (orig.nodes[i].y - origBox.y) * sy, 2);
-    }
-    rebuildPathShapeFromNodes(target);
   }
   if (target.type === 'group' && Array.isArray(orig.children) && Array.isArray(target.children)) {
     for (let i = 0; i < orig.children.length; i++) {
@@ -1745,18 +1765,9 @@ function rotateShapeFromOrig(target, orig, deltaDeg, center) {
   }
   const origCenter = { x: orig.x + orig.width / 2, y: orig.y + orig.height / 2 };
   const newCenter = rotatePoint(origCenter, center, deltaDeg);
-  const dx = newCenter.x - origCenter.x;
-  const dy = newCenter.y - origCenter.y;
   target.x = roundMm(newCenter.x - orig.width / 2, 2);
   target.y = roundMm(newCenter.y - orig.height / 2, 2);
   target.rotation = roundMm((((orig.rotation || 0) + deltaDeg) % 360 + 360) % 360, 1);
-  if (Array.isArray(orig.nodes) && Array.isArray(target.nodes)) {
-    for (let i = 0; i < orig.nodes.length; i++) {
-      target.nodes[i].x = roundMm(orig.nodes[i].x + dx, 2);
-      target.nodes[i].y = roundMm(orig.nodes[i].y + dy, 2);
-    }
-    rebuildPathShapeFromNodes(target);
-  }
 }
 
 function bindTextToTargetShape(textShape, targetShape) {
@@ -1857,7 +1868,7 @@ function onCanvasPointerDown(e) {
 
   // 1. Check if clicking a resize, rotation, line endpoint, line curve, or path node handle
   const handleEl = e.target.closest('[data-handle]');
-  if (handleEl && state.selectedIds.size >= 1) {
+  if (handleEl && state.activeTool === 'select' && state.selectedIds.size >= 1) {
     const selected = getSelectedShapes();
     if (selected.length === 0) return;
     const s = selected[0];
@@ -1882,15 +1893,18 @@ function onCanvasPointerDown(e) {
         handle: handleId,
         shape: s
       };
-    } else if (handleId.startsWith('node-')) {
+    } else if (handleId.startsWith('node-') || handleId.startsWith('control-')) {
       const nodeIdx = parseInt(handleId.split('-')[1], 10);
       // Bake the displayed transform before editing a node so changing its
       // bounding-box center cannot move the other nodes or the snapped point.
-      s.nodes = pathNodeWorldPoints(s).map(p => ({ x: p.x, y: p.y }));
+      s.nodes = pathNodesInWorld(s); s.nodeModel = 'bezier';
       s.rotation = 0; s.flipX = false; s.flipY = false;
       rebuildPathShapeFromNodes(s);
       state.interaction = {
-        type: 'path-node',
+        type: handleId.startsWith('control-') ? 'path-control' : 'path-node',
+        side: handleId.split('-')[2],
+        altClick: handleId.startsWith('node-') && e.altKey,
+        startClientX: e.clientX, startClientY: e.clientY, moved: false,
         nodeIdx,
         shape: s
       };
@@ -2015,9 +2029,10 @@ function onCanvasPointerDown(e) {
       finishPenPath(true);
       return;
     }
-    const snap = state.objectSnap && !e.altKey ? findObjectSnapPoint(activeList, clientToWorldMm(e.clientX, e.clientY, false), state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8) : null;
+    const snap = state.objectSnap && !e.altKey ? findObjectSnapPoint(getActiveContainerList(), clientToWorldMm(e.clientX, e.clientY, false), state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8) : null;
     const destination = snap ? snap.point : worldPt;
-    state.penPoints.push(destination);
+    state.penPoints.push({...destination});
+    state.interaction = { type: 'pen-handle', node: state.penPoints.at(-1), startClientX:e.clientX, startClientY:e.clientY };
     state.penCursor = destination;
     state.objectSnapFeedback = snap ? { point: snap.point } : null;
     renderOverlay();
@@ -2085,6 +2100,21 @@ function onCanvasPointerMove(e) {
 
   if (!state.interaction) return;
   const act = state.interaction;
+
+  if (act.type === 'pen-handle') {
+    if (Math.hypot(e.clientX-act.startClientX,e.clientY-act.startClientY) >= 4) {
+      act.node.out = {...rawWorldPt};
+      act.node.in = {x:2*act.node.x-rawWorldPt.x,y:2*act.node.y-rawWorldPt.y};
+      act.node.smooth = true;
+      state.penCursor = null;
+      renderOverlay();
+    }
+    return;
+  }
+  if (act.type === 'path-control') {
+    moveControl(act.shape.nodes[act.nodeIdx], act.side, rawWorldPt, e.altKey);
+    rebuildPathShapeFromNodes(act.shape); renderAll(); return;
+  }
 
   if (act.type === 'pan') {
     const rect = viewportEl.getBoundingClientRect();
@@ -2158,6 +2188,7 @@ function onCanvasPointerMove(e) {
   }
 
   if (act.type === 'path-node') {
+    if (Math.hypot(e.clientX-act.startClientX, e.clientY-act.startClientY) >= 4) act.moved = true;
     const s = act.shape;
     if (Array.isArray(s.nodes) && s.nodes[act.nodeIdx]) {
       const rot = Number(s.rotation) || 0;
@@ -2169,8 +2200,7 @@ function onCanvasPointerMove(e) {
         if (snap) { destination = snap.point; state.objectSnapFeedback = { point: snap.point }; }
       }
       const localPt = rot ? rotatePoint(destination, center, -rot) : destination;
-      s.nodes[act.nodeIdx].x = localPt.x;
-      s.nodes[act.nodeIdx].y = localPt.y;
+      moveAnchor(s.nodes[act.nodeIdx], localPt);
       rebuildPathShapeFromNodes(s);
       renderAll();
     }
@@ -2291,6 +2321,13 @@ function onCanvasPointerUp(e) {
   if (!state.interaction) return;
   const act = state.interaction;
 
+  if (act.type === 'path-node' && act.altClick && !act.moved) {
+    const s = act.shape, n = s.nodes[act.nodeIdx];
+    if (n.in || n.out) { delete n.in; delete n.out; n.smooth = false; }
+    else s.nodes[act.nodeIdx] = smoothNodes(s.nodes, s.closedPath)[act.nodeIdx];
+    rebuildPathShapeFromNodes(s);
+  }
+
   state.interaction = null;
   viewportEl.classList.remove('panning-active');
 
@@ -2373,8 +2410,8 @@ function finishLineChain(closed = false, targetId = null) {
     updateUndoRedoButtons(); renderOverlay(); return true;
   }
   try {
-    const points = draft.curved ? buildSmoothSplineLoop(draft.points, closed, 0.05) : draft.points;
-    let result = createConnectedPath(points, { closed, laserMode: draft.mode, cutStage: draft.cutStage });
+    const points = draft.points;
+    let result = createConnectedPath(points, { closed, curved: draft.curved, laserMode: draft.mode, cutStage: draft.cutStage });
     const ids = new Set([draft.sourceId, targetId].filter(Boolean));
     const list = getActiveContainerList(), originals = list.filter(s => ids.has(s.id));
     if (ids.size !== originals.length) throw new Error('En av linjene er endret. Avslutt tegningen og prøv igjen.');
@@ -2408,22 +2445,13 @@ function finishPenPath(closed = true) {
     renderOverlay();
     return;
   }
-  pushUndoSnapshot();
   const isClosed = closed && state.penPoints.length >= 3;
-  const nodes = state.penPoints.map(p => ({ x: roundMm(p.x, 2), y: roundMm(p.y, 2) }));
-  const loop = state.curveModeDefault
-    ? buildSmoothSplineLoop(nodes, isClosed, 0.2)
-    : [...nodes];
-  loop.closed = isClosed;
-
-  const newShape = createPathShapeFromPolygons(
-    [loop],
-    state.activeLaserMode,
-    isClosed ? 'Tegnet form' : (state.curveModeDefault ? 'Tegnet kurve' : 'Tegnet linje')
-  );
-  newShape.nodes = nodes;
-  newShape.closedPath = isClosed;
-  newShape.curved = Boolean(state.curveModeDefault);
+  let newShape;
+  try { newShape = createConnectedPath(state.penPoints, {
+    closed:isClosed, curved:state.curveModeDefault && !state.penPoints.some(n => n.in || n.out),
+    laserMode:state.activeLaserMode, name:isClosed?'Tegnet form':'Tegnet kurve'
+  }); } catch (error) { showToast(error.message); return; }
+  pushUndoSnapshot();
 
   getActiveContainerList().push(newShape);
   state.selectedIds.clear();
@@ -2474,7 +2502,7 @@ function setActiveTool(toolName) {
     star: 'Klikk og dra for å tegne stjerne (Endre antall tagger til høyre)',
     heart: 'Klikk og dra for å tegne hjerte',
     line: 'Klikk videre for flere linjestykker (eller dra). Grønn ring fester til endepunkt. Klikk start for lukket form. Enter/dobbeltklikk fullfører, Esc avslutter, Backspace angrer punkt. Shift: 15°.',
-    pen: 'Klikk punkt for punkt på arbeidsflaten. Huk av «Lag vektorkurve» til høyre for myke kurver! (Enter/Dobbeltklikk fullfører)',
+    pen: 'Klikk for hjørner. Klikk og dra for Bézier-håndtak. Enter fullfører; klikk startpunktet for å lukke.',
     text: 'Klikk hvor som helst på platen for å sette inn tekst',
     measure: 'Klikk og dra mellom to punkter for å måle nøyaktig avstand i millimeter'
   };
@@ -3010,11 +3038,26 @@ function bindInspectorEvents() {
         }
         syncLineBBox(s);
       } else if (s.type === 'path' && Array.isArray(s.nodes)) {
-        s.curved = checked;
+        s.nodes = pathNodesInWorld(s);
+        s.nodes = checked ? smoothNodes(s.nodes, s.closedPath) : s.nodes.map(n => ({x:n.x,y:n.y}));
+        s.nodeModel = 'bezier'; s.rotation = 0; s.flipX = false; s.flipY = false;
         rebuildPathShapeFromNodes(s);
       }
     }
     renderAll();
+  });
+
+  document.getElementById('btn-simplify-path').addEventListener('click', () => {
+    const s = getSelectedShapes()[0]; if (!s?.nodes) return;
+    const tolerance = evalMathExpr(document.getElementById('simplify-tolerance').value, NaN);
+    if (!Number.isFinite(tolerance) || tolerance < .01 || tolerance > 5) { showToast('Velg en toleranse mellom 0,01 og 5 mm.'); return; }
+    const loop = shapeToWorldPolygons(s, Math.min(.05, tolerance/4))[0];
+    const nodes = fitBezier(loop, tolerance, s.closedPath);
+    const before = s.nodes.length;
+    if (nodes.length >= before && s.nodeModel === 'bezier') { showToast('Kurven har allerede få ankerpunkter ved denne toleransen.'); return; }
+    pushUndoSnapshot(); s.nodes=nodes; s.nodeModel='bezier'; s.rotation=0; s.flipX=false; s.flipY=false;
+    rebuildPathShapeFromNodes(s); renderAll();
+    showToast(`Forenklet fra ${before} til ${nodes.length} ankerpunkter. Angre med ⌘Z / Ctrl+Z.`);
   });
 
   document.getElementById('btn-reset-curve').addEventListener('click', () => {
@@ -3491,18 +3534,10 @@ function bindInspectorEvents() {
       s.x = roundMm(refBox.x + refBox.width - (s.x - refBox.x) - s.width, 2);
       s.flipX = !s.flipX;
       if (s.rotation) s.rotation = roundMm((360 - s.rotation) % 360, 1);
-      if (Array.isArray(s.nodes)) {
-        for (const n of s.nodes) n.x = roundMm(refBox.x + refBox.width - (n.x - refBox.x), 2);
-        rebuildPathShapeFromNodes(s);
-      }
     } else {
       s.y = roundMm(refBox.y + refBox.height - (s.y - refBox.y) - s.height, 2);
       s.flipY = !s.flipY;
       if (s.rotation) s.rotation = roundMm((360 - s.rotation) % 360, 1);
-      if (Array.isArray(s.nodes)) {
-        for (const n of s.nodes) n.y = roundMm(refBox.y + refBox.height - (n.y - refBox.y), 2);
-        rebuildPathShapeFromNodes(s);
-      }
     }
   };
 
@@ -3564,13 +3599,6 @@ function moveShapesBy(shapesList, dx, dy) {
         s.cx = roundMm(s.cx + dx, 3);
         s.cy = roundMm(s.cy + dy, 3);
       }
-    }
-    if (Array.isArray(s.nodes)) {
-      for (const n of s.nodes) {
-        n.x = roundMm(n.x + dx, 3);
-        n.y = roundMm(n.y + dy, 3);
-      }
-      rebuildPathShapeFromNodes(s);
     }
     if (s.type === 'text' && Array.isArray(s.textMeta?.customPath)) {
       for (const p of s.textMeta.customPath) {

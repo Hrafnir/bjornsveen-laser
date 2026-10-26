@@ -36,7 +36,7 @@ test('endpoint snaps ignore hidden, closed and multisegment collections, preserv
 test('rotated curve and line geometry survives joining in world coordinates and native export',()=>{
  const a={type:'line',id:'a',x:0,y:0,width:20,height:20,x1:0,y1:0,x2:20,y2:20,cx:0,cy:20,curved:true,rotation:30,laserMode:'score'};
  const pts=openLinePoints(a),b=line(pts.at(-1),P(50,50));b.laserMode='score';
- const joined=joinOpenPaths([a,b],.001);assert.ok(joined.nodes.length>10);
+ const joined=joinOpenPaths([a,b],.001);assert.equal(joined.nodes.length,3);assert.match(joined.d,/C /);
  near(joined.nodes[0].x,pts[0].x);near(joined.nodes[0].y,pts[0].y);
  const svg=buildLaserSvgString([joined]);assert.match(svg,/fill="none"/);
  const restored=importXcsStringToWorkspace(buildXcsProjectString([joined]));assert.equal(restored.shapes[0].closedPath,false);

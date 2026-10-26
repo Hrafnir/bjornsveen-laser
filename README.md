@@ -108,10 +108,18 @@ Inspirasjon: [Boxes.py RoundedBox](https://boxes.hackerspace-bamberg.de/RoundedB
 ### Tegne, koble, feste og markere
 
 - **Linje (L):** klikk startpunktet og fortsett med ett klikk per hjørne. Dra kan også brukes for ett linjestykke. Enter eller dobbeltklikk fullfører én sammenhengende sti. Klikk startpunktet for en lukket figur. Backspace fjerner siste punkt; Esc beholder bekreftede linjestykker og avslutter verktøyet. Bytte av verktøy fullfører den påbegynte stien. En uferdig forhåndsvisning eksporteres ikke.
-- Med **Fest til objekter** på kan L starte på enden av en eksisterende åpen linje eller kurve, og fortsette den. Avslutt på enden av en annen linje for å koble dem til én sti. En grønn ring viser treffet. Automatisk kobling krever samme laserlag og kutterekkefølge. Kurver konverteres til en tett punktsti ved kobling, som ved vektoreksport.
+- Med **Fest til objekter** på kan L starte på enden av en eksisterende åpen linje eller kurve, og fortsette den. Avslutt på enden av en annen linje for å koble dem til én sti. En grønn ring viser treffet. Automatisk kobling krever samme laserlag og kutterekkefølge. Bézier-kurver beholder ankerpunkter og håndtak ved kobling og SVG/XCS-eksport.
 - **Koble valgte linjer** i høyrepanelet samler allerede tegnede linjer i riktig rekkefølge, uavhengig av retningen de ble tegnet. Velg dem med Shift-klikk eller markeringsboksen. Avstanden mellom endene kan stilles fra 0 til 5 mm; ender innen avstanden møtes i midtpunktet. Forgreninger og separate kjeder avvises i stedet for å lage utilsiktede kutt. Sammenkobling kan angres.
 - **Fest til objekter** er uavhengig av rutenettet og huskes lokalt. Ved tegning og flytting fester linjeender og knutepunkter seg til hjørner og eksisterende punkter på andre figurer. Dette omfatter roterte rektangler, mangekanter, stjerner, kurvenoder og deler i grupper. Under flytting av hele objekter prioriteres punkt mot punkt, deretter kanter og midtlinjer på nærliggende objekter. Grønne markører viser festepunktet eller innrettingen. Hold **Alt** for å hoppe over objektsnapping midlertidig; rutenettvalget gjelder fortsatt. Flytting inntil hverandre endrer ikke antallet objekter – bruk Koble valgte linjer for å gjøre dem til én sti. Endepunkthåndtak har også feste.
 - **Markeringsboksen velger alle berørte objekter**, inkludert linjer som bare krysser boksen og berørte deler av grupper. En tom del av en kurves avgrensningsboks teller ikke som treff. For fylte figurer teller også arealet, men ikke hull i figuren. Skjulte objekter og delnavn velges ikke gjennom markeringsboksen.
+
+### Bézier-kurver med ankerpunkter og håndtak
+
+- **L + Glatt kurve:** ett anker per klikk. Kurven lagres som kubiske Bézier-segmenter, uten å gjøre tegnepunktene mellom ankrene redigerbare.
+- **Penn (B):** klikk for et hjørne, eller klikk og dra for tangent-håndtak. Enter avslutter en åpen sti; klikk startpunktet for å lukke. Automatisk glatting kan brukes når ingen håndtak er tegnet manuelt.
+- Velg kurven med **V**. Oransje punkter er ankrene; de blå håndtakene styrer retning og bøy. Flytting av et anker tar med håndtakene. Glatte punkter holder håndtakene på samme tangent, med uavhengige lengder. **Alt + dra et håndtak** gjør det uavhengig. **Alt + klikk et anker** bytter mellom hjørne uten håndtak og et glatt punkt.
+- Eldre kurver med mange punkter kan velges og **Forenkle til Bézier-kurve** brukes i dimensjonspanelet. Toleransen i mm styrer hvor tett tilpasningen følger originalen (standard 0,1 mm). Lavere verdi beholder flere detaljer. Geometrien endres først når knappen trykkes, og kan angres med ⌘/Ctrl+Z.
+- Skalering, flytting, rotasjon, speiling, sammenkobling, utklippstavle og lagring bevarer håndtakene. Bézier-kurver eksporteres med kompakte `C`-kommandoer i SVG og XCS; polygonberegninger for eksempelvis offset bruker fortsatt beregnede kurvepunkter internt.
 
 ### Fylt figur og offset
 
