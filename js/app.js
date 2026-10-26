@@ -856,10 +856,19 @@ function renderInspector() {
     // Text inspector
     if (s.type === 'text' && s.textMeta) {
       textSection.style.display = 'block';
-      document.getElementById('text-content-input').value = s.textMeta.text || '';
+      const textInput = document.getElementById('text-content-input');
+      if (document.activeElement !== textInput) {
+        textInput.value = s.textMeta.text ?? '';
+      }
       document.getElementById('text-font-select').value = s.textMeta.fontKey || 'sans-bold';
-      document.getElementById('text-size-input').value = s.textMeta.fontSizeMm || 18;
-      document.getElementById('text-spacing-input').value = s.textMeta.spacingMm ?? 1.2;
+      const sizeInput = document.getElementById('text-size-input');
+      if (document.activeElement !== sizeInput) {
+        sizeInput.value = s.textMeta.fontSizeMm || 18;
+      }
+      const spacingInput = document.getElementById('text-spacing-input');
+      if (document.activeElement !== spacingInput) {
+        spacingInput.value = s.textMeta.spacingMm ?? 1.2;
+      }
       document.getElementById('text-curve-input').value = s.textMeta.curve || 0;
     } else {
       textSection.style.display = state.activeTool === 'text' ? 'block' : 'none';
@@ -1109,10 +1118,27 @@ function onCanvasPointerDown(e) {
     return;
   }
 
-  // 4. Text Tool: Insert text at clicked location
+  // 4. Text Tool: Edit existing text if clicked, or insert new text at clicked location
   if (state.activeTool === 'text') {
+    const hitShapeEl = e.target.closest('[data-id]');
+    if (hitShapeEl) {
+      const existing = state.shapes.find(sh => sh.id === hitShapeEl.dataset.id);
+      if (existing && existing.type === 'text') {
+        state.selectedIds.clear();
+        state.selectedIds.add(existing.id);
+        setActiveTool('select');
+        renderAll();
+        const input = document.getElementById('text-content-input');
+        input.focus();
+        input.select();
+        return;
+      }
+    }
+
     pushUndoSnapshot();
-    const textVal = document.getElementById('text-content-input').value || 'BJØRNSVEEN';
+    const textInputEl = document.getElementById('text-content-input');
+    const textVal = textInputEl.value.trim() ? textInputEl.value : 'BJØRNSVEEN';
+    textInputEl.value = textVal;
     const fontKey = document.getElementById('text-font-select').value || 'sans-bold';
     const fontSizeMm = evalMathExpr(document.getElementById('text-size-input').value, 18);
     const spacingMm = evalMathExpr(document.getElementById('text-spacing-input').value, 1.2);
@@ -1904,7 +1930,7 @@ function bindInspectorEvents() {
     if (sel.length === 1 && sel[0].type === 'text') {
       const curMeta = sel[0].textMeta || {};
       updateTextShape(sel[0], {
-        text: document.getElementById('text-content-input').value || 'TEKST',
+        text: document.getElementById('text-content-input').value,
         fontKey: document.getElementById('text-font-select').value,
         fontSizeMm: clamp(evalMathExpr(document.getElementById('text-size-input').value, curMeta.fontSizeMm || 18), 2, 400),
         spacingMm: clamp(evalMathExpr(document.getElementById('text-spacing-input').value, curMeta.spacingMm ?? 1.2), -5, 50),

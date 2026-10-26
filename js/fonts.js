@@ -89,7 +89,8 @@ export function generateTextPolygons( {
   spacingMm = 1.2,
   curve = 0
 } = {}) {
-  const cleanText = String(text || 'TEKST').trim() || 'TEKST';
+  const cleanText = String(text ?? '').trim();
+  if (!cleanText) return [];
   const capHeight = clamp(Number(fontSizeMm) || 18, 2, 400);
   const letterGap = Number(spacingMm) || 0;
   const curveVal = Number(curve) || 0;
@@ -318,6 +319,16 @@ export function createTextShape({
 
 export function updateTextShape(shape, newMeta) {
   const meta = { ...(shape.textMeta || {}), ...newMeta };
+  shape.textMeta = meta;
+
+  if (!String(meta.text ?? '').trim()) {
+    shape.name = 'Tekst: (tom)';
+    shape.d = '';
+    shape._cachedD = null;
+    shape._cachedRawLoops = null;
+    return shape;
+  }
+
   const rebuilt = createTextShape({
     x: shape.x,
     y: shape.y,
@@ -328,6 +339,8 @@ export function updateTextShape(shape, newMeta) {
   shape.width = rebuilt.width;
   shape.height = rebuilt.height;
   shape.d = rebuilt.d;
+  shape._cachedD = null;
+  shape._cachedRawLoops = null;
   shape.origBBox = rebuilt.origBBox;
   shape.textMeta = rebuilt.textMeta;
   if (meta.fontKey === 'singleline' && shape.laserMode === 'engrave') {
