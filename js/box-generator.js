@@ -224,7 +224,11 @@ export function boxModelToShapes(model) {
   const rowWidth = Math.max(...cuts.map(c => computePolygonsBBox([c.outline]).width), Math.sqrt(totalArea) * 1.4);
   let x = 10, y = 10, rowHeight = 0;
   const shapeAt = (loops, dx, dy, name, stage, part) => {
-    const placed = loops.map(loop => loop.map(p => pt(roundMm(p.x + dx, 3), roundMm(p.y + dy, 3))));
+    const placed = loops.map(loop => {
+      const translated = loop.map(p => pt(roundMm(p.x + dx, 3), roundMm(p.y + dy, 3)));
+      translated.closed = loop.closed !== false;
+      return translated;
+    });
     const shape = createPathShapeFromPolygons(placed, 'cut', name);
     // Keep the 0.001 mm path coordinates at scale 1:1, rather than rounding its
     // bounding box to 0.01 mm and inadvertently rescaling mating edges.
@@ -237,6 +241,7 @@ export function boxModelToShapes(model) {
     const b = computePolygonsBBox([outline]);
     if (x > 10 && x - 10 + b.width > rowWidth) { x = 10; y += rowHeight + model.gap; rowHeight = 0; }
     const dx = x - b.x, dy = y - b.y;
+    if (part.slits?.length) shapes.push(shapeAt(part.slits, dx, dy, `${part.name} – flexsnitt`, 'flex-slits', part));
     if (holes.length) shapes.push(shapeAt(holes, dx, dy, `Boks ${part.name} – hull`, 'box-holes', part));
     shapes.push(shapeAt([outline], dx, dy, `Boks ${part.name}`, 'box-outline', part));
     let labelHeight = 0;

@@ -18,7 +18,7 @@ import {
   booleanMultiPolygons
 } from './geometry.js';
 import { createTextShape } from './fonts.js';
-import { PUZZLE_CUT_STAGES } from './cut-order.js';
+import { PUZZLE_CUT_STAGES, getCutStage } from './cut-order.js';
 import { LASER_ICONS, createIconShape, traceImageToPolygons } from './icons.js';
 
 // ============================================================================
@@ -790,10 +790,10 @@ export function renderShapesPreviewSvg(shapes, { strokeScale = 0.0045 } = {}) {
       const cx = s.x + s.width / 2, cy = s.y + s.height / 2;
       return `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" font-size="${s.height * 1.25}" font-weight="600" fill="#047857" transform="rotate(${s.rotation || 0} ${cx} ${cy})">${text}</text>`;
     }
-    const color =
+    const color = getCutStage(s)?.color || (
       s.laserMode === 'cut' ? '#ff1e1e' :
       s.laserMode === 'score' ? '#3b82f6' :
-      s.laserMode === 'guide' ? '#10b981' : '#111827';
+      s.laserMode === 'guide' ? '#10b981' : '#111827');
     const fill = s.laserMode === 'engrave' ? '#111827' : 'none';
     const dash = s.laserMode === 'guide' && s.type !== 'text' ? `stroke-dasharray="${strokeW * 3},${strokeW * 2}"` : '';
     const sw = s.laserMode === 'engrave' ? 0 : strokeW;

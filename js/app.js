@@ -1,3 +1,7 @@
+import { vectorLeaves, canFillShape, setShapeAppearance, shapeTouchesSelection, snapTranslation } from './editor-tools.js';
+import { createVectorOffset } from './vector-offset.js';
+import { findLineEndpoint, constrainLinePoint, createConnectedPath, joinOpenPaths } from './line-tools.js';
+import { renderFlexGeneratorUI } from './flex-ui.js';
 import { BOX_TYPES, buildBoxModel, boxModelToShapes, groupBoxParts, renderBoxAssemblySvg } from './box-generator.js';
 import { flushWorkspaceSave, hasUnprotectedChanges } from './storage.js';
 // ============================================================================
@@ -20,7 +24,6 @@ import {
   buildSmoothSplineLoop,
   rebuildPathShapeFromNodes,
   performBooleanOnShapes,
-  createOffsetContour,
   weldKeyringTabToShape,
   removeDuplicateShapes,
   analyzeShapesForLaser
@@ -88,6 +91,8 @@ const state = {
   bedWidth: 600,
   bedHeight: 400,
   snapMm: 1,
+  objectSnap: true,
+  objectSnapFeedback: null,
   activeTool: 'select',
   activeLaserMode: 'cut', // 'cut' | 'score' | 'engrave' | 'guide'
   shapes: [],
@@ -105,6 +110,9 @@ const state = {
 
   // Interaction state
   interaction: null, // { type: 'pan'|'draw'|'move'|'resize'|'rotate'|'marquee'|'measure', ... }
+  lineDraft: null,
+  lineHoverSnap: null,
+  linePress: null,
   penPoints: [],
   penCursor: null,
   measureLine: null, // { x1, y1, x2, y2 }
@@ -151,6 +159,8 @@ async function initApp() {
     state.bedWidth = saved.bedWidth || 600;
     state.bedHeight = saved.bedHeight || 400;
     state.snapMm = saved.snapMm !== undefined ? saved.snapMm : 1;
+    state.objectSnap = saved.objectSnap !== false;
+    document.getElementById('object-snap-toggle').checked = state.objectSnap;
     state.shapes = saved.shapes;
     if (saved.laserSettings) {
       state.laserSettings = { ...getDefaultLaserSettings(), ...saved.laserSettings };
@@ -229,6 +239,12 @@ function pushUndoSnapshot() {
 }
 
 function undo() {
+  if (state.lineDraft) {
+    state.lineDraft.points.pop();
+    if (!state.lineDraft.points.length) state.lineDraft = null;
+    state.lineHoverSnap = null; state.linePress = null;
+    updateUndoRedoButtons(); renderOverlay(); return;
+  }
   if (state.undoStack.length === 0) return;
   state.redoStack.push(JSON.stringify(state.shapes));
   const prev = state.undoStack.pop();
@@ -241,6 +257,7 @@ function undo() {
 }
 
 function redo() {
+  if (state.lineDraft) return;
   if (state.redoStack.length === 0) return;
   state.undoStack.push(JSON.stringify(state.shapes));
   const next = state.redoStack.pop();
@@ -253,8 +270,8 @@ function redo() {
 }
 
 function updateUndoRedoButtons() {
-  document.getElementById('btn-undo').disabled = state.undoStack.length === 0;
-  document.getElementById('btn-redo').disabled = state.redoStack.length === 0;
+  document.getElementById('btn-undo').disabled = state.undoStack.length === 0 && !state.lineDraft;
+  document.getElementById('btn-redo').disabled = state.redoStack.length === 0 || Boolean(state.lineDraft);
 }
 
 // ============================================================================
@@ -535,6 +552,7 @@ function renderAll() {
   renderShapesLayer();
   renderOverlay();
   renderInspector();
+  renderAppearanceUI();
   renderLayerList();
   saveWorkspaceToLocal(state);
 }
@@ -652,7 +670,8 @@ function createSvgElementForShape(s, sw) {
     pathEl.setAttribute('fill-rule', 'evenodd');
     pathEl.setAttribute('stroke', 'none');
   } else if (s.laserMode === 'score') {
-    pathEl.setAttribute('fill', 'rgba(59, 130, 246, 0.03)');
+    pathEl.setAttribute('fill', 'none');
+    pathEl.setAttribute('pointer-events', 'all');
     pathEl.setAttribute('fill-rule', 'evenodd');
     pathEl.setAttribute('stroke', '#2563eb');
     pathEl.setAttribute('stroke-width', String(sw));
@@ -665,7 +684,8 @@ function createSvgElementForShape(s, sw) {
     if (s.type !== 'text') pathEl.setAttribute('stroke-dasharray', `${sw * 3},${sw * 2}`);
   } else {
     // 'cut' (#ff1e1e)
-    pathEl.setAttribute('fill', 'rgba(255, 30, 30, 0.02)');
+    pathEl.setAttribute('fill', 'none');
+    pathEl.setAttribute('pointer-events', 'all');
     pathEl.setAttribute('fill-rule', 'evenodd');
     pathEl.setAttribute('stroke', '#ff1e1e');
     pathEl.setAttribute('stroke-width', String(sw));
@@ -972,6 +992,51 @@ function renderOverlay() {
       c.setAttribute('stroke', '#0f172a');
       c.setAttribute('stroke-width', String(unit));
       overlayLayerEl.appendChild(c);
+    }
+  }
+
+  // Connected-line preview and screen-sized endpoint snap marker.
+  if (state.activeTool === 'line') {
+    const draft = state.lineDraft;
+    if (draft) {
+      const points = [...draft.points];
+      if (draft.cursor) points.push(draft.cursor);
+      const loop = draft.curved ? buildSmoothSplineLoop(points, false, 0.2) : points;
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', loop.map((p, i) => `${i ? 'L' : 'M'} ${p.x} ${p.y}`).join(' '));
+      path.setAttribute('fill', 'none'); path.setAttribute('stroke', '#f59e0b');
+      path.setAttribute('stroke-width', String(unit * 1.7)); path.setAttribute('pointer-events', 'none');
+      path.id = 'line-draft-preview'; overlayLayerEl.appendChild(path);
+      for (const [i, point] of draft.points.entries()) {
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('cx', point.x); dot.setAttribute('cy', point.y);
+        dot.setAttribute('r', String(unit * (i ? 3 : 4.5))); dot.setAttribute('fill', i ? '#fff' : '#10b981');
+        dot.setAttribute('pointer-events', 'none'); overlayLayerEl.appendChild(dot);
+      }
+    }
+    if (state.lineHoverSnap) {
+      const ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      ring.id = 'line-snap-marker'; ring.setAttribute('cx', state.lineHoverSnap.point.x); ring.setAttribute('cy', state.lineHoverSnap.point.y);
+      ring.setAttribute('r', String(unit * 7)); ring.setAttribute('fill', 'none'); ring.setAttribute('stroke', '#10b981');
+      ring.setAttribute('stroke-width', String(unit * 2)); ring.setAttribute('pointer-events', 'none'); overlayLayerEl.appendChild(ring);
+    }
+  }
+
+  if (state.objectSnapFeedback) {
+    const feedback = state.objectSnapFeedback;
+    for (const [axis, value] of [['x', feedback.guideX], ['y', feedback.guideY]]) {
+      if (!Number.isFinite(value)) continue;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', axis === 'x' ? value : state.viewX); line.setAttribute('x2', axis === 'x' ? value : state.viewX + state.viewW);
+      line.setAttribute('y1', axis === 'y' ? value : state.viewY); line.setAttribute('y2', axis === 'y' ? value : state.viewY + state.viewH);
+      line.setAttribute('stroke', '#10b981'); line.setAttribute('stroke-width', String(unit)); line.setAttribute('stroke-dasharray', `${unit * 4} ${unit * 3}`);
+      line.setAttribute('pointer-events', 'none'); line.dataset.snapGuide = axis; overlayLayerEl.appendChild(line);
+    }
+    if (feedback.point) {
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('cx', feedback.point.x); dot.setAttribute('cy', feedback.point.y); dot.setAttribute('r', String(unit * 7));
+      dot.setAttribute('fill', 'none'); dot.setAttribute('stroke', '#10b981'); dot.setAttribute('stroke-width', String(unit * 2)); dot.setAttribute('pointer-events', 'none');
+      dot.id = 'object-snap-marker'; overlayLayerEl.appendChild(dot);
     }
   }
 
@@ -1542,6 +1607,7 @@ function bindCanvasEvents() {
   window.addEventListener('pointerup', onCanvasPointerUp);
 
   viewportEl.addEventListener('dblclick', (e) => {
+    if (state.activeTool === 'line') { finishLineChain(); return; }
     if (state.activeTool === 'pen' && state.penPoints.length >= 2) {
       finishPenPath(false);
       return;
@@ -1727,11 +1793,12 @@ function onCanvasPointerDown(e) {
     renderAll();
   }
 
-  // If currently in 2-click line drawing mode, this click completes the line!
-  if (state.interaction && state.interaction.type === 'draw' && state.interaction.isTwoClick) {
-    state.interaction = null;
-    saveWorkspaceToLocal(state);
-    renderAll();
+  // The drawing tool owns endpoint clicks; selection handles must not steal them.
+  if (state.activeTool === 'line') {
+    e.preventDefault();
+    if (e.detail > 1) return; // dblclick finishes without adding a duplicate node
+    addLinePoint(e);
+    state.linePress = state.lineDraft ? { x: e.clientX, y: e.clientY } : null;
     return;
   }
 
@@ -1808,6 +1875,8 @@ function onCanvasPointerDown(e) {
         startY: worldPt.y,
         lastDx: 0,
         lastDy: 0,
+        rawStart: rawWorldPt,
+        origSnapshots: getSelectedShapes().map(s => JSON.parse(JSON.stringify(s))),
         shapes: getSelectedShapes()
       };
       renderAll();
@@ -1917,13 +1986,6 @@ function onCanvasPointerDown(e) {
     innerRatio: 42,
     rotation: 0
   };
-  if (state.activeTool === 'line') {
-    newShape.x1 = worldPt.x;
-    newShape.y1 = worldPt.y;
-    newShape.x2 = worldPt.x;
-    newShape.y2 = worldPt.y;
-    newShape.curved = Boolean(state.curveModeDefault);
-  }
   getActiveContainerList().push(newShape);
   state.selectedIds.clear();
   state.selectedIds.add(newShape.id);
@@ -1931,8 +1993,7 @@ function onCanvasPointerDown(e) {
     type: 'draw',
     shape: newShape,
     startX: worldPt.x,
-    startY: worldPt.y,
-    isTwoClick: false
+    startY: worldPt.y
   };
   renderAll();
 }
@@ -1947,6 +2008,15 @@ function onCanvasPointerMove(e) {
   if (state.activeTool === 'pen' && state.penPoints.length > 0) {
     state.penCursor = worldPt;
     renderOverlay();
+  }
+
+  if (state.activeTool === 'line' && state.interaction?.type !== 'pan') {
+    if (!viewportEl.contains(e.target)) { state.lineHoverSnap = null; renderOverlay(); return; }
+    const point = linePointerPoint(e);
+    state.lineHoverSnap = point.snap;
+    if (state.lineDraft) state.lineDraft.cursor = point.point;
+    renderOverlay();
+    return;
   }
 
   if (!state.interaction) return;
@@ -1964,17 +2034,19 @@ function onCanvasPointerMove(e) {
   }
 
   if (act.type === 'move') {
-    const dx = worldPt.x - act.startX;
-    const dy = worldPt.y - act.startY;
-    const stepDx = dx - act.lastDx;
-    const stepDy = dy - act.lastDy;
-    if (Math.abs(stepDx) > 1e-4 || Math.abs(stepDy) > 1e-4) {
-      moveShapesBy(act.shapes, stepDx, stepDy);
-      act.lastDx = dx;
-      act.lastDy = dy;
-      renderAll();
+    let dx = worldPt.x - act.startX, dy = worldPt.y - act.startY;
+    state.objectSnapFeedback = null;
+    if (state.objectSnap && !e.altKey) {
+      const ids = new Set(act.shapes.map(s => s.id));
+      const snap = snapTranslation(act.origSnapshots, getActiveContainerList().filter(s => !ids.has(s.id)), { x: rawWorldPt.x - act.rawStart.x, y: rawWorldPt.y - act.rawStart.y }, state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8);
+      if (snap.snapX) dx = snap.x;
+      if (snap.snapY) dy = snap.y;
+      state.objectSnapFeedback = snap;
     }
-    return;
+    // Reapply from the gesture start, avoiding rounding drift during snapping.
+    act.shapes.forEach((s, i) => Object.assign(s, JSON.parse(JSON.stringify(act.origSnapshots[i]))));
+    moveShapesBy(act.shapes, dx, dy);
+    act.lastDx = dx; act.lastDy = dy; renderAll(); return;
   }
 
   if (act.type === 'line-handle') {
@@ -2010,6 +2082,11 @@ function onCanvasPointerMove(e) {
       s.x2 = nx;
       s.y2 = ny;
     }
+    if (act.handle !== 'line-curve' && state.objectSnap && !e.altKey) {
+      const snap = findLineEndpoint(getActiveContainerList(), rawWorldPt, state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8, { excludeIds: new Set([s.id]) });
+      if (snap) { const end = act.handle === 'line-p1' ? '1' : '2'; s['x' + end] = snap.point.x; s['y' + end] = snap.point.y; }
+      state.objectSnapFeedback = snap ? { point: snap.point } : null;
+    }
     syncLineBBox(s);
     renderAll();
     return;
@@ -2020,7 +2097,13 @@ function onCanvasPointerMove(e) {
     if (Array.isArray(s.nodes) && s.nodes[act.nodeIdx]) {
       const rot = Number(s.rotation) || 0;
       const center = { x: s.x + s.width / 2, y: s.y + s.height / 2 };
-      const localPt = rot ? rotatePoint(worldPt, center, -rot) : worldPt;
+      let destination = worldPt;
+      state.objectSnapFeedback = null;
+      if (!s.closedPath && (act.nodeIdx === 0 || act.nodeIdx === s.nodes.length - 1) && state.objectSnap && !e.altKey) {
+        const snap = findLineEndpoint(getActiveContainerList(), rawWorldPt, state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8, { excludeIds: new Set([s.id]) });
+        if (snap) { destination = snap.point; state.objectSnapFeedback = { point: snap.point }; }
+      }
+      const localPt = rot ? rotatePoint(destination, center, -rot) : destination;
       s.nodes[act.nodeIdx].x = localPt.x;
       s.nodes[act.nodeIdx].y = localPt.y;
       rebuildPathShapeFromNodes(s);
@@ -2102,29 +2185,7 @@ function onCanvasPointerMove(e) {
 
   if (act.type === 'draw') {
     const s = act.shape;
-    if (s.type === 'line') {
-      let x2 = worldPt.x;
-      let y2 = worldPt.y;
-      if (e.shiftKey) {
-        const dx = x2 - act.startX;
-        const dy = y2 - act.startY;
-        const len = Math.hypot(dx, dy);
-        const snapAngle = Math.round(Math.atan2(dy, dx) / (Math.PI / 12)) * (Math.PI / 12);
-        x2 = roundMm(act.startX + Math.cos(snapAngle) * len, 2);
-        y2 = roundMm(act.startY + Math.sin(snapAngle) * len, 2);
-      }
-      s.x1 = act.startX;
-      s.y1 = act.startY;
-      s.x2 = x2;
-      s.y2 = y2;
-      if (s.curved) {
-        const dx = x2 - act.startX;
-        const dy = y2 - act.startY;
-        s.cx = roundMm((act.startX + x2) / 2 - dy * 0.18, 2);
-        s.cy = roundMm((act.startY + y2) / 2 + dx * 0.18, 2);
-      }
-      syncLineBBox(s);
-    } else {
+    {
       let w = Math.abs(worldPt.x - act.startX);
       let h = Math.abs(worldPt.y - act.startY);
       if (e.shiftKey) {
@@ -2155,23 +2216,15 @@ function onCanvasPointerMove(e) {
   }
 }
 
-function onCanvasPointerUp() {
-  if (!state.interaction) return;
-  const act = state.interaction;
-
-  // Support 2-click line drawing: if user clicked once without dragging, keep line attached to cursor until 2nd click!
-  if (act.type === 'draw' && act.shape.type === 'line') {
-    const lineLen = Math.hypot((act.shape.x2 || 0) - (act.shape.x1 || 0), (act.shape.y2 || 0) - (act.shape.y1 || 0));
-    if (lineLen < 1.5 && !act.isTwoClick) {
-      act.isTwoClick = true;
-      return;
-    }
-    // Line finished! Stay in 'line' tool so user can draw more lines easily, or tweak handles right away
-    state.interaction = null;
-    saveWorkspaceToLocal(state);
-    renderAll();
+function onCanvasPointerUp(e) {
+  state.objectSnapFeedback = null;
+  if (state.activeTool === 'line' && state.linePress) {
+    const press = state.linePress; state.linePress = null;
+    if (state.lineDraft && viewportEl.contains(e.target) && Math.hypot(e.clientX - press.x, e.clientY - press.y) >= 4) addLinePoint(e);
     return;
   }
+  if (!state.interaction) return;
+  const act = state.interaction;
 
   state.interaction = null;
   viewportEl.classList.remove('panning-active');
@@ -2196,8 +2249,7 @@ function onCanvasPointerUp() {
     if (mw > 1 || mh > 1) {
       for (const s of getActiveContainerList()) {
         if (s.hidden) continue;
-        const b = getShapesBBox([s]);
-        if (b.x >= mx && b.y >= my && b.x + b.width <= mx + mw && b.y + b.height <= my + mh) {
+        if (shapeTouchesSelection(s, { x: mx, y: my, width: mw, height: mh })) {
           state.selectedIds.add(s.id);
         }
       }
@@ -2208,6 +2260,74 @@ function onCanvasPointerUp() {
 
   saveWorkspaceToLocal(state);
   renderAll();
+}
+
+// L creates a draft outside saved shapes; only confirmed points are committed.
+function linePointerPoint(e) {
+  const raw = clientToWorldMm(e.clientX, e.clientY, false);
+  const grid = clientToWorldMm(e.clientX, e.clientY, true);
+  const draft = state.lineDraft;
+  const radius = state.viewW / Math.max(1, svgEl.getBoundingClientRect().width) * 8;
+  let snap = state.objectSnap && !e.altKey ? findLineEndpoint(getActiveContainerList(), raw, radius, draft ? { laserMode: draft.mode, cutStage: draft.cutStage } : {}) : null;
+  if (draft && !draft.sourceId && draft.points.length >= 3 && dist(raw, draft.points[0]) <= radius) snap = { point: draft.points[0], close: true };
+  return { point: snap ? { ...snap.point } : constrainLinePoint(draft?.points.at(-1), grid, e.shiftKey), snap };
+}
+
+function addLinePoint(e) {
+  const hit = linePointerPoint(e);
+  state.lineHoverSnap = hit.snap;
+  if (!state.lineDraft) {
+    const source = getActiveContainerList().find(s => s.id === hit.snap?.shapeId);
+    state.lineDraft = { points: [hit.point], cursor: hit.point, sourceId: source?.id, mode: source?.laserMode || state.activeLaserMode, cutStage: source?.cutStage, curved: state.curveModeDefault };
+    state.selectedIds.clear(); updateUndoRedoButtons(); renderAll(); return;
+  }
+  const draft = state.lineDraft;
+  if (dist(draft.points.at(-1), hit.point) < 0.001) return;
+  if (hit.snap?.close) { finishLineChain(true); return; }
+  if (hit.snap?.shapeId === draft.sourceId && dist(draft.points[0], hit.point) < 0.001) {
+    showToast('Velg det andre endepunktet for å lukke den eksisterende linjen.'); return;
+  }
+  draft.points.push(hit.point); draft.cursor = hit.point;
+  if (hit.snap?.shapeId) {
+    if (!finishLineChain(false, hit.snap.shapeId)) draft.points.pop();
+  }
+  updateUndoRedoButtons(); renderOverlay();
+}
+
+function finishLineChain(closed = false, targetId = null) {
+  const draft = state.lineDraft;
+  if (!draft) return true;
+  if (draft.points.length < 2) {
+    state.lineDraft = null; state.lineHoverSnap = null; state.linePress = null;
+    updateUndoRedoButtons(); renderOverlay(); return true;
+  }
+  try {
+    const points = draft.curved ? buildSmoothSplineLoop(draft.points, closed, 0.05) : draft.points;
+    let result = createConnectedPath(points, { closed, laserMode: draft.mode, cutStage: draft.cutStage });
+    const ids = new Set([draft.sourceId, targetId].filter(Boolean));
+    const list = getActiveContainerList(), originals = list.filter(s => ids.has(s.id));
+    if (ids.size !== originals.length) throw new Error('En av linjene er endret. Avslutt tegningen og prøv igjen.');
+    if (originals.length) result = joinOpenPaths([...originals, result], 0.002);
+    pushUndoSnapshot();
+    for (let i = list.length - 1; i >= 0; i--) if (ids.has(list[i].id)) list.splice(i, 1);
+    list.push(result);
+    state.lineDraft = null; state.lineHoverSnap = null; state.linePress = null;
+    state.selectedIds = new Set([result.id]);
+    updateUndoRedoButtons(); renderAll(); return true;
+  } catch (error) { showToast(error.message); return false; }
+}
+
+function joinSelectedLines() {
+  if (!finishLineChain()) return;
+  try {
+    const selected = getSelectedShapes();
+    const result = joinOpenPaths(selected, evalMathExpr(document.getElementById('join-distance-input').value, NaN));
+    pushUndoSnapshot();
+    const ids = new Set(selected.map(s => s.id)), list = getActiveContainerList();
+    for (let i = list.length - 1; i >= 0; i--) if (ids.has(list[i].id)) list.splice(i, 1);
+    list.push(result); state.selectedIds = new Set([result.id]); renderAll();
+    showToast(result.closedPath ? 'Linjene er koblet til én lukket form.' : 'Linjene er koblet til én sammenhengende sti.');
+  } catch (error) { showToast(error.message); }
 }
 
 function finishPenPath(closed = true) {
@@ -2248,14 +2368,21 @@ function finishPenPath(closed = true) {
 // TOOLBAR, HEADER & INSPECTOR EVENT BINDINGS
 // ============================================================================
 
+function renderAppearanceUI() {
+  const leaves = vectorLeaves(getSelectedShapes());
+  const filled = leaves.length > 0 && leaves.every(s => s.laserMode === 'engrave');
+  const outline = leaves.length > 0 && leaves.every(s => s.laserMode === 'cut' || s.laserMode === 'score');
+  const fillBtn = document.getElementById('btn-shape-fill'), outlineBtn = document.getElementById('btn-shape-outline');
+  fillBtn.disabled = !leaves.length || leaves.some(s => !canFillShape(s)); outlineBtn.disabled = !leaves.length;
+  fillBtn.setAttribute('aria-pressed', String(filled)); outlineBtn.setAttribute('aria-pressed', String(outline));
+  document.getElementById('shape-appearance-status').textContent = !leaves.length ? 'Velg en figur.' : filled ? 'Fylt flate: gravering.' : outline ? 'Kun omriss: kutt eller linjegravering (score).' : 'Utvalget har blandet fyll/omriss.';
+}
+
 function setActiveTool(toolName) {
-  // If an incomplete 2-click line was in progress, remove it cleanly
-  if (state.interaction && state.interaction.type === 'draw' && state.interaction.isTwoClick) {
-    const unfinishedId = state.interaction.shape?.id;
-    state.shapes = state.shapes.filter(s => s.id !== unfinishedId);
-    state.selectedIds.delete(unfinishedId);
-    state.interaction = null;
+  if (state.activeTool === 'line' && toolName !== 'line') {
+    if (!finishLineChain()) return;
   }
+  state.lineHoverSnap = null; state.linePress = null;
 
   state.activeTool = toolName;
   state.penPoints = [];
@@ -2275,7 +2402,7 @@ function setActiveTool(toolName) {
     polygon: 'Klikk og dra for å tegne mangekant (Endre antall kanter til høyre, f.eks. 360/60)',
     star: 'Klikk og dra for å tegne stjerne (Endre antall tagger til høyre)',
     heart: 'Klikk og dra for å tegne hjerte',
-    line: 'Klikk-og-dra ELLER klikk startpunkt og sluttpunkt for å tegne linje (Hold Shift for 15°/45°/90°, Esc for å avslutte)',
+    line: 'Klikk videre for flere linjestykker (eller dra). Grønn ring fester til endepunkt. Klikk start for lukket form. Enter/dobbeltklikk fullfører, Esc avslutter, Backspace angrer punkt. Shift: 15°.',
     pen: 'Klikk punkt for punkt på arbeidsflaten. Huk av «Lag vektorkurve» til høyre for myke kurver! (Enter/Dobbeltklikk fullfører)',
     text: 'Klikk hvor som helst på platen for å sette inn tekst',
     measure: 'Klikk og dra mellom to punkter for å måle nøyaktig avstand i millimeter'
@@ -2292,6 +2419,26 @@ function setActiveTool(toolName) {
 }
 
 function bindToolbarEvents() {
+  document.getElementById('object-snap-toggle').addEventListener('change', e => { state.objectSnap = e.target.checked; state.objectSnapFeedback = null; state.lineHoverSnap = null; renderAll(); });
+  for (const [id, filled] of [['btn-shape-fill', true], ['btn-shape-outline', false]]) {
+    document.getElementById(id).addEventListener('click', () => {
+      if (!finishLineChain()) return;
+      const selected = getSelectedShapes();
+      try {
+        setShapeAppearance(JSON.parse(JSON.stringify(selected)), filled); // Validate before undo/mutation.
+        pushUndoSnapshot(); setShapeAppearance(selected, filled); renderAll();
+      } catch (error) { showToast(error.message); }
+    });
+  }
+  document.getElementById('btn-offset-tool').addEventListener('click', () => {
+    if (!finishLineChain()) return;
+    document.getElementById('offset-controls').scrollIntoView({ block: 'center', behavior: 'smooth' });
+    document.getElementById('offset-dist-input').focus();
+  });
+
+  for (const id of ['btn-save-project', 'btn-export-svg', 'btn-export-xcs', 'btn-preflight']) {
+    document.getElementById(id).addEventListener('click', e => { if (!finishLineChain()) e.stopImmediatePropagation(); }, true);
+  }
   document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => {
     btn.addEventListener('click', () => setActiveTool(btn.dataset.tool));
   });
@@ -3149,6 +3296,8 @@ function bindInspectorEvents() {
     showToast('✨ Former kombinert!');
   };
 
+  document.getElementById('btn-join-lines').addEventListener('click', joinSelectedLines);
+
   document.getElementById('btn-bool-union').addEventListener('click', () => runBoolean('union'));
   document.getElementById('btn-bool-subtract').addEventListener('click', () => runBoolean('subtract'));
   document.getElementById('btn-bool-intersect').addEventListener('click', () => runBoolean('intersect'));
@@ -3160,18 +3309,14 @@ function bindInspectorEvents() {
       showToast('⚠️ Velg minst ett objekt eller en tekst først!');
       return;
     }
-    const distInput = document.getElementById('offset-dist-input');
-    const distMm = roundMm(evalMathExpr(distInput.value, 3.0), 2);
-    distInput.value = distMm;
-    pushUndoSnapshot();
-    const contour = createOffsetContour(sel, distMm, 'cut');
-    if (contour) {
-      // Insert contour right behind selected shapes so inner engraving remains visible on top
-      state.shapes.unshift(contour);
-      state.selectedIds = new Set([contour.id]);
-      renderAll();
-      showToast(`⭕ Laget rød kuttelinje (${distMm > 0 ? '+' : ''}${distMm} mm) rundt utvalget!`);
-    }
+    try {
+      const distInput = document.getElementById('offset-dist-input');
+      const contour = createVectorOffset(sel, evalMathExpr(distInput.value, NaN), { kind: document.getElementById('offset-kind').value, join: document.getElementById('offset-join').value });
+      pushUndoSnapshot();
+      getActiveContainerList().unshift(contour);
+      state.selectedIds = new Set([contour.id]); renderAll();
+      showToast('Ny offsetlinje opprettet. Originalen er beholdt.');
+    } catch (error) { showToast(error.message); }
   });
 
   // One-click Keyring Ear Welder
@@ -3307,22 +3452,22 @@ function bindInspectorEvents() {
 
 function moveShapesBy(shapesList, dx, dy) {
   for (const s of shapesList) {
-    s.x = roundMm(s.x + dx, 2);
-    s.y = roundMm(s.y + dy, 2);
+    s.x = roundMm(s.x + dx, 3);
+    s.y = roundMm(s.y + dy, 3);
     if (s.type === 'line') {
-      s.x1 = roundMm(s.x1 + dx, 2);
-      s.y1 = roundMm(s.y1 + dy, 2);
-      s.x2 = roundMm(s.x2 + dx, 2);
-      s.y2 = roundMm(s.y2 + dy, 2);
+      s.x1 = roundMm(s.x1 + dx, 3);
+      s.y1 = roundMm(s.y1 + dy, 3);
+      s.x2 = roundMm(s.x2 + dx, 3);
+      s.y2 = roundMm(s.y2 + dy, 3);
       if (s.cx !== undefined && s.cy !== undefined) {
-        s.cx = roundMm(s.cx + dx, 2);
-        s.cy = roundMm(s.cy + dy, 2);
+        s.cx = roundMm(s.cx + dx, 3);
+        s.cy = roundMm(s.cy + dy, 3);
       }
     }
     if (Array.isArray(s.nodes)) {
       for (const n of s.nodes) {
-        n.x = roundMm(n.x + dx, 2);
-        n.y = roundMm(n.y + dy, 2);
+        n.x = roundMm(n.x + dx, 3);
+        n.y = roundMm(n.y + dy, 3);
       }
       rebuildPathShapeFromNodes(s);
     }
@@ -3535,6 +3680,8 @@ function bindKeyboardShortcuts() {
       return;
     }
 
+    if (state.activeTool === 'line' && state.lineDraft && (e.key === 'Backspace' || e.key === 'Delete')) { e.preventDefault(); undo(); return; }
+    if (e.key === 'Enter' && state.activeTool === 'line') { e.preventDefault(); finishLineChain(); return; }
     if (e.key === 'Backspace' || e.key === 'Delete') {
       e.preventDefault();
       deleteSelectedShapes();
@@ -3546,6 +3693,10 @@ function bindKeyboardShortcuts() {
       return;
     }
     if (e.key === 'Escape') {
+      if (state.activeTool === 'line') {
+        if (finishLineChain()) setActiveTool('select');
+        return;
+      }
       if (state.pickingPathForTextId) {
         state.pickingPathForTextId = null;
         hintBannerEl.classList.remove('visible');
@@ -3710,6 +3861,7 @@ function bindModalEvents() {
 }
 
 function openGeneratorModal(tabName) {
+  if (!finishLineChain()) return;
   state.activeGeneratorTab = tabName;
   document.querySelectorAll('.modal-tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
@@ -3722,6 +3874,7 @@ function openGeneratorModal(tabName) {
   insertBtn.disabled = false;
 
   if (tabName === 'box') renderBoxGeneratorUI(bodyEl);
+  else if (tabName === 'flex') renderFlexGeneratorUI(bodyEl, { parseNumber: evalMathExpr, onChange: shapes => { state.modalPreviewShapes = shapes; insertBtn.disabled = shapes.length === 0; } });
   else if (tabName === 'sign') renderSignGeneratorUI(bodyEl);
   else if (tabName === 'puzzle') renderPuzzleGeneratorUI(bodyEl);
   else if (tabName === 'gear') renderGearGeneratorUI(bodyEl);
@@ -3740,7 +3893,7 @@ function renderBoxGeneratorUI(container) {
       <div class="prop-field"><label for="gen-box-type">Bokstype</label>
         <select id="gen-box-type" class="select-control">${BOX_TYPES.map(type => `<option value="${type.id}">${type.name}</option>`).join('')}</select>
       </div>
-      <div class="info-box" id="gen-box-note"></div>
+      <div class="info-box" id="gen-box-note"></div><button type="button" class="btn" id="gen-box-open-flex">Avrundede vegger? Åpne Flexverksted</button>
       <div class="prop-grid">
         ${input('l', 'Lengde', 120)}${input('w', 'Bredde', 85)}${input('h', 'Høyde', 55)}
         <div class="prop-field"><label for="gen-box-dimmode">Mål gjelder</label><select id="gen-box-dimmode" class="select-control"><option value="outer">Ytre mål, inkl. lokk</option><option value="inner">Indre, fri høyde</option></select></div>
@@ -3789,6 +3942,7 @@ function renderBoxGeneratorUI(container) {
       <div class="box-help" id="gen-box-assembly-note" hidden>Lokk vises løftet. Illustrasjonen viser sammenstillingen; hengsler og lim er ikke tegnet inn.</div>
     </div>
   `;
+  container.querySelector('#gen-box-open-flex').addEventListener('click', () => openGeneratorModal('flex'));
   let view = 'cuts', model = null, preview = null;
   const el = id => container.querySelector('#gen-box-' + id);
   const number = id => evalMathExpr(el(id).value, NaN);

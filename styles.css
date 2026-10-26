@@ -1088,3 +1088,26 @@ html, body {
 .box-dimensions { display: flex; flex-direction: column; gap: 5px; font-size: 12px; }
 .box-error { padding: 12px; border: 1px solid #ef4444; border-radius: 8px; background: #451a1a; color: #fecaca; font-size: 12px; }
 .box-controls [hidden], .box-preview-column [hidden] { display: none !important; }
+
+.flex-preview { height: 390px; }
+#gen-flex-sample { margin-top: 10px; }
+
+.line-join-controls { display: grid; gap: 6px; margin-bottom: 12px; }
+.line-join-controls label { font-size: 11px; color: var(--text-muted); }
+
+.object-snap-option { display: flex; align-items: center; gap: 5px; font-size: 11px; white-space: nowrap; }
+.shape-appearance-controls { display: grid; gap: 6px; margin-top: 12px; }
+.shape-appearance-controls [aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: #38bdf8; }
+#offset-controls select { margin-bottom: 7px; }
+
+/* Keep the layer/zoom controls inside narrow workspaces. Focusing an overflowing
+   button must not scroll the entire canvas out of view. */
+.bottom-dock { flex-wrap: wrap; }
+.dock-card { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+@media (max-width: 1200px) {
+  .bottom-dock { gap: 5px; }
+  .dock-card { padding: 5px; }
+  .laser-mode-btn { padding: 4px 6px; font-size: 10px; }
+  .mode-subtext { display: none; }
+  .coords-readout { min-width: 0; }
+}

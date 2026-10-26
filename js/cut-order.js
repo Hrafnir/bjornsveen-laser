@@ -8,8 +8,9 @@ export const PUZZLE_CUT_STAGES = [
 
 export const CUT_STAGES = [
   ...PUZZLE_CUT_STAGES,
-  { id: 'box-holes', name: 'Boks 1 – Hull', color: '#00aaaa', order: 7 },
-  { id: 'box-outline', name: 'Boks 2 – Ytterkonturer', color: '#aa5500', order: 8 }
+  { id: 'flex-slits', name: 'Flex – Snitt før kontur', color: '#cc0066', order: 7 },
+  { id: 'box-holes', name: 'Boks 1 – Hull', color: '#00aaaa', order: 8 },
+  { id: 'box-outline', name: 'Boks 2 – Ytterkonturer', color: '#aa5500', order: 9 }
 ];
 
 export function getCutStage(shape) {

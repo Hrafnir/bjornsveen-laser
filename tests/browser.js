@@ -1,3 +1,5 @@
+import { FLEX_PRESETS, buildFlexModel, flexModelToShapes, renderFlexAssemblySvg } from '../js/flex-generator.js';
+import { renderFlexGeneratorUI } from '../js/flex-ui.js';
 import { BOX_TYPES, buildBoxModel, boxModelToShapes, renderBoxAssemblySvg } from '../js/box-generator.js';
 import { renderShapesPreviewSvg } from '../js/generators.js';
 import { generateJigsawPuzzle } from '../js/generators.js';
@@ -69,6 +71,39 @@ await test('All box variants render, show readable guide labels and export cut s
   assert(labels.length===model.parts.length,type.id);
   assert(labels.every(label=>!label.hasAttribute('stroke-dasharray') && label.getAttribute('font-family').includes('system-ui')),type.id);
  }
+});
+await test('Flex examples render and preserve open slit counts through SVG import',()=>{
+ for(const preset of FLEX_PRESETS) {
+  const model=buildFlexModel(preset.options), shapes=flexModelToShapes(model);
+  const previews=[renderShapesPreviewSvg(shapes).svgHtml,buildLaserSvgString(shapes)];
+  if(model.type!=='panel') previews.push(renderFlexAssemblySvg(model));
+  for(const svg of previews) assert(!new DOMParser().parseFromString(svg,'image/svg+xml').querySelector('parsererror'),preset.id);
+  const imported=importSvgStringToShapes(buildLaserSvgString(shapes));
+  const slits=imported.filter(s=>s.cutStage==='flex-slits').flatMap(s=>shapeToWorldPolygons(s));
+  assert(slits.length===model.parts.reduce((n,p)=>n+p.slits.length,0),preset.id);
+  assert(slits.every(l=>l.closed===false && l.length===2),preset.id);
+  const preview=new DOMParser().parseFromString(previews[0],'image/svg+xml');
+  assert(preview.querySelector('path[stroke="#cc0066"]'), 'Flex preview color');
+ }
+});
+await test('Flex controls handle examples, errors, custom trial pieces and assembly switching',()=>{
+ const container=document.createElement('div');document.body.append(container);
+ let generated=[];
+ try {
+  renderFlexGeneratorUI(container,{onChange:s=>generated=s,parseNumber:(s,fallback)=>s.trim() && Number.isFinite(Number(s))?Number(s):fallback});
+  const el=id=>container.querySelector('#gen-flex-'+id);
+  const edit=(id,value,event='input')=>{el(id).value=value;el(id).dispatchEvent(new Event(event,{bubbles:true}))};
+  assert(generated.length===1);
+  for(const preset of FLEX_PRESETS){edit('preset',preset.id,'change');assert(el('error').hidden,preset.id);assert(generated.length>0,preset.id)}
+  el('view-assembly').click();assert(container.querySelector('svg[aria-label*="flexboks"]'));
+  edit('pitch','abc');assert(!el('error').hidden && generated.length===0);assert(!container.querySelector('svg'));
+  edit('pitch','2.5');assert(el('error').hidden && generated.length>0);
+  edit('cut-length','30');el('sample').click();
+  assert(el('type').value==='panel' && el('pitch').value==='2.5' && el('cut-length').value==='30');
+  assert(generated.length===1 && el('view-assembly').hidden);
+  edit('axis','horizontal');assert(el('error').hidden && generated.length===1);
+  edit('preset','lid','change');edit('pieces','1');assert(generated.length===6);
+ } finally { container.remove(); }
 });
 // Dependency injection gives storage tests their own database and legacy key.
 const { createWorkspaceStorage } = await import('../js/storage.js');

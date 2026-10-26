@@ -562,10 +562,10 @@ export function rebuildPathShapeFromNodes(shape) {
   shape.d = polygonsToSvgPath([loop], 3);
   shape._cachedD = null;
   shape._cachedRawLoops = null;
-  shape.x = roundMm(bbox.x, 2);
-  shape.y = roundMm(bbox.y, 2);
-  shape.width = roundMm(bbox.width, 2);
-  shape.height = roundMm(bbox.height, 2);
+  shape.x = bbox.x;
+  shape.y = bbox.y;
+  shape.width = bbox.width;
+  shape.height = bbox.height;
   shape.origBBox = { ...bbox };
   return shape;
 }

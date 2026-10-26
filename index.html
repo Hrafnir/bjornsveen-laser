@@ -42,6 +42,7 @@
         </div>
       </div>
 
+      <label class="object-snap-option" title="Fest endepunkter og kanter til andre objekter. Hold Alt for fri flytting."><input id="object-snap-toggle" type="checkbox" checked/> Fest til objekter</label>
       <!-- Grid & Snap -->
       <div class="machine-selector-wrap">
         <label for="snap-select">Fest til rutenett:</label>
@@ -119,7 +120,7 @@
         <span>Hjerte</span>
       </button>
 
-      <button class="tool-btn" data-tool="line" title="Tegn rett linje (Hold Shift for 45°/90°) (Snarvei: L)">
+      <button class="tool-btn" data-tool="line" title="Tegn sammenhengende linjer og koble endepunkter. Enter fullfører, Shift låser vinkel (L)">
         <span class="shortcut-hint">L</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="4" y1="20" x2="20" y2="4"/><circle cx="4" cy="20" r="2"/><circle cx="20" cy="4" r="2"/></svg>
         <span>Linje</span>
@@ -143,6 +144,7 @@
         <span>Målebånd</span>
       </button>
 
+      <button class="tool-btn" id="btn-offset-tool" title="Lag innvendige, utvendige eller parallelle offsetlinjer fra valgte objekter"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="2" width="20" height="20" rx="4"/><rect x="7" y="7" width="10" height="10" rx="1"/></svg><span>Offset</span></button>
       <div class="toolbar-sep"></div>
       <div class="tool-section-label">Generator</div>
 
@@ -150,6 +152,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
         <span>Boks</span>
       </button>
+
+      <button class="tool-btn generator-btn" data-generator="flex" title="Flexpanel, trehengsler og bokser med avrundede vegger"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 18V8a5 5 0 0 1 5-5h8a5 5 0 0 1 5 5v10M7 6v9m3-9v5m0 3v4m4-12v9m3-9v5m0 3v4M3 21h18"/></svg><span>Flex</span></button>
 
       <button class="tool-btn generator-btn" data-generator="sign" title="Dørskilt- og Nøkkelring-generator">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="6" width="20" height="12" rx="3"/><circle cx="6" cy="12" r="1.5"/><line x1="10" y1="10" x2="18" y2="10"/><line x1="10" y1="14" x2="16" y2="14"/></svg>
@@ -358,6 +362,11 @@
           </div>
         </div>
 
+        <div class="shape-appearance-controls">
+          <div class="action-grid-2"><button id="btn-shape-fill" class="btn" aria-pressed="false">▣ Fylt figur</button><button id="btn-shape-outline" class="btn" aria-pressed="false">□ Kun omriss</button></div>
+          <div id="shape-appearance-status" class="box-help"></div>
+          <div class="box-help">Fylt = flategravering. Omriss = kutt eller score. Åpne linjer må lukkes før de kan fylles.</div>
+        </div>
         <!-- Dynamic Shape-Specific Controls (Corner Radius, Polygon Sides, Star Points, Line & Curve) -->
         <div id="shape-specific-props" style="margin-top: 10px; display: none;">
           <div id="prop-rx-wrap" class="prop-field" style="display: none;">
@@ -621,18 +630,28 @@
           </button>
         </div>
 
+        <div class="line-join-controls">
+          <button id="btn-join-lines" class="btn" title="Velg linjer med Shift-klikk. Endepunkter innen koblingsavstanden samles til én sti.">🔗 Koble valgte linjer</button>
+          <label for="join-distance-input">Maks. avstand mellom ender (mm)</label>
+          <input type="text" inputmode="decimal" id="join-distance-input" class="input-control math-input" value="0.5"/>
+        </div>
+
         <!-- Offset / Outline Generator -->
-        <div style="background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px; margin-bottom: 8px;">
+        <div id="offset-controls" style="background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px; margin-bottom: 8px;">
           <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">
-            ⭕ Lag ytterkant / kuttelinje rundt (Offset)
+            ⭕ Offsetlinjer
           </div>
+          <label for="offset-kind" class="box-help">Type offset</label><select id="offset-kind" class="select-control"><option value="contour">Kontur rundt figur / linje</option><option value="parallel">Parallell til åpen linje / kurve</option></select>
+          <label for="offset-join" class="box-help">Hjørner i kontur</label><select id="offset-join" class="select-control"><option value="miter">Skarpe hjørner</option><option value="round">Avrundede hjørner</option></select>
+          <div class="box-help">Kontur: + utover, − innover. Parallell: + på høyre side langs tegneretningen, − på venstre (skjermens y-akse går nedover). Originalen beholdes.</div>
+          <label for="offset-dist-input" class="box-help">Offsetavstand</label>
           <div style="display: flex; gap: 6px; align-items: center;">
             <div class="input-with-unit" style="flex: 1;">
               <input type="text" inputmode="decimal" id="offset-dist-input" class="input-control math-input" value="3.0" title="Positivt tall = utvendig kant, Negativt tall = innvendig kant" />
               <span class="unit">mm</span>
             </div>
-            <button id="btn-create-offset" class="btn btn-primary" title="Lager en rød kuttelinje i valgt millimeter-avstand rundt valgt objekt">
-              + Lag kutt-kant
+            <button id="btn-create-offset" class="btn btn-primary" title="Opprett en separat kuttelinje med valgt offsetavstand">
+              + Lag offsetlinje
             </button>
           </div>
         </div>
@@ -807,6 +826,7 @@
 
       <div class="modal-tabs">
         <button class="modal-tab-btn active" data-tab="box">📦 Finger-joint Boks</button>
+        <button class="modal-tab-btn" data-tab="flex">〰️ Flexverksted</button>
         <button class="modal-tab-btn" data-tab="sign">🪧 Dørskilt &amp; Nøkkelring</button>
         <button class="modal-tab-btn" data-tab="puzzle">🧩 Puslespill</button>
         <button class="modal-tab-btn" data-tab="gear">⚙️ Tannhjul (Evolvent)</button>

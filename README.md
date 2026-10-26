@@ -84,3 +84,44 @@ Kjør `npm test` med Node.js 24 eller nyere for regresjonstestene. Appen trenger
 - **XCS:** Koordinater og parameterobjekter er regresjonstestet. Åpning i en konkret xTool Studio-versjon og fysisk kjøring på P3/F2 gjenstår som separat akseptansetest. Kontroller mål, bilde, hull, behandling og parametere før produksjon.
 
 Lagring, SVG-import, laserprofiler og fontfiler har egne moduler (`storage.js`, `svg-import.js`, `laser-settings.js`, `font-files.js`). Hovedkontrolleren er fortsatt stor og kan deles videre etter hvert som funksjoner endres.
+
+
+### Flexverksted: fleksible deler og avrundede bokser
+
+Åpne **Flex** i venstre verktøylinje, fanen **Flexverksted**, eller snarveien fra boksverktøyet.
+Fem eksempler følger med: trehengsel, prøvebit, avrundet brett, boks med løst lokk og kapselboks.
+Eksemplene endrer form og mål, men beholder materialtykkelse, kerf og flexmønsteret ditt.
+
+- **Flexpanel:** velg platemål, bredde på det sentrerte bøyeområdet, loddrett/vannrett bøyeakse og endemarg. Snittene følger bøyeaksen. Endemarg 0 lar snittene nå ytterkanten; positiv endemarg gir en stiv kant som begrenser bøying.
+- **Flexmønster:** juster avstand mellom kolonner, snittlengde og bro mellom snitt. Annenhver kolonne forskyves et halvt mønster. Dette er åpne enkeltsnitt med laserens faktiske snittbredde, ikke smale lukkede rektangler. Verktøyet avviser blant annet snitt som kan dele hele panelet, for få kolonner og broer/avstander som etter kerf gir under 0,4 mm restmateriale. Dette er en geometrisk grense, ikke en styrkegaranti.
+- **Prøvebit med mine flexmål:** lager en liten del med gjeldende tykkelse, kerf, snittlengde, avstand og broer. Test i samme materiale og fiberretning før en hel boks. Bøyelighet og minste brukbare radius varierer med materiale, limlag og laserinnstillinger.
+- **Avrundede bokser:** åpen eller med løst lokk. Målene er ytre mål inkludert bunn og lokk. Hjørneradius kan økes til halve bredden for en kapselboks (lengden må fortsatt gi plass til skjøtelappene). Én hel vegg eller to kortere vegger med skjøter midt på de rette langsidene. Bare hjørnene får flexsnitt, åpne mot topp/bunn for å unngå stive kantbånd.
+
+Boksene er **limkonstruksjoner**. Lim styreringen sentrert oppå bunnen. Bøy veggene rundt ringen, lim dem oppå bunnen og lim skjøtelappene på innsiden av de rette veggskjøtene. Skjøtelappene skal stå over styreringen og, ved lokk, under lokkinnlegget. Sentrer dem i det ledige høyderommet. Lim lokkinnlegget sentrert under lokket. Styreringen tar litt plass langs innerkanten ved bunnen; fri høyde for boksen med lokk måles opp til lokkinnlegget.
+
+Utbrettet vegglengde beregnes ved midten av materialtykkelsen: rette strekk pluss fire kvartbuer med radius `ytre radius − tykkelse/2`, minus valgt åpning per skjøt. Bøyde flexmaterialer følger ikke alltid denne idealiserte geometrien nøyaktig. Prøvemonter før liming, og juster radius/skjøteåpning etter prøvekutt. Illustrasjonen viser tiltenkt sammenstilling, ikke en simulering av materialets bøying.
+
+**Kuttelag:** flexsnitt (rosa) → hull → ytterkonturer. XCS setter denne lagrekkefølgen. SVG har tilsvarende separate fargegrupper; behold rekkefølgen i laserprogrammet. Snittene forblir åpne stier, og kerf kompenseres kun på delkonturene og hullene. Delnavn eksporteres ikke; snitt, ytterkontur og navn flyttes som én gruppe per del. Endre dimensjonene i generatoren fremfor å skalere ferdige deler, som også ville skalere snitt, broer og materialtilpasning.
+
+Inspirasjon: [Boxes.py RoundedBox](https://boxes.hackerspace-bamberg.de/RoundedBox?language=en) og [FlexTest](https://boxes.hackerspace-bamberg.de/FlexTest?language=en). Implementasjonen kjører lokalt og er uavhengig av tjenesten. Automatiske tester dekker utbrettet lengde, hjørnesoner, materialforbindelse, klaringer, åpne snitt og eksportrekkefølge; fysisk passform må prøvekuttes.
+
+### Tegne, koble, feste og markere
+
+- **Linje (L):** klikk startpunktet og fortsett med ett klikk per hjørne. Dra kan også brukes for ett linjestykke. Enter eller dobbeltklikk fullfører én sammenhengende sti. Klikk startpunktet for en lukket figur. Backspace fjerner siste punkt; Esc beholder bekreftede linjestykker og avslutter verktøyet. Bytte av verktøy fullfører den påbegynte stien. En uferdig forhåndsvisning eksporteres ikke.
+- Med **Fest til objekter** på kan L starte på enden av en eksisterende åpen linje eller kurve, og fortsette den. Avslutt på enden av en annen linje for å koble dem til én sti. En grønn ring viser treffet. Automatisk kobling krever samme laserlag og kutterekkefølge. Kurver konverteres til en tett punktsti ved kobling, som ved vektoreksport.
+- **Koble valgte linjer** i høyrepanelet samler allerede tegnede linjer i riktig rekkefølge, uavhengig av retningen de ble tegnet. Velg dem med Shift-klikk eller markeringsboksen. Avstanden mellom endene kan stilles fra 0 til 5 mm; ender innen avstanden møtes i midtpunktet. Forgreninger og separate kjeder avvises i stedet for å lage utilsiktede kutt. Sammenkobling kan angres.
+- **Fest til objekter** er uavhengig av rutenettet og huskes lokalt. Under flytting prioriteres linje-/kurveender, deretter kanter og midtlinjer på nærliggende objekter. Grønne markører viser festepunktet eller innrettingen. Hold **Alt** for å hoppe over objektsnapping midlertidig; rutenettvalget gjelder fortsatt. Flytting inntil hverandre endrer ikke antallet objekter – bruk Koble valgte linjer for å gjøre dem til én sti. Endepunkthåndtak har også feste.
+- **Markeringsboksen velger alle berørte objekter**, inkludert linjer som bare krysser boksen og berørte deler av grupper. En tom del av en kurves avgrensningsboks teller ikke som treff. For fylte figurer teller også arealet, men ikke hull i figuren. Skjulte objekter og delnavn velges ikke gjennom markeringsboksen.
+
+### Fylt figur og offset
+
+I dimensjonspanelet velger **Fylt figur** flategravering, mens **Kun omriss** bruker kutt eller gjenoppretter tidligere score. Valget vises både på arbeidsflaten og i SVG/XCS. Åpne linjer må lukkes før de kan fylles. Hjelpetekst og bilder endres ikke når fyll velges for en gruppe.
+
+**Offset** finnes i venstre verktøylinje og høyrepanelet. Originalen beholdes, og en separat kuttelinje opprettes:
+
+- **Kontur:** positiv avstand utvider, negativ trekker innover. Velg skarpe eller avrundede hjørner. Hull behandles riktig, og overlappende valgte figurer får en felles kontur. Åpne linjer får en lukket kontur på begge sider ved positiv avstand.
+- **Parallell:** én åpen linje eller kurve får en ny åpen sti på én side. Med skjermens y-akse nedover er positiv avstand til høyre langs tegneretningen, negativ til venstre. Hjørnene er gjærede med avkapping av svært lange spisser. Offset som vender segmenter bakover eller krysser seg selv avvises.
+
+Konturoffset bruker Clipper med 0,0001 mm koordinatoppløsning; eksport avrundes til 0,001 mm. Kurver polygoniseres, så dette er ikke en garanti for samme presisjon på alle buer. For stor innvendig offset gir en forklaring og endrer ikke tegningen.
+
+Kjør `npm test` for geometritester og `tests/browser.html` for SVG/flex/lagring. `tests/editor.html` tester faktiske peker- og tastaturhandlinger i redigeringsflaten; bruk en separat lokal serverport fordi denne testen tømmer testtegningen.
