@@ -1,8 +1,10 @@
+import { parse } from '../vendor/opentype.module.js';
+import { FONT_FILES } from './font-files.js';
 // ============================================================================
 // Bjørnsveen LaserStudio – Laser Font, Rich Typography & Text-on-Path Engine
 // Includes:
 // 1. 30+ Categorized Fonts (Laser Stencil, Single-Line Score, Sans, Serif, Script, Gaming/Theme)
-// 2. Ultra-Smooth Subpixel Vectorizer (Gaussian-filtered SDF + corner-preserving curve smoothing)
+// 2. Local TTF outlines via OpenType.js, independent of installed fonts
 // 3. Text-on-Path Engine: Follow ANY shape outline (Circle, Heart, Sign, Curved Line) or Arc/Ring
 // ============================================================================
 
@@ -12,8 +14,8 @@ import {
   clamp,
   computePolygonsBBox,
   polygonsToSvgPath,
-  marchingSquaresZeroIsoline,
-  simplifyRdpPolygon
+  parseSvgPathToPolygons,
+  booleanMultiPolygons
 } from './geometry.js';
 
 // Single-stroke glyph definitions in a [0..1] x [0..1] grid (y=0 top, y=1 bottom)
@@ -130,14 +132,14 @@ export const FONT_CATALOG = [
   {
     key: 'futura',
     category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Geometrisk Design (Futura / Century Gothic)',
+    label: 'Geometrisk Design (Montserrat, lokal)',
     family: 'Futura, "Century Gothic", "Montserrat", sans-serif',
     weight: '800'
   },
   {
     key: 'avenir',
     category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Nordisk Ren (Avenir Next / Helvetica)',
+    label: 'Nordisk Ren (Montserrat, lokal)',
     family: '"Avenir Next", Avenir, "Helvetica Neue", sans-serif',
     weight: '800'
   },
@@ -158,21 +160,21 @@ export const FONT_CATALOG = [
   {
     key: 'gill',
     category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Klassisk Skilt (Gill Sans / Trebuchet)',
+    label: 'Klassisk Skilt (Montserrat, lokal)',
     family: '"Gill Sans", "Trebuchet MS", sans-serif',
     weight: '700'
   },
   {
     key: 'optima',
     category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Slank & Elegant (Optima / Candara)',
+    label: 'Slank & Elegant (Cinzel, lokal)',
     family: 'Optima, Candara, "Segoe UI", sans-serif',
     weight: '700'
   },
   {
     key: 'verdana',
     category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Bred & Ekstra Tydelig (Verdana / Tahoma)',
+    label: 'Bred & Ekstra Tydelig (Montserrat, lokal)',
     family: 'Verdana, Tahoma, Geneva, sans-serif',
     weight: '800'
   },
@@ -181,7 +183,7 @@ export const FONT_CATALOG = [
   {
     key: 'serif',
     category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Klassisk Dørskilt (Georgia / Times)',
+    label: 'Klassisk Dørskilt (Playfair Display, lokal)',
     family: 'Georgia, "Times New Roman", serif',
     weight: '800'
   },
@@ -195,7 +197,7 @@ export const FONT_CATALOG = [
   {
     key: 'copperplate',
     category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Støpt Metallskilt (Copperplate Gothic)',
+    label: 'Støpt Metallskilt (Cinzel, lokal)',
     family: 'Copperplate, "Cinzel", Georgia, serif',
     weight: '800'
   },
@@ -216,7 +218,7 @@ export const FONT_CATALOG = [
   {
     key: 'baskerville',
     category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Tradisjonell Boktrykk (Baskerville / Palatino)',
+    label: 'Tradisjonell Boktrykk (Playfair Display, lokal)',
     family: 'Baskerville, Palatino, "Palatino Linotype", serif',
     weight: '700'
   },
@@ -267,7 +269,7 @@ export const FONT_CATALOG = [
   {
     key: 'chancery',
     category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Eventyr & Snirkler (Apple Chancery / Cormorant)',
+    label: 'Eventyr & Snirkler (Great Vibes, lokal)',
     family: '"Apple Chancery", "URW Chancery L", Georgia, cursive',
     weight: '700 italic'
   },
@@ -288,7 +290,7 @@ export const FONT_CATALOG = [
   {
     key: 'chalk',
     category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Tavlekritt / Barnerom (Chalkboard SE / Comic)',
+    label: 'Tavlekritt / Barnerom (Fredoka, lokal)',
     family: '"Chalkboard SE", "Comic Sans MS", "Fredoka", cursive',
     weight: '700'
   },
@@ -325,7 +327,7 @@ export const FONT_CATALOG = [
   {
     key: 'medieval',
     category: '🎮 Gaming, Sci-Fi, Viking & Tema',
-    label: 'Viking / Middelalder / Rollespill (Luminari / Trattatello)',
+    label: 'Viking / Middelalder / Rollespill (Cinzel, lokal)',
     family: 'Luminari, Trattatello, Herculanum, "Cinzel", fantasy',
     weight: '700'
   },
@@ -339,7 +341,7 @@ export const FONT_CATALOG = [
   {
     key: 'mono',
     category: '🎮 Gaming, Sci-Fi, Viking & Tema',
-    label: 'Teknisk Maskinskrift (Menlo / Courier Bold)',
+    label: 'Teknisk Maskinskrift (Special Elite, lokal)',
     family: '"Courier New", Menlo, Monaco, monospace',
     weight: '800'
   }
@@ -396,7 +398,7 @@ export function generateTextPolygons({
   if (fontDef && fontDef.singleLine) {
     rawLoops = buildSingleLinePolygons(cleanText, capHeight, letterGap);
   } else {
-    rawLoops = traceCanvasTextToPolygons(cleanText, fontKey, capHeight, letterGap);
+    rawLoops = outlineTextToPolygons(cleanText, fontKey, capHeight, letterGap);
   }
   if (!rawLoops || rawLoops.length === 0) return [];
 
@@ -464,185 +466,46 @@ function buildSingleLinePolygons(text, heightMm, spacingMm) {
  * Smooths a 2D scalar field with `passes` iterations of a 3x3 separable [1, 2, 1]/4 tent filter.
  * Eliminates pixel-grid staircasing on curves and diagonals before Marching Squares contouring!
  */
-function smoothScalarField2D(field, w, h, passes = 2) {
-  const tmp = new Float32Array(w * h);
-  for (let p = 0; p < passes; p++) {
-    // Horizontal pass [1, 2, 1] / 4
-    for (let y = 0; y < h; y++) {
-      const row = y * w;
-      tmp[row] = field[row];
-      tmp[row + w - 1] = field[row + w - 1];
-      for (let x = 1; x < w - 1; x++) {
-        const idx = row + x;
-        tmp[idx] = 0.25 * field[idx - 1] + 0.5 * field[idx] + 0.25 * field[idx + 1];
-      }
-    }
-    // Vertical pass [1, 2, 1] / 4
-    for (let x = 0; x < w; x++) {
-      field[x] = tmp[x];
-      field[(h - 1) * w + x] = tmp[(h - 1) * w + x];
-    }
-    for (let y = 1; y < h - 1; y++) {
-      const row = y * w;
-      for (let x = 1; x < w - 1; x++) {
-        const idx = row + x;
-        field[idx] = 0.25 * tmp[idx - w] + 0.5 * tmp[idx] + 0.25 * tmp[idx + w];
-      }
-    }
-  }
+const loadedFonts = new Map();
+export function registerFontFile(file, bytes) { loadedFonts.set(file, parse(bytes)); }
+export async function initializeFonts() {
+  await Promise.all([...new Set(Object.values(FONT_FILES))].map(async file => {
+    if (loadedFonts.has(file)) return;
+    const response = await fetch(new URL(`../fonts/${file}`, import.meta.url));
+    if (!response.ok) throw new Error(`Kunne ikke laste lokal font: ${file}`);
+    registerFontFile(file, await response.arrayBuffer());
+  }));
 }
 
-/**
- * Smooths curved/diagonal vertices along a closed polygon while preserving sharp corners (>= 40 deg turn).
- */
-function smoothPolygonPreservingCorners(loop, iterations = 2) {
-  if (!loop || loop.length < 5) return loop;
-  let pts = loop;
-  const n = pts.length;
-  // cos(38 deg) ≈ 0.788: if dot product > 0.788, turn angle is < 38 deg (smooth curve), so smooth it!
-  const cornerCosThreshold = 0.788;
-
-  for (let iter = 0; iter < iterations; iter++) {
-    const nextPts = new Array(n);
-    for (let i = 0; i < n; i++) {
-      const prev = pts[(i - 1 + n) % n];
-      const curr = pts[i];
-      const next = pts[(i + 1) % n];
-
-      const v1x = curr.x - prev.x;
-      const v1y = curr.y - prev.y;
-      const v2x = next.x - curr.x;
-      const v2y = next.y - curr.y;
-      const l1 = Math.hypot(v1x, v1y);
-      const l2 = Math.hypot(v2x, v2y);
-
-      if (l1 > 1e-6 && l2 > 1e-6) {
-        const cosAngle = (v1x * v2x + v1y * v2y) / (l1 * l2);
-        if (cosAngle > cornerCosThreshold) {
-          nextPts[i] = {
-            x: 0.24 * prev.x + 0.52 * curr.x + 0.24 * next.x,
-            y: 0.24 * prev.y + 0.52 * curr.y + 0.24 * next.y
-          };
-          continue;
-        }
-      }
-      nextPts[i] = curr;
+function outlineTextToPolygons(text, fontKey, heightMm, spacingMm) {
+  const file = FONT_FILES[fontKey] || FONT_FILES['sans-bold'];
+  const font = loadedFonts.get(file);
+  if (!font) throw new Error('Fontene er ikke klare. Last siden på nytt.');
+  const def = FONT_MAP[fontKey] || FONT_MAP['sans-bold'];
+  const cap = font.charToGlyph('H').getBoundingBox();
+  const emSize = heightMm * font.unitsPerEm / Math.max(1, cap.y2 - cap.y1);
+  let cursor = 0;
+  const loops = [];
+  // Glyph outlines are vectors from the TTF, never traced screen pixels.
+  const glyphs = font.stringToGlyphs(text);
+  for (let i = 0; i < glyphs.length; i++) {
+    const glyph = glyphs[i];
+    let paths = parseSvgPathToPolygons(glyph.getPath(cursor, 0, emSize).toPathData(5), 0.06);
+    if (def.stencil && paths.length) {
+      const box = computePolygonsBBox(paths), bridge = Math.max(0.15, heightMm * 0.105);
+      const x = box.x + box.width / 2, y = box.y - 1, bottom = box.y + box.height + 1;
+      paths = booleanMultiPolygons(paths, [[{x:x-bridge/2,y},{x:x+bridge/2,y},{x:x+bridge/2,y:bottom},{x:x-bridge/2,y:bottom}]], 'subtract');
     }
-    nextPts.closed = loop.closed !== false;
-    pts = nextPts;
+    loops.push(...paths);
+    cursor += (glyph.advanceWidth || font.unitsPerEm/2) * emSize/font.unitsPerEm + spacingMm;
+    if (i+1 < glyphs.length) cursor += font.getKerningValue(glyph,glyphs[i+1]) * emSize/font.unitsPerEm;
   }
-  return pts;
+  if (!loops.length) return [];
+  const bbox = computePolygonsBBox(loops);
+  const factor = heightMm / Math.max(0.1,bbox.height);
+  return loops.map(loop => { const points=loop.map(pt=>({x:(pt.x-bbox.x)*factor,y:(pt.y-bbox.y)*factor}));points.closed=loop.closed!==false;return points; });
 }
 
-/**
- * Renders text onto an offscreen canvas at ultra-high resolution (~210px cap height),
- * applies stencil bridges if requested, smooths the signed distance field,
- * and extracts silky-smooth subpixel vector contours via Marching Squares.
- */
-function traceCanvasTextToPolygons(text, fontKey, capHeightMm, spacingMm) {
-  if (typeof document === 'undefined') return [];
-
-  const fontDef = FONT_MAP[fontKey] || FONT_MAP['sans-bold'];
-  const family = fontDef ? fontDef.family : '"Montserrat", "Arial Black", sans-serif';
-  const weight = fontDef ? fontDef.weight : '900';
-  const isStencil = Boolean(fontDef && fontDef.stencil) || String(fontKey).startsWith('stencil');
-
-  // High internal font resolution (~210px) so curves and dots over "i" are silky-smooth at any scale!
-  const targetFontPx = 210;
-  const pxPerMm = clamp(targetFontPx / Math.max(1, capHeightMm), 2.5, 40);
-  const fontPx = Math.round(capHeightMm * pxPerMm);
-  const spacingPx = spacingMm * pxPerMm;
-
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return [];
-  ctx.font = `${weight} ${fontPx}px ${family}`;
-
-  // Measure characters individually to support exact letter spacing and stencil bridges
-  const chars = Array.from(text);
-  const charMetrics = chars.map(ch => {
-    const m = ctx.measureText(ch);
-    return { ch, width: Math.max(fontPx * 0.2, m.width) };
-  });
-
-  const totalW = charMetrics.reduce((acc, c) => acc + c.width, 0) + Math.max(0, chars.length - 1) * spacingPx;
-  const pad = Math.ceil(fontPx * 0.42);
-  const cw = clamp(Math.ceil(totalW + pad * 2), 48, 4800);
-  const ch = clamp(Math.ceil(fontPx * 1.65 + pad * 2), 48, 1200);
-
-  canvas.width = cw;
-  canvas.height = ch;
-
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, cw, ch);
-
-  ctx.font = `${weight} ${fontPx}px ${family}`;
-  ctx.fillStyle = '#000000';
-  ctx.textBaseline = 'alphabetic';
-
-  const baselineY = pad + fontPx * 0.98;
-  let curX = pad;
-
-  const bridgeWidthPx = Math.max(4, fontPx * 0.105);
-
-  for (const item of charMetrics) {
-    ctx.fillStyle = '#000000';
-    ctx.fillText(item.ch, curX, baselineY);
-
-    // If Stencil font: cut vertical bridge through center of enclosed characters so inner islands stay attached!
-    if (isStencil && /[ABDOPQRÆØÅabdopqræøå04689@#%&]/.test(item.ch)) {
-      const centerX = curX + item.width * 0.5 - bridgeWidthPx * 0.5;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(centerX, baselineY - fontPx * 1.08, bridgeWidthPx, fontPx * 1.32);
-    }
-
-    curX += item.width + spacingPx;
-  }
-
-  const imgData = ctx.getImageData(0, 0, cw, ch).data;
-  const field = new Float32Array(cw * ch);
-  for (let i = 0; i < cw * ch; i++) {
-    // Luminance in [0..255]; <= 128 is inside letter (negative)
-    field[i] = imgData[i * 4] - 128;
-  }
-
-  // Smooth the signed field to eliminate pixel staircasing on curves & diagonals!
-  smoothScalarField2D(field, cw, ch, 2);
-
-  const scaleMm = 1 / pxPerMm;
-  const rawLoops = marchingSquaresZeroIsoline(field, cw, ch, 0, 0, scaleMm);
-  if (!rawLoops || rawLoops.length === 0) return [];
-
-  // Fine tolerance (0.008mm at 18mm cap height) + corner-preserving curve smoothing
-  const rdpTol = 0.008 * (capHeightMm / 18);
-  const smoothedLoops = rawLoops
-    .map(loop => {
-      const smoothed = smoothPolygonPreservingCorners(loop, 2);
-      return simplifyRdpPolygon(smoothed, rdpTol);
-    })
-    .filter(l => l.length >= 3);
-
-  if (smoothedLoops.length === 0) return [];
-
-  // Normalize top-left to (0, 0) and scale height to exact requested capHeightMm
-  const bbox = computePolygonsBBox(smoothedLoops);
-  const actualH = Math.max(0.1, bbox.height);
-  const scaleFactor = capHeightMm / actualH;
-
-  return smoothedLoops.map(loop => {
-    const out = loop.map(pt => ({
-      x: (pt.x - bbox.x) * scaleFactor,
-      y: (pt.y - bbox.y) * scaleFactor
-    }));
-    out.closed = true;
-    return out;
-  });
-}
-
-/**
- * Subdivides long straight segments in glyph polygons before warping along a curved path or arc
- * so that flat letter tops/stems bend smoothly along circles and curves!
- */
 function densifyLoopsForWarping(loops, maxSegMm = 0.6) {
   return loops.map(loop => {
     const dense = [];

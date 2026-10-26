@@ -4,12 +4,12 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Bjørnsveen LaserStudio – Vektorverktøy for CO2- og UV-laser</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Alfa+Slab+One&family=Amatic+SC:wght@700&family=Anton&family=Bangers&family=Bebas+Neue&family=Black+Ops+One&family=Caveat:wght@700&family=Cinzel:wght@700;900&family=Dancing+Script:wght@700&family=Fredoka:wght@600;700&family=Great+Vibes&family=Lobster&family=Montserrat:wght@700;900&family=Orbitron:wght@700;900&family=Oswald:wght@700&family=Pacifico&family=Permanent+Marker&family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Press+Start+2P&family=Righteous&family=Rye&family=Satisfy&family=Special+Elite&family=Stardos+Stencil:wght@700&display=swap" rel="stylesheet" />
+  <link href="fonts/fonts.css" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div id="import-warnings" role="alert" hidden style="position:fixed;top:60px;left:80px;right:380px;z-index:60;background:#422006;color:#fef3c7;padding:12px" onclick="this.hidden=true"></div>
+  <div id="save-status" role="status" aria-live="polite" style="position:fixed;bottom:2px;right:8px;z-index:50;font-size:11px;background:#0f172a;padding:3px 8px;border-radius:4px">Åpner lokal lagring …</div>
   <!-- ================= TOP HEADER ================= -->
   <header class="app-header">
     <div class="brand-group">
@@ -70,7 +70,7 @@
     <div class="header-actions">
       <input type="file" id="file-import-input" accept=".xcs,.svg,.json,image/*" style="display: none;" />
       <button id="btn-import" class="btn" title="Importer .XCS-prosjekt, SVG-fil, Foto/Bilde eller .JSON">📂 Åpne / Bilde</button>
-      <button id="btn-save-project" class="btn" title="Lagre prosjektfil (.json) på Macen">💾 Lagre</button>
+      <button id="btn-save-project" class="btn" title="Lagre prosjektfil (.xcs) på Macen">💾 Lagre</button>
       <button id="btn-preflight" class="btn btn-success" title="Sjekk tegningen, velg materiale/laserinnstillinger og eksporter">✅ Lasersjekk</button>
       <button id="btn-export-xcs" class="btn btn-primary" title="Last ned ekte xTool Creative Space prosjektfil (.xcs) med vektorer, bitmap-bilder og laserinnstillinger!">📦 Eksport .XCS</button>
       <button id="btn-export-svg" class="btn btn-laser-export" title="Last ned ferdig 1:1 millimeter SVG-fil (inkl. innebygde bitmap-bilder)">⬇ Eksport .SVG</button>
@@ -527,12 +527,23 @@
         </div>
         <div class="prop-grid">
           <div class="prop-field full-width">
-            <label for="bmp-filter-select">Graveringsmodus (Raster-filter)</label>
+            <label for="bmp-filter-select">Graveringsmodus (xTool Bitmap-modus &amp; Filter)</label>
             <select id="bmp-filter-select" class="select-control">
-              <option value="grayscale">Gråtoner (Standard dybde/tone-gravering)</option>
-              <option value="dither">Punktraster / Dithering (Best på tre &amp; kryssfiner!)</option>
-              <option value="threshold">Sort / Hvitt Terskel (Logo, tekst &amp; stempel)</option>
-              <option value="original">Original (Uten gråtonefilter)</option>
+              <option value="inherit">Følg fotomodus i laserinnstillinger</option>
+              <optgroup label="xTool Punktraster / Dithering (Best på tre, MDF, skifer &amp; glass)">
+                <option value="Jarvis" selected>🔹 Jarvis – Standard Punktraster (Anbefalt til tre/MDF)</option>
+                <option value="Stucki">🔹 Stucki – Ekstra skarpe kanter og detaljer</option>
+                <option value="Atkinson">🔹 Atkinson – Høy kontrast &amp; rene lyse partier (Portrett)</option>
+                <option value="Floyd">🔹 Floyd-Steinberg – Klassisk fint punktraster</option>
+                <option value="Sierra">🔹 Sierra – Myke og jevne toneoverganger</option>
+                <option value="Bayer">🔹 Bayer – Strukturert matrise-/kryssrutenett</option>
+              </optgroup>
+              <optgroup label="Gråtoner &amp; Spesialfiltre">
+                <option value="grayscale">🌑 Gråtoner (Grayscale – Dynamisk lasereffekt / Dybde)</option>
+                <option value="threshold">⬛ Sort / Hvitt Terskel (Logo, tekst &amp; stempel)</option>
+                <option value="sketch">✏️ Skisse / Kontur-strek (Linjetegning fra foto)</option>
+                <option value="original">🎨 Original (Uten gråtonefilter)</option>
+              </optgroup>
             </select>
           </div>
           <div class="prop-field full-width">
@@ -559,9 +570,16 @@
             </div>
             <input type="range" id="bmp-contrast" min="-80" max="80" value="10" step="2" />
           </div>
+          <div class="prop-field full-width">
+            <div style="display: flex; justify-content: space-between;">
+              <label for="bmp-sharpness">Skarphet (Kantforsterkning for laser)</label>
+              <span id="bmp-sharpness-lbl" style="font-size: 10.5px; color: #38bdf8;">55</span>
+            </div>
+            <input type="range" id="bmp-sharpness" min="0" max="100" value="55" step="1" />
+          </div>
           <div id="bmp-threshold-wrap" class="prop-field full-width" style="display: none;">
             <div style="display: flex; justify-content: space-between;">
-              <label for="bmp-threshold">Sort/hvitt-terskel</label>
+              <label for="bmp-threshold">Lys-terskel (Sort/hvitt-balanse)</label>
               <span id="bmp-threshold-lbl" style="font-size: 10.5px; color: #38bdf8;">135</span>
             </div>
             <input type="range" id="bmp-threshold" min="15" max="240" value="135" step="1" />
@@ -665,6 +683,8 @@
         </div>
         <div class="prop-grid">
           <div class="prop-field full-width">
+            <label for="target-machine-select">Maskin for XCS-eksport</label>
+            <select id="target-machine-select" class="select-control"><option value="xtool-p3">xTool P3</option><option value="xtool-f2">xTool F2 Ultra UV</option></select>
             <label for="laser-preset-select">Materiale (Forhåndsinnstilte verdier for P3 / F2)</label>
             <select id="laser-preset-select" class="select-control"></select>
           </div>
@@ -722,19 +742,42 @@
           </div>
 
           <!-- BITMAP PHOTO ENGRAVE ROW -->
-          <div style="display: grid; grid-template-columns: 78px 1fr 1fr 56px; gap: 4px; align-items: center; background: var(--bg-input); padding: 5px 7px; border-radius: var(--radius-sm); border-left: 3px solid #38bdf8;">
-            <strong style="color: #38bdf8;">🖼️ Foto</strong>
-            <div class="input-with-unit" title="Laserstyrke for foto/bitmap i prosent (1–100%)">
-              <input type="text" inputmode="decimal" id="ls-bmp-power" class="input-control math-input" style="padding: 2px 18px 2px 5px; font-size: 11px;" value="32" />
-              <span class="unit" style="font-size: 9.5px;">%</span>
+          <div style="display: flex; flex-direction: column; gap: 5px; background: var(--bg-input); padding: 6px 7px; border-radius: var(--radius-sm); border-left: 3px solid #38bdf8;">
+            <div style="display: grid; grid-template-columns: 78px 1fr 1fr 56px; gap: 4px; align-items: center;">
+              <strong style="color: #38bdf8;">🖼️ Foto</strong>
+              <div class="input-with-unit" title="Laserstyrke for foto/bitmap i prosent (1–100%)">
+                <input type="text" inputmode="decimal" id="ls-bmp-power" class="input-control math-input" style="padding: 2px 18px 2px 5px; font-size: 11px;" value="32" />
+                <span class="unit" style="font-size: 9.5px;">%</span>
+              </div>
+              <div class="input-with-unit" title="Hastighet for foto/bitmap i mm/s">
+                <input type="text" inputmode="decimal" id="ls-bmp-speed" class="input-control math-input" style="padding: 2px 26px 2px 5px; font-size: 11px;" value="300" />
+                <span class="unit" style="font-size: 9px;">mm/s</span>
+              </div>
+              <div class="input-with-unit" title="Oppløsning i DPI for foto/bitmap (254 DPI = 100 LPC i xTool P3)">
+                <input type="text" inputmode="decimal" id="ls-bmp-dpi" class="input-control math-input" style="padding: 2px 22px 2px 5px; font-size: 11px;" value="254" />
+                <span class="unit" style="font-size: 8.5px;">DPI</span>
+              </div>
             </div>
-            <div class="input-with-unit" title="Hastighet for foto/bitmap i mm/s">
-              <input type="text" inputmode="decimal" id="ls-bmp-speed" class="input-control math-input" style="padding: 2px 26px 2px 5px; font-size: 11px;" value="300" />
-              <span class="unit" style="font-size: 9px;">mm/s</span>
-            </div>
-            <div class="input-with-unit" title="Oppløsning i DPI for foto/bitmap">
-              <input type="text" inputmode="decimal" id="ls-bmp-dpi" class="input-control math-input" style="padding: 2px 22px 2px 5px; font-size: 11px;" value="254" />
-              <span class="unit" style="font-size: 8.5px;">DPI</span>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px; align-items: center; padding-top: 3px; border-top: 1px dashed rgba(148, 163, 184, 0.2);">
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 9.5px; color: var(--text-muted);">xTool Foto-modus (BitmapMode)</span>
+                <select id="ls-bmp-mode" class="select-control" style="padding: 2px 5px; font-size: 10.5px; height: 24px;">
+                  <option value="Jarvis" selected>🔹 Jarvis (Punktraster – Tre/MDF)</option>
+                  <option value="grayscale">🌑 Gråtoner (Grayscale – Dybde)</option>
+                  <option value="Stucki">🔹 Stucki (Skarpe detaljer)</option>
+                  <option value="Atkinson">🔹 Atkinson (Høy kontrast)</option>
+                  <option value="Floyd">🔹 Floyd-Steinberg (Klassisk)</option>
+                  <option value="Sierra">🔹 Sierra (Myk overgang)</option>
+                  <option value="Bayer">🔹 Bayer (Matrise-rutenett)</option>
+                </select>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 2px;">
+                <span style="font-size: 9.5px; color: var(--text-muted);">Skanningsretning &amp; Luft</span>
+                <select id="ls-scan-mode" class="select-control" style="padding: 2px 5px; font-size: 10.5px; height: 24px;" title="Toveis (zMode) er raskest; Enveis (oneWay) gir ekstra presis linje ved høy hastighet">
+                  <option value="zMode" selected>⇄ Toveis skanning (zMode)</option>
+                  <option value="oneWay">→ Enveis skanning (oneWay)</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>

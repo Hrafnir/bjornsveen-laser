@@ -1,0 +1,219 @@
+[
+  {
+    "family": "Abril Fatface",
+    "weight": 400,
+    "style": "normal",
+    "file": "abrilfatface-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/abrilfatface/v25/zOL64pLDlL1D99S8g8PtiKchm-A.ttf"
+  },
+  {
+    "family": "Alfa Slab One",
+    "weight": 400,
+    "style": "normal",
+    "file": "alfaslabone-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/alfaslabone/v21/6NUQ8FmMKwSEKjnm5-4v-4Jh6dU.ttf"
+  },
+  {
+    "family": "Amatic SC",
+    "weight": 700,
+    "style": "normal",
+    "file": "amaticsc-700-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/amaticsc/v28/TUZ3zwprpvBS1izr_vOMscG6eQ.ttf"
+  },
+  {
+    "family": "Anton",
+    "weight": 400,
+    "style": "normal",
+    "file": "anton-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/anton/v27/1Ptgg87LROyAm0K0.ttf"
+  },
+  {
+    "family": "Bangers",
+    "weight": 400,
+    "style": "normal",
+    "file": "bangers-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/bangers/v25/FeVQS0BTqb0h60ACL5k.ttf"
+  },
+  {
+    "family": "Bebas Neue",
+    "weight": 400,
+    "style": "normal",
+    "file": "bebasneue-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/bebasneue/v16/JTUSjIg69CK48gW7PXooxW4.ttf"
+  },
+  {
+    "family": "Black Ops One",
+    "weight": 400,
+    "style": "normal",
+    "file": "blackopsone-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/blackopsone/v21/qWcsB6-ypo7xBdr6Xshe96H3WDw.ttf"
+  },
+  {
+    "family": "Caveat",
+    "weight": 700,
+    "style": "normal",
+    "file": "caveat-700-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/caveat/v23/WnznHAc5bAfYB2QRah7pcpNvOx-pjRV6SII.ttf"
+  },
+  {
+    "family": "Cinzel",
+    "weight": 700,
+    "style": "normal",
+    "file": "cinzel-700-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/cinzel/v26/8vIU7ww63mVu7gtR-kwKxNvkNOjw-jHgTYo.ttf"
+  },
+  {
+    "family": "Cinzel",
+    "weight": 900,
+    "style": "normal",
+    "file": "cinzel-900-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/cinzel/v26/8vIU7ww63mVu7gtR-kwKxNvkNOjw-n_gTYo.ttf"
+  },
+  {
+    "family": "Dancing Script",
+    "weight": 700,
+    "style": "normal",
+    "file": "dancingscript-700-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/dancingscript/v29/If2cXTr6YS-zF4S-kcSWSVi_sxjsohD9F50Ruu7B1i0HTQ.ttf"
+  },
+  {
+    "family": "Fredoka",
+    "weight": 600,
+    "style": "normal",
+    "file": "fredoka-600-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/fredoka/v17/X7nP4b87HvSqjb_WIi2yDCRwoQ_k7367_B-i2yQag0-mac3OLyXMFg.ttf"
+  },
+  {
+    "family": "Fredoka",
+    "weight": 700,
+    "style": "normal",
+    "file": "fredoka-700-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/fredoka/v17/X7nP4b87HvSqjb_WIi2yDCRwoQ_k7367_B-i2yQag0-mac3OFiXMFg.ttf"
+  },
+  {
+    "family": "Great Vibes",
+    "weight": 400,
+    "style": "normal",
+    "file": "greatvibes-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/greatvibes/v21/RWmMoKWR9v4ksMfaWd_JN-XC.ttf"
+  },
+  {
+    "family": "Lobster",
+    "weight": 400,
+    "style": "normal",
+    "file": "lobster-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/lobster/v32/neILzCirqoswsqX9_oU.ttf"
+  },
+  {
+    "family": "Montserrat",
+    "weight": 700,
+    "style": "normal",
+    "file": "montserrat-700-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/montserrat/v31/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCuM70w-.ttf"
+  },
+  {
+    "family": "Montserrat",
+    "weight": 900,
+    "style": "normal",
+    "file": "montserrat-900-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/montserrat/v31/JTUHjIg1_i6t8kCHKm4532VJOt5-QNFgpCvC70w-.ttf"
+  },
+  {
+    "family": "Orbitron",
+    "weight": 700,
+    "style": "normal",
+    "file": "orbitron-700-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/orbitron/v35/yMJMMIlzdpvBhQQL_SC3X9yhF25-T1ny_Cmxpg.ttf"
+  },
+  {
+    "family": "Orbitron",
+    "weight": 900,
+    "style": "normal",
+    "file": "orbitron-900-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/orbitron/v35/yMJMMIlzdpvBhQQL_SC3X9yhF25-T1nysimxpg.ttf"
+  },
+  {
+    "family": "Oswald",
+    "weight": 700,
+    "style": "normal",
+    "file": "oswald-700-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/oswald/v57/TK3_WkUHHAIjg75cFRf3bXL8LICs1xZogUE.ttf"
+  },
+  {
+    "family": "Pacifico",
+    "weight": 400,
+    "style": "normal",
+    "file": "pacifico-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/pacifico/v23/FwZY7-Qmy14u9lezJ96A.ttf"
+  },
+  {
+    "family": "Permanent Marker",
+    "weight": 400,
+    "style": "normal",
+    "file": "permanentmarker-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/permanentmarker/v16/Fh4uPib9Iyv2ucM6pGQMWimMp004Hao.ttf"
+  },
+  {
+    "family": "Playfair Display",
+    "weight": 700,
+    "style": "italic",
+    "file": "playfairdisplay-700-italic.ttf",
+    "source": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFRD-vYSZviVYUb_rj3ij__anPXDTnCjmHKM4nYO7KN_k-UbtY.ttf"
+  },
+  {
+    "family": "Playfair Display",
+    "weight": 700,
+    "style": "normal",
+    "file": "playfairdisplay-700-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKeiukDQ.ttf"
+  },
+  {
+    "family": "Playfair Display",
+    "weight": 900,
+    "style": "normal",
+    "file": "playfairdisplay-900-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKfsukDQ.ttf"
+  },
+  {
+    "family": "Press Start 2P",
+    "weight": 400,
+    "style": "normal",
+    "file": "pressstart2p-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/pressstart2p/v16/e3t4euO8T-267oIAQAu6jDQyK0nS.ttf"
+  },
+  {
+    "family": "Righteous",
+    "weight": 400,
+    "style": "normal",
+    "file": "righteous-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/righteous/v18/1cXxaUPXBpj2rGoU7C9mjw.ttf"
+  },
+  {
+    "family": "Rye",
+    "weight": 400,
+    "style": "normal",
+    "file": "rye-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/rye/v17/r05XGLJT86YDFg.ttf"
+  },
+  {
+    "family": "Satisfy",
+    "weight": 400,
+    "style": "normal",
+    "file": "satisfy-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/satisfy/v22/rP2Hp2yn6lkG50LoOZQ.ttf"
+  },
+  {
+    "family": "Special Elite",
+    "weight": 400,
+    "style": "normal",
+    "file": "specialelite-400-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/specialelite/v20/XLYgIZbkc4JPUL5CVArUVL0nhnc.ttf"
+  },
+  {
+    "family": "Stardos Stencil",
+    "weight": 700,
+    "style": "normal",
+    "file": "stardosstencil-700-normal.ttf",
+    "source": "https://fonts.gstatic.com/s/stardosstencil/v15/X7n44bcuGPC8hrvEOHXOgaKCc2TpU3tTvg.ttf"
+  }
+]

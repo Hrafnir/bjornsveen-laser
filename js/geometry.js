@@ -1331,6 +1331,31 @@ function ChaikinSmooth(pts, iterations = 1) {
 // 7. LASER PRE-FLIGHT ANALYSIS (Path Length & Duplicate Line Detection)
 // ============================================================================
 
+// Canonical paths compare actual world geometry, including holes and open ends.
+export function geometrySignature(shape) {
+  if (shape.type === 'image') return null; // Identical bounds do not identify a photograph.
+  const canonical = shapeToWorldPolygons(shape, 0.15).map(loop => {
+    let points = loop.map(pt => `${Math.round(pt.x * 1000)},${Math.round(pt.y * 1000)}`);
+    const closed = loop.closed !== false;
+    if (closed && points[0] === points.at(-1)) points.pop();
+    const orientation = pts => {
+      if (!closed) return pts.join(';');
+      const min = pts.reduce((a, b) => a < b ? a : b);
+      return pts.flatMap((v, i) => v === min ? [pts.slice(i).concat(pts.slice(0, i)).join(';')] : []).sort()[0] || '';
+    };
+    return `${closed ? 'closed' : 'open'}:${[orientation(points), orientation([...points].reverse())].sort()[0]}`;
+  }).sort();
+  return `${shape.laserMode}:${canonical.join('|')}`;
+}
+
+export function removeDuplicateShapes(shapes, ids) {
+  return shapes.filter(s => !ids.has(s.id)).map(s => {
+    if (s.type !== 'group') return s;
+    const children = removeDuplicateShapes(s.children || [], ids);
+    return { ...s, children, ...getShapesBBox(children) };
+  }).filter(s => s.type !== 'group' || s.children.length > 0);
+}
+
 export function analyzeShapesForLaser(shapes, bedWidth, bedHeight) {
   let cutLengthMm = 0;
   let scoreLengthMm = 0;
@@ -1369,12 +1394,9 @@ export function analyzeShapesForLaser(shapes, bedWidth, bedHeight) {
       tinyShapes.push(s);
     }
 
-    const sig = `${s.type}_${s.laserMode}_${Math.round(bbox.x * 10)}_${Math.round(bbox.y * 10)}_${Math.round(bbox.width * 10)}_${Math.round(bbox.height * 10)}`;
-    if (signatures.has(sig)) {
-      duplicateShapeIds.add(s.id);
-    } else {
-      signatures.set(sig, s.id);
-    }
+    const sig = geometrySignature(s);
+    if (sig && signatures.has(sig)) duplicateShapeIds.add(s.id);
+    else if (sig) signatures.set(sig, s.id);
 
     // Calculate perimeter length
     let len = 0;

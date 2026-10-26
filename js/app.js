@@ -1,3 +1,4 @@
+import { flushWorkspaceSave, hasUnprotectedChanges } from './storage.js';
 // ============================================================================
 // Bjørnsveen LaserStudio – Main Application Controller
 // ============================================================================
@@ -20,10 +21,12 @@ import {
   performBooleanOnShapes,
   createOffsetContour,
   weldKeyringTabToShape,
+  removeDuplicateShapes,
   analyzeShapesForLaser
 } from './geometry.js';
 
 import {
+  initializeFonts,
   createTextShape,
   updateTextShape,
   getFontOptionsHtml
@@ -34,6 +37,8 @@ import {
   createIconShape,
   traceImageToPolygons,
   createBitmapImageShape,
+  resolveXcsBitmapMode,
+  prepareBitmapExports,
   refreshBitmapShapeDataUrl
 } from './icons.js';
 
@@ -79,6 +84,7 @@ const MACHINE_PROFILES = {
 
 const state = {
   machineKey: 'sheet-600x400',
+  targetMachine: 'xtool-p3',
   bedWidth: 600,
   bedHeight: 400,
   snapMm: 1,
@@ -130,11 +136,18 @@ const hintBannerEl = document.getElementById('workspace-hint');
 // INITIALIZATION
 // ============================================================================
 
-function initApp() {
+async function initApp() {
+  window.addEventListener('workspace-storage', e => {
+    const el = document.getElementById('save-status');
+    el.textContent = e.detail.message;
+    el.style.color = e.detail.failed ? '#fca5a5' : '#a7f3d0';
+  });
+  await initializeFonts();
   // Restore autosave if present
-  const saved = loadWorkspaceFromLocal();
-  if (saved && Array.isArray(saved.shapes) && saved.shapes.length > 0) {
+  const saved = await loadWorkspaceFromLocal();
+  if (saved && Array.isArray(saved.shapes)) {
     state.machineKey = saved.machineKey || 'sheet-600x400';
+    state.targetMachine = saved.targetMachine || (state.machineKey === 'xtool-f2' ? 'xtool-f2' : 'xtool-p3');
     state.bedWidth = saved.bedWidth || 600;
     state.bedHeight = saved.bedHeight || 400;
     state.snapMm = saved.snapMm !== undefined ? saved.snapMm : 1;
@@ -162,6 +175,9 @@ function initApp() {
     state.shapes = starterShapes;
   }
 
+  document.getElementById('target-machine-select').value = state.targetMachine;
+  document.getElementById('bed-width-input').value = state.bedWidth;
+  document.getElementById('bed-height-input').value = state.bedHeight;
   updateBedDimensionsUI();
   const fontSelectEl = document.getElementById('text-font-select');
   if (fontSelectEl) {
@@ -181,25 +197,11 @@ function initApp() {
   bindModalEvents();
   bindKeyboardShortcuts();
 
-  // Re-vectorize text shapes once Google Web Fonts finish loading
-  if (document.fonts && document.fonts.ready) {
-    document.fonts.ready.then(() => {
-      let updatedAny = false;
-      const refreshTextRecursive = (list) => {
-        for (const s of list) {
-          if (s.type === 'text' && s.textMeta) {
-            updateTextShape(s, s.textMeta);
-            updatedAny = true;
-          } else if (s.type === 'group' && Array.isArray(s.children)) {
-            refreshTextRecursive(s.children);
-          }
-        }
-      };
-      refreshTextRecursive(state.shapes);
-      if (updatedAny) renderAll();
-    });
-  }
-
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { saveWorkspaceToLocal(state); void flushWorkspaceSave(); } });
+  window.addEventListener('beforeunload', e => {
+    if (hasUnprotectedChanges()) { e.preventDefault(); e.returnValue = ''; }
+  });
+  window.addEventListener('pagehide', () => { saveWorkspaceToLocal(state); void flushWorkspaceSave(); });
   window.addEventListener('resize', () => {
     fitBedToViewport();
     renderAll();
@@ -224,7 +226,6 @@ function pushUndoSnapshot() {
   if (state.undoStack.length > 50) state.undoStack.shift();
   state.redoStack = [];
   updateUndoRedoButtons();
-  saveWorkspaceToLocal(state);
 }
 
 function undo() {
@@ -535,6 +536,7 @@ function renderAll() {
   renderOverlay();
   renderInspector();
   renderLayerList();
+  saveWorkspaceToLocal(state);
 }
 
 function getStrokeWidthMm() {
@@ -1205,12 +1207,14 @@ function renderInspector() {
     const meta = bmpShape.imageMeta || {};
     const fSel = document.getElementById('bmp-filter-select');
     const mSel = document.getElementById('bmp-mask-select');
-    if (fSel) fSel.value = meta.filter || 'grayscale';
+    if (fSel) fSel.value = meta.filter === 'dither' ? 'Jarvis' : (meta.filter || 'grayscale');
     if (mSel) mSel.value = meta.maskShape || 'rect';
 
     const br = Number(meta.brightness) || 0;
     const co = Number(meta.contrast ?? 10);
     const th = Number(meta.threshold) || 135;
+    document.getElementById('bmp-sharpness').value = String(meta.sharpness ?? 55);
+    document.getElementById('bmp-sharpness-lbl').textContent = String(meta.sharpness ?? 55);
     const brEl = document.getElementById('bmp-brightness');
     const coEl = document.getElementById('bmp-contrast');
     const thEl = document.getElementById('bmp-threshold');
@@ -1459,6 +1463,15 @@ function syncLaserModeDockUI(mode) {
   });
 }
 
+function refreshInheritedBitmapPreviews() {
+  const visit = list => { for (const shape of list) {
+    if (shape.type === 'group') visit(shape.children || []);
+    else if (shape.type === 'image' && shape.imageMeta?.filter === 'inherit')
+      refreshBitmapShapeDataUrl(shape, renderAll, state.laserSettings.bitmap).catch(error => showToast(error.message));
+  } };
+  visit(state.shapes);
+}
+
 function syncLaserSettingsUI() {
   const cfg = state.laserSettings || getDefaultLaserSettings();
   const presetEl = document.getElementById('laser-preset-select');
@@ -1483,6 +1496,8 @@ function syncLaserSettingsUI() {
   setVal('ls-bmp-power', cfg.bitmap?.power ?? 32);
   setVal('ls-bmp-speed', cfg.bitmap?.speed ?? 300);
   setVal('ls-bmp-dpi', cfg.bitmap?.dpi ?? 254);
+  setVal('ls-bmp-mode', resolveXcsBitmapMode(cfg.bitmap?.bitmapMode, 'Jarvis'));
+  setVal('ls-scan-mode', cfg.bitmap?.bitmapScanMode ?? 'zMode');
 }
 
 // ============================================================================
@@ -2316,8 +2331,16 @@ function bindToolbarEvents() {
 }
 
 function bindHeaderEvents() {
+  document.getElementById('target-machine-select').addEventListener('change', e => {
+    state.targetMachine = e.target.value;
+    saveWorkspaceToLocal(state);
+  });
   document.getElementById('machine-select').addEventListener('change', (e) => {
     state.machineKey = e.target.value;
+    if (state.machineKey === 'xtool-p3' || state.machineKey === 'xtool-f2') {
+      state.targetMachine = state.machineKey;
+      document.getElementById('target-machine-select').value = state.targetMachine;
+    }
     updateBedDimensionsUI();
     fitBedToViewport();
     renderAll();
@@ -2364,15 +2387,21 @@ function bindHeaderEvents() {
         try {
           const text = String(reader.result);
           const xcsImported = importXcsStringToWorkspace(text);
-          if (xcsImported && Array.isArray(xcsImported.shapes) && xcsImported.shapes.length > 0) {
+          if (xcsImported && Array.isArray(xcsImported.shapes)) {
             pushUndoSnapshot();
             state.shapes = xcsImported.shapes;
+            state.selectedIds.clear();
+            state.editingGroupId = null;
+            if (xcsImported.targetMachine) state.targetMachine = xcsImported.targetMachine;
+            document.getElementById('target-machine-select').value = state.targetMachine;
             if (xcsImported.machineKey) {
               state.machineKey = xcsImported.machineKey;
               document.getElementById('machine-select').value = state.machineKey;
             }
             if (xcsImported.bedWidth) state.bedWidth = xcsImported.bedWidth;
             if (xcsImported.bedHeight) state.bedHeight = xcsImported.bedHeight;
+            document.getElementById('bed-width-input').value = state.bedWidth;
+            document.getElementById('bed-height-input').value = state.bedHeight;
             if (xcsImported.laserSettings) {
               state.laserSettings = { ...getDefaultLaserSettings(), ...xcsImported.laserSettings };
               syncLaserSettingsUI();
@@ -2408,7 +2437,14 @@ function bindHeaderEvents() {
     } else if (name.endsWith('.svg')) {
       const reader = new FileReader();
       reader.onload = () => {
-        const imported = importSvgStringToShapes(String(reader.result));
+        let imported;
+        try { imported = importSvgStringToShapes(String(reader.result)); }
+        catch (error) { showToast(error.message); return; }
+        if (imported.warnings?.length) {
+          const warning = document.getElementById('import-warnings');
+          warning.textContent = imported.warnings.join(' ');
+          warning.hidden = false;
+        }
         if (imported.length > 0) {
           pushUndoSnapshot();
           state.shapes.push(...imported);
@@ -2437,9 +2473,12 @@ function bindHeaderEvents() {
   });
 
   // Save Project (.xcs directly!)
-  document.getElementById('btn-save-project').addEventListener('click', () => {
+  document.getElementById('btn-save-project').addEventListener('click', async () => {
+    try { await prepareBitmapExports(state.shapes, state.laserSettings); }
+    catch (error) { showToast(error.message); return; }
     const xcsContent = buildXcsProjectString(state.shapes, {
       machineKey: state.machineKey,
+      targetMachine: state.targetMachine,
       bedWidth: state.bedWidth,
       bedHeight: state.bedHeight,
       laserSettings: state.laserSettings
@@ -2922,6 +2961,7 @@ function bindInspectorEvents() {
       ...(s.imageMeta || {}),
       filter: document.getElementById('bmp-filter-select').value || 'grayscale',
       maskShape: document.getElementById('bmp-mask-select').value || 'rect',
+      sharpness: Number(document.getElementById('bmp-sharpness').value),
       brightness: parseInt(document.getElementById('bmp-brightness').value, 10) || 0,
       contrast: parseInt(document.getElementById('bmp-contrast').value, 10) || 0,
       threshold: parseInt(document.getElementById('bmp-threshold').value, 10) || 135,
@@ -2931,11 +2971,13 @@ function bindInspectorEvents() {
     refreshBitmapShapeDataUrl(s, () => {
       saveWorkspaceToLocal(state);
       renderAll();
-    });
+    }, state.laserSettings.bitmap).catch(error => showToast(error.message));
   };
-  for (const id of ['bmp-filter-select', 'bmp-mask-select', 'bmp-brightness', 'bmp-contrast', 'bmp-threshold', 'bmp-invert', 'bmp-remove-bg']) {
+  for (const id of ['bmp-sharpness', 'bmp-filter-select', 'bmp-mask-select', 'bmp-brightness', 'bmp-contrast', 'bmp-threshold', 'bmp-invert', 'bmp-remove-bg']) {
     const el = document.getElementById(id);
     if (el) {
+      el.addEventListener('pointerdown', pushUndoSnapshot);
+      el.addEventListener('focus', pushUndoSnapshot);
       el.addEventListener('input', onBitmapMetaUpdate);
       el.addEventListener('change', onBitmapMetaUpdate);
     }
@@ -3017,6 +3059,7 @@ function bindInspectorEvents() {
         bitmap: preset.bitmap
       }));
       syncLaserSettingsUI();
+      refreshInheritedBitmapPreviews();
       saveWorkspaceToLocal(state);
       showToast(`⚡ Valgte laserinnstillinger for: ${preset.name}`);
     });
@@ -3026,28 +3069,35 @@ function bindInspectorEvents() {
     const cfg = state.laserSettings || getDefaultLaserSettings();
     cfg.presetKey = 'custom';
     cfg.cut = {
+      ...cfg.cut,
       power: clamp(Math.round(evalMathExpr(document.getElementById('ls-cut-power').value, cfg.cut?.power || 85)), 1, 100),
       speed: clamp(Math.round(evalMathExpr(document.getElementById('ls-cut-speed').value, cfg.cut?.speed || 18)), 1, 2000),
       repeat: clamp(Math.round(evalMathExpr(document.getElementById('ls-cut-repeat').value, cfg.cut?.repeat || 1)), 1, 10)
     };
     cfg.score = {
+      ...cfg.score,
       power: clamp(Math.round(evalMathExpr(document.getElementById('ls-score-power').value, cfg.score?.power || 18)), 1, 100),
       speed: clamp(Math.round(evalMathExpr(document.getElementById('ls-score-speed').value, cfg.score?.speed || 160)), 1, 2000),
       repeat: clamp(Math.round(evalMathExpr(document.getElementById('ls-score-repeat').value, cfg.score?.repeat || 1)), 1, 10)
     };
     cfg.engrave = {
+      ...cfg.engrave,
       power: clamp(Math.round(evalMathExpr(document.getElementById('ls-eng-power').value, cfg.engrave?.power || 30)), 1, 100),
       speed: clamp(Math.round(evalMathExpr(document.getElementById('ls-eng-speed').value, cfg.engrave?.speed || 350)), 1, 2000),
       density: clamp(Math.round(evalMathExpr(document.getElementById('ls-eng-density').value, cfg.engrave?.density || 100)), 20, 400),
-      repeat: 1
+      repeat: cfg.engrave?.repeat ?? 1,
+      bitmapScanMode: document.getElementById('ls-scan-mode').value
     };
     cfg.bitmap = {
+      ...cfg.bitmap,
       power: clamp(Math.round(evalMathExpr(document.getElementById('ls-bmp-power').value, cfg.bitmap?.power || 32)), 1, 100),
       speed: clamp(Math.round(evalMathExpr(document.getElementById('ls-bmp-speed').value, cfg.bitmap?.speed || 300)), 1, 2000),
       dpi: clamp(Math.round(evalMathExpr(document.getElementById('ls-bmp-dpi').value, cfg.bitmap?.dpi || 254)), 50, 1000),
-      bitmapMode: cfg.bitmap?.bitmapMode || 'grayscale'
+      bitmapMode: document.getElementById('ls-bmp-mode').value,
+      bitmapScanMode: document.getElementById('ls-scan-mode').value
     };
     state.laserSettings = cfg;
+    refreshInheritedBitmapPreviews();
     syncLaserSettingsUI();
     saveWorkspaceToLocal(state);
   };
@@ -3056,7 +3106,7 @@ function bindInspectorEvents() {
     'ls-cut-power', 'ls-cut-speed', 'ls-cut-repeat',
     'ls-score-power', 'ls-score-speed', 'ls-score-repeat',
     'ls-eng-power', 'ls-eng-speed', 'ls-eng-density',
-    'ls-bmp-power', 'ls-bmp-speed', 'ls-bmp-dpi'
+    'ls-bmp-power', 'ls-bmp-speed', 'ls-bmp-dpi', 'ls-bmp-mode', 'ls-scan-mode'
   ]) {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', onLaserParamChange);
@@ -4191,11 +4241,22 @@ function renderImageTraceUI(container) {
         <div class="prop-field" id="bmp-modal-filter-wrap">
           <label>Graveringsfilter</label>
           <select id="bmp-modal-filter" class="select-control">
-            <option value="grayscale">Gråtoner (Standard)</option>
-            <option value="dither">Punktraster / Dithering (Best på tre!)</option>
-            <option value="threshold">Sort / Hvitt (Logo / Stempel)</option>
-            <option value="original">Original</option>
-          </select>
+              <option value="inherit" selected>Følg fotomodus i laserinnstillinger</option>
+              <optgroup label="xTool Punktraster / Dithering (Best på tre, MDF, skifer &amp; glass)">
+                <option value="Jarvis">🔹 Jarvis – Standard Punktraster (Anbefalt til tre/MDF)</option>
+                <option value="Stucki">🔹 Stucki – Ekstra skarpe kanter og detaljer</option>
+                <option value="Atkinson">🔹 Atkinson – Høy kontrast &amp; rene lyse partier (Portrett)</option>
+                <option value="Floyd">🔹 Floyd-Steinberg – Klassisk fint punktraster</option>
+                <option value="Sierra">🔹 Sierra – Myke og jevne toneoverganger</option>
+                <option value="Bayer">🔹 Bayer – Strukturert matrise-/kryssrutenett</option>
+              </optgroup>
+              <optgroup label="Gråtoner &amp; Spesialfiltre">
+                <option value="grayscale">🌑 Gråtoner (Grayscale – Dynamisk lasereffekt / Dybde)</option>
+                <option value="threshold">⬛ Sort / Hvitt Terskel (Logo, tekst &amp; stempel)</option>
+                <option value="sketch">✏️ Skisse / Kontur-strek (Linjetegning fra foto)</option>
+                <option value="original">🎨 Original (Uten gråtonefilter)</option>
+              </optgroup>
+                      </select>
         </div>
         <div class="prop-field" id="bmp-modal-mask-wrap">
           <label>Klipp i form (Maske)</label>
@@ -4278,6 +4339,7 @@ function renderImageTraceUI(container) {
         widthMm: targetWidthMm,
         brightness: 0,
         contrast,
+        bitmapMode: state.laserSettings.bitmap.bitmapMode,
         filter,
         threshold,
         invert,
@@ -4416,7 +4478,7 @@ function openExportModal(preferredFormat = 'xcs') {
   fixDupBtn.onclick = () => {
     pushUndoSnapshot();
     const dupSet = new Set(report.duplicateShapeIds);
-    state.shapes = state.shapes.filter(s => !dupSet.has(s.id));
+    state.shapes = removeDuplicateShapes(state.shapes, dupSet);
     renderAll();
     openExportModal(preferredFormat);
     showToast(`🧹 Fjernet ${dupSet.size} duplikate objekter!`);
@@ -4431,7 +4493,7 @@ function openExportModal(preferredFormat = 'xcs') {
   }
   if (!hasOutOfBounds && !hasDuplicates) {
     warningsHtml = `<div class="info-box" style="border-color:rgba(16,185,129,0.4);background:rgba(16,185,129,0.1);color:#a7f3d0;">
-      ✅ <strong>Klar til laser!</strong> Ingen duplikate linjer og alle objekter er innenfor arbeidsflaten.
+      ✅ <strong>Geometrikontroll fullført.</strong> Ingen identiske baner funnet; alle objekter er innenfor arbeidsflaten. Kontroller mål og behandling i xTool Studio.
     </div>`;
   }
 
@@ -4467,7 +4529,7 @@ function openExportModal(preferredFormat = 'xcs') {
 
       <div style="background:var(--bg-input);padding:9px 11px;border-radius:8px;border:1px solid var(--border-color);font-size:11.5px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span>⚡ <strong>Innebygde .XCS laserinnstillinger:</strong> ${presetName}</span>
+          <span>⚡ <strong>${state.targetMachine === 'xtool-f2' ? 'F2 Ultra UV' : 'P3'} – .XCS laserinnstillinger:</strong> ${presetName}</span>
           <span style="color:#38bdf8;font-size:10.5px;">(Endres i høyre panel)</span>
         </div>
       </div>
@@ -4500,11 +4562,14 @@ function openExportModal(preferredFormat = 'xcs') {
     return raw.replace(/\.(svg|xcs|json)$/i, '');
   };
 
-  document.getElementById('btn-confirm-download-xcs').onclick = () => {
+  document.getElementById('btn-confirm-download-xcs').onclick = async () => {
+    try { await prepareBitmapExports(state.shapes, state.laserSettings); }
+    catch (error) { showToast(error.message); return; }
     const mode = document.getElementById('export-crop-select').value;
     const filename = `${getBaseFilename()}.xcs`;
     const xcsContent = buildXcsProjectString(state.shapes, {
       machineKey: state.machineKey,
+      targetMachine: state.targetMachine,
       bedWidth: state.bedWidth,
       bedHeight: state.bedHeight,
       onlySelected: mode === 'selected',
@@ -4516,7 +4581,9 @@ function openExportModal(preferredFormat = 'xcs') {
     showToast(`📦 Lastet ned "${filename}" med vektorer, bitmap og laserinnstillinger!`);
   };
 
-  document.getElementById('btn-confirm-download-svg').onclick = () => {
+  document.getElementById('btn-confirm-download-svg').onclick = async () => {
+    try { await prepareBitmapExports(state.shapes, state.laserSettings, true); }
+    catch (error) { showToast(error.message); return; }
     const mode = document.getElementById('export-crop-select').value;
     const filename = `${getBaseFilename()}.svg`;
 
@@ -4555,4 +4622,7 @@ function showToast(message) {
 }
 
 // Launch app
-initApp();
+initApp().catch(error => {
+  document.getElementById('save-status').textContent = error.message;
+  showToast('Oppstart feilet: ' + error.message);
+});

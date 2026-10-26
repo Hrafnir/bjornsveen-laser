@@ -3,6 +3,8 @@
 // ============================================================================
 
 import {
+  uid,
+  roundMm,
   createPathShapeFromPolygons,
   parseSvgPathToPolygons,
   computePolygonsBBox,
@@ -213,20 +215,31 @@ export function traceImageToPolygons(imgElement, {
 
 /**
  * Processes an HTMLImageElement into a laser-ready PNG DataURL with:
- * - Brightness, Contrast, Invert (for slate/anodized aluminum)
+ * - Brightness, Contrast, Sharpness (Unsharp Mask), Invert (for slate/anodized aluminum)
  * - White-background removal
- * - Halftone Dithering (Atkinson/Floyd-Steinberg), Grayscale, or B&W Threshold
+ * - Full xTool Studio Bitmap Modes:
+ *   - 'Jarvis' (12-neighbor Jarvis-Judice-Ninke dithering – default & best on wood/MDF)
+ *   - 'grayscale' (Smooth 8-bit grayscale depth engraving)
+ *   - 'Stucki' (12-neighbor Stucki sharp-edge dithering)
+ *   - 'Atkinson' (6-neighbor Atkinson high-contrast dithering)
+ *   - 'Floyd' (Classic 4-neighbor Floyd-Steinberg dithering)
+ *   - 'Sierra' (10-neighbor Sierra smooth dithering)
+ *   - 'Bayer' (4x4 Ordered Bayer matrix crosshatch dithering)
+ *   - 'threshold' (Crisp 1-bit B&W threshold for logos/stamps)
+ *   - 'sketch' (Sobel edge-detection contour sketch for line-art engraving)
+ *   - 'original' (Color / unfiltered preview)
  * - Shape Masking (Circle, Heart, Rounded Rect, Star, or Rectangle)
  */
 export function processBitmapElementToDataUrl(imgElement, {
   brightness = 0,       // -100 .. +100
   contrast = 0,         // -100 .. +100
-  filter = 'grayscale', // 'grayscale' | 'dither' | 'threshold' | 'original'
+  sharpness = 50,       // 0 .. 100 (50 = neutral, >50 = sharpen edges for laser)
+  filter = 'Jarvis',    // 'Jarvis' | 'grayscale' | 'Stucki' | 'Atkinson' | 'Floyd' | 'Sierra' | 'Bayer' | 'threshold' | 'sketch' | 'original'
   threshold = 135,      // 10 .. 245
   invert = false,
   removeWhiteBg = false,
   maskShape = 'rect',   // 'rect' | 'rounded' | 'circle' | 'heart' | 'star'
-  maxDimPx = 600
+  maxDimPx = 650
 } = {}) {
   if (!imgElement || typeof document === 'undefined') return '';
   const natW = Math.max(1, imgElement.naturalWidth || imgElement.width || 200);
@@ -293,8 +306,13 @@ export function processBitmapElementToDataUrl(imgElement, {
   const cVal = clamp(Number(contrast) || 0, -100, 100) * 2.55;
   const cFactor = (259 * (cVal + 255)) / (255 * (259 - cVal));
   const thresh = clamp(Number(threshold) || 135, 5, 250);
+  const sharpVal = clamp(Number(sharpness ?? 50), 0, 100);
+
+  // Normalize legacy filter alias 'dither' -> 'Jarvis'
+  const normFilter = filter === 'dither' ? 'Jarvis' : (filter || 'Jarvis');
 
   const lumBuf = new Float32Array(total);
+  const alphaMask = new Uint8Array(total);
 
   for (let i = 0; i < total; i++) {
     const idx = i * 4;
@@ -317,6 +335,8 @@ export function processBitmapElementToDataUrl(imgElement, {
       continue;
     }
 
+    alphaMask[i] = 1;
+
     // Apply brightness & contrast
     r = clamp(cFactor * (r - 128) + 128 + bOffset, 0, 255);
     g = clamp(cFactor * (g - 128) + 128 + bOffset, 0, 255);
@@ -328,50 +348,157 @@ export function processBitmapElementToDataUrl(imgElement, {
       b = 255 - b;
     }
 
-    let lum = 0.299 * r + 0.587 * g + 0.114 * b;
+    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
     lumBuf[i] = lum;
 
-    if (filter === 'original') {
+    if (normFilter === 'original') {
       data[idx] = r;
       data[idx + 1] = g;
       data[idx + 2] = b;
-    } else if (filter === 'grayscale') {
-      const v = Math.round(lum);
+    }
+  }
+
+  // Optional 3x3 Unsharp Mask sharpening (when sharpness != 50)
+  if (normFilter !== 'original' && Math.abs(sharpVal - 50) > 2) {
+    const amount = (sharpVal - 50) / 35; // -1.4 .. +1.4
+    const srcLum = new Float32Array(lumBuf);
+    for (let y = 1; y < ch - 1; y++) {
+      const row = y * cw;
+      for (let x = 1; x < cw - 1; x++) {
+        const i = row + x;
+        if (!alphaMask[i]) continue;
+        const center = srcLum[i];
+        const blur = (
+          srcLum[i - cw - 1] + srcLum[i - cw] * 2 + srcLum[i - cw + 1] +
+          srcLum[i - 1] * 2  + center * 4         + srcLum[i + 1] * 2 +
+          srcLum[i + cw - 1] + srcLum[i + cw] * 2 + srcLum[i + cw + 1]
+        ) / 16;
+        lumBuf[i] = clamp(center + (center - blur) * amount * 1.8, 0, 255);
+      }
+    }
+  }
+
+  if (normFilter === 'grayscale') {
+    for (let i = 0; i < total; i++) {
+      if (!alphaMask[i]) continue;
+      const v = Math.round(clamp(lumBuf[i], 0, 255));
+      const idx = i * 4;
       data[idx] = v;
       data[idx + 1] = v;
       data[idx + 2] = v;
-    } else if (filter === 'threshold') {
-      const v = lum < thresh ? 0 : 255;
+    }
+  } else if (normFilter === 'threshold') {
+    for (let i = 0; i < total; i++) {
+      if (!alphaMask[i]) continue;
+      const v = lumBuf[i] < thresh ? 0 : 255;
+      const idx = i * 4;
       data[idx] = v;
       data[idx + 1] = v;
       data[idx + 2] = v;
       if (v === 255 && removeWhiteBg) data[idx + 3] = 0;
     }
-  }
+  } else if (normFilter === 'sketch') {
+    // Sobel edge detector for crisp line-art engraving
+    const srcLum = new Float32Array(lumBuf);
+    const edgeCutoff = 255 - thresh;
+    for (let y = 1; y < ch - 1; y++) {
+      for (let x = 1; x < cw - 1; x++) {
+        const i = y * cw + x;
+        if (!alphaMask[i]) continue;
+        const gx =
+          -srcLum[(y - 1) * cw + (x - 1)] + srcLum[(y - 1) * cw + (x + 1)] +
+          -2 * srcLum[y * cw + (x - 1)]   + 2 * srcLum[y * cw + (x + 1)] +
+          -srcLum[(y + 1) * cw + (x - 1)] + srcLum[(y + 1) * cw + (x + 1)];
+        const gy =
+          -srcLum[(y - 1) * cw + (x - 1)] - 2 * srcLum[(y - 1) * cw + x] - srcLum[(y - 1) * cw + (x + 1)] +
+           srcLum[(y + 1) * cw + (x - 1)] + 2 * srcLum[(y + 1) * cw + x] + srcLum[(y + 1) * cw + (x + 1)];
+        const mag = Math.hypot(gx, gy);
+        const v = mag > Math.max(25, edgeCutoff) ? 0 : 255;
+        const idx = i * 4;
+        data[idx] = v;
+        data[idx + 1] = v;
+        data[idx + 2] = v;
+      }
+    }
+  } else if (normFilter === 'Bayer') {
+    // 4x4 Ordered Bayer Matrix Dithering
+    const bayer4x4 = [
+      [  0, 128,  32, 160 ],
+      [ 192,  64, 224,  96 ],
+      [  48, 176,  16, 144 ],
+      [ 240, 112, 208,  80 ]
+    ];
+    const bias = thresh - 128;
+    for (let y = 0; y < ch; y++) {
+      const bRow = bayer4x4[y & 3];
+      for (let x = 0; x < cw; x++) {
+        const i = y * cw + x;
+        if (!alphaMask[i]) continue;
+        const adjusted = lumBuf[i] - bias * 0.65;
+        const v = adjusted < bRow[x & 3] ? 0 : 255;
+        const idx = i * 4;
+        data[idx] = v;
+        data[idx + 1] = v;
+        data[idx + 2] = v;
+      }
+    }
+  } else if (['Jarvis', 'Stucki', 'Atkinson', 'Floyd', 'Sierra'].includes(normFilter)) {
+    // Error-diffusion dithering kernels matching xTool Studio's official bitmapModes
+    const kernels = {
+      Floyd: {
+        div: 16,
+        taps: [[1, 0, 7], [-1, 1, 3], [0, 1, 5], [1, 1, 1]]
+      },
+      Atkinson: {
+        div: 8,
+        taps: [[1, 0, 1], [2, 0, 1], [-1, 1, 1], [0, 1, 1], [1, 1, 1], [0, 2, 1]]
+      },
+      Jarvis: {
+        div: 48,
+        taps: [
+          [1, 0, 7], [2, 0, 5],
+          [-2, 1, 3], [-1, 1, 5], [0, 1, 7], [1, 1, 5], [2, 1, 3],
+          [-2, 2, 1], [-1, 2, 3], [0, 2, 5], [1, 2, 3], [2, 2, 1]
+        ]
+      },
+      Stucki: {
+        div: 42,
+        taps: [
+          [1, 0, 8], [2, 0, 4],
+          [-2, 1, 2], [-1, 1, 4], [0, 1, 8], [1, 1, 4], [2, 1, 2],
+          [-2, 2, 1], [-1, 2, 2], [0, 2, 4], [1, 2, 2], [2, 2, 1]
+        ]
+      },
+      Sierra: {
+        div: 32,
+        taps: [
+          [1, 0, 5], [2, 0, 3],
+          [-2, 1, 2], [-1, 1, 4], [0, 1, 5], [1, 1, 4], [2, 1, 2],
+          [-1, 2, 2], [0, 2, 3], [1, 2, 2]
+        ]
+      }
+    };
+    const kernel = kernels[normFilter] || kernels.Jarvis;
+    const { div, taps } = kernel;
 
-  // Atkinson / Floyd-Steinberg halftone dithering for crisp CO2/UV photo engraving
-  if (filter === 'dither') {
     for (let y = 0; y < ch; y++) {
       for (let x = 0; x < cw; x++) {
         const i = y * cw + x;
-        const idx = i * 4;
-        if (data[idx + 3] < 16) continue;
-        const oldP = lumBuf[i];
+        if (!alphaMask[i]) continue;
+        const oldP = clamp(lumBuf[i], 0, 255);
         const newP = oldP < thresh ? 0 : 255;
-        const err = (oldP - newP) / 8; // Atkinson 1/8 diffusion preserves crisp edge contrast for lasers!
+        const err = (oldP - newP) / div;
         lumBuf[i] = newP;
 
-        if (x + 1 < cw) lumBuf[i + 1] += err;
-        if (x + 2 < cw) lumBuf[i + 2] += err;
-        if (y + 1 < ch) {
-          if (x > 0) lumBuf[i + cw - 1] += err;
-          lumBuf[i + cw] += err;
-          if (x + 1 < cw) lumBuf[i + cw + 1] += err;
-        }
-        if (y + 2 < ch) {
-          lumBuf[i + cw * 2] += err;
+        for (let k = 0; k < taps.length; k++) {
+          const nx = x + taps[k][0];
+          const ny = y + taps[k][1];
+          if (nx >= 0 && nx < cw && ny < ch) {
+            lumBuf[ny * cw + nx] += err * taps[k][2];
+          }
         }
 
+        const idx = i * 4;
         data[idx] = newP;
         data[idx + 1] = newP;
         data[idx + 2] = newP;
@@ -384,6 +511,26 @@ export function processBitmapElementToDataUrl(imgElement, {
 }
 
 /**
+ * Helper to map our UI filter name to xTool Studio's exact `bitmapMode` enum value:
+ * 'grayscale' | 'Jarvis' | 'Bayer' | 'Floyd' | 'Stucki' | 'Atkinson' | 'Sierra'
+ */
+export function resolveXcsBitmapMode(filterOrMode, fallback = 'Jarvis') {
+  const raw = String(filterOrMode || '').trim();
+  if (!raw) return fallback;
+  const lower = raw.toLowerCase();
+  if (lower === 'grayscale' || lower === 'original') return 'grayscale';
+  if (lower === 'jarvis' || lower === 'dither') return 'Jarvis';
+  if (lower === 'bayer') return 'Bayer';
+  if (lower === 'floyd') return 'Floyd';
+  if (lower === 'stucki') return 'Stucki';
+  if (lower === 'atkinson') return 'Atkinson';
+  if (lower === 'sierra') return 'Sierra';
+  // For 'threshold' or 'sketch', pre-thresholded 1-bit image engraves best with 'Jarvis' or 'grayscale'
+  if (lower === 'threshold' || lower === 'sketch') return 'Jarvis';
+  return fallback;
+}
+
+/**
  * Creates a `type: 'image'` bitmap engraving shape on the workspace.
  */
 export function createBitmapImageShape(imgElement, {
@@ -393,7 +540,9 @@ export function createBitmapImageShape(imgElement, {
   widthMm = 70,
   brightness = 0,
   contrast = 10,
-  filter = 'grayscale',
+  sharpness = 55,
+  filter = 'inherit',
+  bitmapMode = 'Jarvis',
   threshold = 135,
   invert = false,
   removeWhiteBg = false,
@@ -401,34 +550,53 @@ export function createBitmapImageShape(imgElement, {
 } = {}) {
   const natW = Math.max(1, imgElement?.naturalWidth || imgElement?.width || 200);
   const natH = Math.max(1, imgElement?.naturalHeight || imgElement?.height || 200);
+  const maxDimPx = 750;
+  const scale = Math.min(1, maxDimPx / Math.max(natW, natH));
+  const procW = Math.max(16, Math.round(natW * scale));
+  const procH = Math.max(16, Math.round(natH * scale));
   const aspect = natH / natW;
   const w = clamp(Number(widthMm) || 70, 5, 800);
   const h = roundMm(Math.max(5, w * aspect), 2);
 
-  // Store clean source data URL (bounded to 750px max so localStorage and .xcs stay fast)
-  const srcDataUrl = processBitmapElementToDataUrl(imgElement, {
+  // Keep the uploaded original; only the editor preview is limited to 750 px.
+  const srcDataUrl = /^data:image\/(png|jpeg|webp);base64,/i.test(imgElement.src || '')
+    ? imgElement.src : processBitmapElementToDataUrl(imgElement, {
     brightness: 0,
     contrast: 0,
+    sharpness: 50,
     filter: 'original',
     invert: false,
     removeWhiteBg: false,
     maskShape: 'rect',
-    maxDimPx: 750
+    maxDimPx: Math.max(natW, natH)
   });
 
   const imageMeta = {
     brightness,
     contrast,
+    sharpness,
     filter,
+    bitmapMode: resolveXcsBitmapMode(filter === 'inherit' ? bitmapMode : filter, 'Jarvis'),
     threshold,
     invert,
     removeWhiteBg,
     maskShape,
-    originWidthPx: natW,
-    originHeightPx: natH
+    originWidthPx: procW,
+    originHeightPx: procH,
+    sourceWidthPx: natW,
+    sourceHeightPx: natH
   };
 
-  const processedDataUrl = processBitmapElementToDataUrl(imgElement, imageMeta);
+  const processedDataUrl = processBitmapElementToDataUrl(imgElement, { ...imageMeta, filter: filter === 'inherit' ? bitmapMode : filter, maxDimPx });
+  // Also generate a clean tone/masked image for xTool Studio .xcs export when a hardware dither mode is used
+  const xcsExportFilter = ['Jarvis', 'Stucki', 'Atkinson', 'Floyd', 'Sierra', 'Bayer'].includes(filter)
+    ? 'grayscale'
+    : filter;
+  const xcsDataUrl = processBitmapElementToDataUrl(imgElement, {
+    ...imageMeta,
+    filter: xcsExportFilter,
+    maxDimPx
+  });
 
   const shape = {
     id: uid('img'),
@@ -444,6 +612,7 @@ export function createBitmapImageShape(imgElement, {
     flipY: false,
     srcDataUrl,
     dataUrl: processedDataUrl || srcDataUrl,
+    xcsDataUrl: xcsDataUrl || processedDataUrl || srcDataUrl,
     imageMeta
   };
   Object.defineProperty(shape, '_cachedImg', { value: imgElement, enumerable: false, writable: true });
@@ -451,26 +620,50 @@ export function createBitmapImageShape(imgElement, {
 }
 
 /**
- * Re-processes a bitmap shape's `dataUrl` when its `imageMeta` settings change.
+ * Re-processes a bitmap shape's `dataUrl` (and `xcsDataUrl`) when its `imageMeta` settings change.
  */
-export function refreshBitmapShapeDataUrl(shape, onDone) {
-  if (!shape || shape.type !== 'image') return;
-  const meta = shape.imageMeta || {};
-  const runWithImg = (img) => {
-    shape.dataUrl = processBitmapElementToDataUrl(img, meta);
-    if (onDone) onDone(shape);
-  };
-  if (shape._cachedImg && shape._cachedImg.complete) {
-    runWithImg(shape._cachedImg);
-    return;
-  }
-  const src = shape.srcDataUrl || shape.dataUrl;
-  if (!src || typeof Image === 'undefined') return;
-  const img = new Image();
-  img.onload = () => {
-    Object.defineProperty(shape, '_cachedImg', { value: img, enumerable: false, writable: true });
-    runWithImg(img);
-  };
-  img.src = src;
+export function bitmapExportSize(shape, dpi = 254) {
+  const sourceW = shape.imageMeta?.sourceWidthPx || shape.imageMeta?.originWidthPx || 750;
+  const sourceH = shape.imageMeta?.sourceHeightPx || shape.imageMeta?.originHeightPx || 750;
+  const targetScale = Math.max(shape.width * dpi / 25.4 / sourceW, shape.height * dpi / 25.4 / sourceH);
+  const scale = Math.min(1, targetScale, 8192 / Math.max(sourceW, sourceH), Math.sqrt(16000000 / (sourceW * sourceH)));
+  return { width: Math.max(1, Math.round(sourceW * scale)), height: Math.max(1, Math.round(sourceH * scale)) };
 }
 
+export async function refreshBitmapShapeDataUrl(shape, onDone, { dpi = 254, bitmapMode = 'Jarvis', forExport = false, svg = false } = {}) {
+  if (!shape || shape.type !== 'image') return;
+  const src = shape.srcDataUrl || shape.dataUrl;
+  if (!src || typeof Image === 'undefined') return;
+  let img = shape._cachedImg;
+  if (!img || !img.complete) {
+    img = new Image();
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = () => reject(new Error('Kunne ikke lese originalbildet.')); img.src = src; });
+    Object.defineProperty(shape, '_cachedImg', { value: img, enumerable: false, writable: true, configurable: true });
+  }
+  // A stale async load must never overwrite newer settings.
+  const meta = shape.imageMeta || (shape.imageMeta = {});
+  meta.sourceWidthPx = img.naturalWidth || img.width;
+  meta.sourceHeightPx = img.naturalHeight || img.height;
+  const filter = meta.filter === 'inherit' ? bitmapMode : (meta.filter || 'grayscale');
+  meta.bitmapMode = resolveXcsBitmapMode(filter, bitmapMode);
+  if (forExport) {
+    const size = bitmapExportSize(shape, dpi);
+    const maxDimPx = Math.max(size.width, size.height);
+    meta.originWidthPx = size.width; meta.originHeightPx = size.height;
+    const hardwareDither = ['Jarvis','Stucki','Atkinson','Floyd','Sierra','Bayer','dither'].includes(filter);
+    shape.xcsDataUrl = processBitmapElementToDataUrl(img, { ...meta, filter: hardwareDither ? 'grayscale' : filter, maxDimPx });
+    if (svg) shape.exportDataUrl = processBitmapElementToDataUrl(img, { ...meta, filter, maxDimPx });
+  } else {
+    shape.dataUrl = processBitmapElementToDataUrl(img, { ...meta, filter, maxDimPx: 750 });
+    delete shape.xcsDataUrl; delete shape.exportDataUrl;
+  }
+  if (onDone) onDone(shape);
+}
+
+export async function prepareBitmapExports(shapes, settings, svg = false) {
+  for (const shape of shapes) {
+    if (shape.hidden || shape.laserMode === 'guide') continue;
+    if (shape.type === 'group') await prepareBitmapExports(shape.children || [], settings, svg);
+    else if (shape.type === 'image') await refreshBitmapShapeDataUrl(shape, null, { dpi: settings.bitmap?.dpi ?? 254, bitmapMode: settings.bitmap?.bitmapMode || 'Jarvis', forExport: true, svg });
+  }
+}

@@ -1,3 +1,4 @@
+const escapeXml = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
 // ============================================================================
 // Bjørnsveen LaserStudio – xTool (.xcs) Project Exporter/Importer,
 // 1:1 Millimeter SVG Exporter (with Embedded Bitmaps) & Material Laser Presets
@@ -10,121 +11,22 @@ import {
   roundMm,
   shapeToWorldSvgPath,
   shapeToWorldPolygons,
+  polygonsToSvgPath,
   computePolygonsBBox,
   createPathShapeFromPolygons,
   parseSvgPathToPolygons
 } from './geometry.js';
+import { resolveXcsBitmapMode } from './icons.js';
 
-const STORAGE_KEY = 'bjornsveen_laserstudio_autosave_v1';
+
 
 // ============================================================================
 // 1. BUILT-IN LASER MATERIAL PRESETS (POWER %, SPEED mm/s, PASSES, DPI/DENSITY)
 // ============================================================================
 
-export const LASER_MATERIAL_PRESETS = {
-  'plywood-3mm': {
-    name: '🌲 3 mm Bjørk Kryssfiner (Standard P3 CO2)',
-    machine: 'xtool-p3',
-    thicknessMm: 3.0,
-    cut: { power: 85, speed: 18, repeat: 1 },
-    score: { power: 18, speed: 160, repeat: 1 },
-    engrave: { power: 30, speed: 350, density: 100, repeat: 1 },
-    bitmap: { power: 32, speed: 300, dpi: 254, bitmapMode: 'grayscale' }
-  },
-  'plywood-4mm': {
-    name: '🌲 4 mm Kryssfiner / Poppel (P3 CO2)',
-    machine: 'xtool-p3',
-    thicknessMm: 4.0,
-    cut: { power: 92, speed: 14, repeat: 1 },
-    score: { power: 18, speed: 160, repeat: 1 },
-    engrave: { power: 32, speed: 350, density: 100, repeat: 1 },
-    bitmap: { power: 34, speed: 300, dpi: 254, bitmapMode: 'grayscale' }
-  },
-  'mdf-3mm': {
-    name: '🟫 3 mm MDF-plate (P3 CO2)',
-    machine: 'xtool-p3',
-    thicknessMm: 3.0,
-    cut: { power: 90, speed: 15, repeat: 1 },
-    score: { power: 20, speed: 150, repeat: 1 },
-    engrave: { power: 35, speed: 320, density: 100, repeat: 1 },
-    bitmap: { power: 35, speed: 280, dpi: 254, bitmapMode: 'jarvis' }
-  },
-  'acrylic-3mm': {
-    name: '💎 3 mm Akryl / Plexiglass (P3 CO2)',
-    machine: 'xtool-p3',
-    thicknessMm: 3.0,
-    cut: { power: 90, speed: 12, repeat: 1 },
-    score: { power: 16, speed: 140, repeat: 1 },
-    engrave: { power: 28, speed: 380, density: 120, repeat: 1 },
-    bitmap: { power: 28, speed: 320, dpi: 300, bitmapMode: 'jarvis' }
-  },
-  'cardboard': {
-    name: '📦 Papp / Kartong – Rask prototype (P3 CO2)',
-    machine: 'xtool-p3',
-    thicknessMm: 2.0,
-    cut: { power: 35, speed: 45, repeat: 1 },
-    score: { power: 12, speed: 180, repeat: 1 },
-    engrave: { power: 18, speed: 400, density: 80, repeat: 1 },
-    bitmap: { power: 20, speed: 350, dpi: 200, bitmapMode: 'jarvis' }
-  },
-  'leather': {
-    name: '👜 Lær / Skinn (P3 CO2 / F2 Ultra)',
-    machine: 'xtool-p3',
-    thicknessMm: 2.0,
-    cut: { power: 55, speed: 25, repeat: 1 },
-    score: { power: 15, speed: 150, repeat: 1 },
-    engrave: { power: 24, speed: 350, density: 100, repeat: 1 },
-    bitmap: { power: 25, speed: 300, dpi: 254, bitmapMode: 'grayscale' }
-  },
-  'slate-uv': {
-    name: '🪨 Skifer / Steinbrikke (F2 Ultra UV / P3)',
-    machine: 'xtool-f2',
-    thicknessMm: 5.0,
-    cut: { power: 90, speed: 10, repeat: 1 },
-    score: { power: 40, speed: 120, repeat: 1 },
-    engrave: { power: 65, speed: 400, density: 140, repeat: 1 },
-    bitmap: { power: 65, speed: 350, dpi: 300, bitmapMode: 'jarvis' }
-  },
-  'alu-uv': {
-    name: '🪪 Anodisert Aluminium / Metallkort (F2 Ultra UV)',
-    machine: 'xtool-f2',
-    thicknessMm: 0.8,
-    cut: { power: 90, speed: 10, repeat: 1 },
-    score: { power: 45, speed: 300, repeat: 1 },
-    engrave: { power: 70, speed: 600, density: 160, repeat: 1 },
-    bitmap: { power: 70, speed: 500, dpi: 400, bitmapMode: 'grayscale' }
-  },
-  'glass-uv': {
-    name: '🥃 Glass / Krystall – Kaldt UV-merke (F2 Ultra UV)',
-    machine: 'xtool-f2',
-    thicknessMm: 3.0,
-    cut: { power: 80, speed: 10, repeat: 1 },
-    score: { power: 55, speed: 200, repeat: 1 },
-    engrave: { power: 75, speed: 350, density: 150, repeat: 1 },
-    bitmap: { power: 75, speed: 300, dpi: 350, bitmapMode: 'jarvis' }
-  },
-  'custom': {
-    name: '⚙️ Egendefinerte laserinnstillinger',
-    machine: 'custom',
-    thicknessMm: 3.0,
-    cut: { power: 85, speed: 18, repeat: 1 },
-    score: { power: 18, speed: 160, repeat: 1 },
-    engrave: { power: 30, speed: 350, density: 100, repeat: 1 },
-    bitmap: { power: 32, speed: 300, dpi: 254, bitmapMode: 'grayscale' }
-  }
-};
-
-export function getDefaultLaserSettings() {
-  const base = LASER_MATERIAL_PRESETS['plywood-3mm'];
-  return JSON.parse(JSON.stringify({
-    presetKey: 'plywood-3mm',
-    thicknessMm: base.thicknessMm,
-    cut: base.cut,
-    score: base.score,
-    engrave: base.engrave,
-    bitmap: base.bitmap
-  }));
-}
+export { LASER_MATERIAL_PRESETS, getDefaultLaserSettings } from './laser-settings.js';
+import { LASER_MATERIAL_PRESETS, getDefaultLaserSettings } from './laser-settings.js';
+export { saveWorkspaceToLocal, loadWorkspaceFromLocal } from './storage.js';
 
 function makeUuidV4() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -190,14 +92,17 @@ export function buildLaserSvgString(shapes, {
   const cutPaths = [];
 
   for (const s of exportable) {
-    const safeName = String(s.name || s.type).replace(/["<>]/g, '');
+    const safeName = escapeXml(s.name || s.type);
 
     if (s.type === 'image' && (s.dataUrl || s.srcDataUrl)) {
-      const href = s.dataUrl || s.srcDataUrl;
+      const href = s.exportDataUrl || s.dataUrl || s.srcDataUrl;
       const rot = Number(s.rotation) || 0;
       const cx = roundMm((Number(s.x) || 0) + (Number(s.width) || 0) / 2, 3);
       const cy = roundMm((Number(s.y) || 0) + (Number(s.height) || 0) / 2, 3);
-      const tf = rot ? ` transform="rotate(${roundMm(rot, 2)} ${cx} ${cy})"` : '';
+      const transforms = [];
+      if (rot) transforms.push(`rotate(${roundMm(rot, 2)} ${cx} ${cy})`);
+      if (s.flipX || s.flipY) transforms.push(`translate(${cx} ${cy}) scale(${s.flipX ? -1 : 1} ${s.flipY ? -1 : 1}) translate(${-cx} ${-cy})`);
+      const tf = transforms.length ? ` transform="${transforms.join(' ')}"` : '';
       bitmapElements.push(
         `    <image id="${s.id}" data-name="${safeName}" x="${roundMm(s.x, 3)}" y="${roundMm(s.y, 3)}" width="${roundMm(s.width, 3)}" height="${roundMm(s.height, 3)}" preserveAspectRatio="none"${tf} href="${href}" xlink:href="${href}" />`
       );
@@ -271,6 +176,7 @@ export function buildLaserSvgString(shapes, {
  */
 export function buildXcsProjectString(shapes, {
   machineKey = 'xtool-p3',
+  targetMachine = null,
   bedWidth = 600,
   bedHeight = 400,
   onlySelected = false,
@@ -279,8 +185,7 @@ export function buildXcsProjectString(shapes, {
 } = {}) {
   const cfg = laserSettings || getDefaultLaserSettings();
   const canvasId = makeUuidV4();
-  const presetMachine = LASER_MATERIAL_PRESETS[cfg.presetKey]?.machine;
-  const isF2 = machineKey === 'xtool-f2' || presetMachine === 'xtool-f2';
+  const isF2 = (targetMachine || (machineKey === 'xtool-f2' ? 'xtool-f2' : 'xtool-p3')) === 'xtool-f2';
 
   // Official xTool Studio extId / deviceCode / mode identifiers (from xTool Studio ext.json & app.asar)
   const extId = isF2 ? 'GS009-CLASS-4' : 'P3';
@@ -303,7 +208,7 @@ export function buildXcsProjectString(shapes, {
 
   let zOrder = 1;
 
-  const buildCutCustomize = (power, speed, repeat) => isF2
+  const buildCutCustomize = (power, speed, repeat, airPump = 100) => isF2
     ? {
         power,
         speed,
@@ -338,12 +243,12 @@ export function buildXcsProjectString(shapes, {
         processHead: 'LASER',
         enableOverCut: false,
         overCutDistance: 0.5,
-        airPump: 100,
+        airPump,
         powerCutoff: 'FOLLOW_ACTUALLY_POWER',
         powerCutoffValue: 20
       };
 
-  const buildScoreCustomize = (power, speed, repeat) => isF2
+  const buildScoreCustomize = (power, speed, repeat, airPump = 25) => isF2
     ? {
         power,
         speed,
@@ -364,10 +269,10 @@ export function buildXcsProjectString(shapes, {
         kerfDistance: 0,
         laser: 'LASER',
         processHead: 'LASER',
-        airPump: 25
+        airPump
       };
 
-  const buildEngraveCustomize = (power, speed, repeat, density) => isF2
+  const buildEngraveCustomize = (power, speed, repeat, density, bitmapScanMode = 'zMode', airPump = 25) => isF2
     ? {
         bitmapEngraveMode: 'normal',
         power,
@@ -378,7 +283,7 @@ export function buildXcsProjectString(shapes, {
         dotDuration: 100,
         defocus: false,
         defocus_distance: 1,
-        bitmapScanMode: 'zMode',
+        bitmapScanMode,
         frequency: 40,
         scanAngle: 0,
         crossAngle: false,
@@ -395,38 +300,56 @@ export function buildXcsProjectString(shapes, {
         defocus: false,
         defocus_distance: 8,
         laser: 'LASER',
-        bitmapScanMode: 'zMode',
+        bitmapScanMode,
         processHead: 'LASER',
-        airPump: 25,
+        airPump,
         enableKerf: false,
         kerfDistance: 0
       };
 
-  const buildBitmapCustomize = (power, speed, dpi, bitmapMode) => isF2
-    ? {
-        power,
-        powerMinMaxRange: [1, power],
-        speed,
-        repeat: 1,
-        bitmapMode: bitmapMode || 'grayscale',
-        dpi,
-        bitmapScanMode: 'zMode',
-        bitmapEngraveMode: 'dot',
-        dotDuration: 200,
-        frequency: 40
-      }
-    : {
-        power,
-        speed,
-        repeat: 1,
-        bitmapMode: bitmapMode === 'jarvis' ? 'Jarvis' : (bitmapMode || 'grayscale'),
-        density: dpi,
-        dpi,
-        laser: 'LASER',
-        bitmapScanMode: 'zMode',
-        processHead: 'LASER',
-        airPump: 25
-      };
+  const buildBitmapCustomize = ({
+    power,
+    speed,
+    dpi,
+    repeat = 1,
+    bitmapMode = 'Jarvis',
+    bitmapScanMode = 'zMode',
+    airPump = 25,
+    dotDuration = 200,
+    frequency = 40,
+    bitmapEngraveMode = 'dot'
+  }) => {
+    const exactMode = resolveXcsBitmapMode(bitmapMode, 'Jarvis');
+    // In xTool P3, `density` is Lines Per Centimeter (LPC, 1..300), where 100 LPC = 254 DPI (1 inch = 2.54 cm)
+    const densityLpc = clamp(Math.round(dpi / 2.54), 1, 300);
+
+    return isF2
+      ? {
+          power,
+          powerMinMaxRange: [1, power],
+          speed,
+          repeat,
+          bitmapMode: exactMode,
+          dpi,
+          density: densityLpc,
+          bitmapScanMode,
+          bitmapEngraveMode,
+          dotDuration,
+          frequency
+        }
+      : {
+          power,
+          speed,
+          repeat,
+          bitmapMode: exactMode,
+          density: densityLpc,
+          dpi,
+          laser: 'LASER',
+          bitmapScanMode,
+          processHead: 'LASER',
+          airPump
+        };
+  };
 
   const convertShapeToDisplay = (s, groupTag = null) => {
     if (!s || s.hidden || s.laserMode === 'guide') return null;
@@ -456,8 +379,9 @@ export function buildXcsProjectString(shapes, {
 
     // 1. BITMAP IMAGE ELEMENT
     if (s.type === 'image' && (s.dataUrl || s.srcDataUrl)) {
-      const base64 = s.dataUrl || s.srcDataUrl;
       const meta = s.imageMeta || {};
+      // Use xcsDataUrl (masked/contrasted grayscale without double-dithering) when a hardware dither mode is active
+      const base64 = s.xcsDataUrl || s.dataUrl || s.srcDataUrl;
       const x = roundMm(Number(s.x) || 0, 3);
       const y = roundMm(Number(s.y) || 0, 3);
       const w = roundMm(Math.max(1, Number(s.width) || 50), 3);
@@ -466,18 +390,43 @@ export function buildXcsProjectString(shapes, {
 
       const bmpPower = clamp(Number(cfg.bitmap?.power) || 32, 1, 100);
       const bmpSpeed = clamp(Number(cfg.bitmap?.speed) || 300, 1, 2000);
-      const bmpDpi = clamp(Number(cfg.bitmap?.dpi) || 254, 50, 1000);
-      const bmpMode = meta.filter === 'dither' ? 'jarvis' : (cfg.bitmap?.bitmapMode || 'grayscale');
+      const bmpDpi = clamp(Number(cfg.bitmap?.dpi) || 254, 50, 2000);
+      const bmpRepeat = clamp(Number(cfg.bitmap?.repeat) || 1, 1, 10);
+      const bmpScanMode = cfg.bitmap?.bitmapScanMode === 'oneWay' ? 'oneWay' : 'zMode';
+      const bmpAirPump = clamp(Number(cfg.bitmap?.airPump) || 25, 10, 100);
+      const bmpDotDuration = clamp(Number(cfg.bitmap?.dotDuration) || 200, 50, 3000);
+      const bmpFrequency = clamp(Number(cfg.bitmap?.frequency) || 40, 40, 150);
+
+      // Per-image filter overrides global bitmapMode if user picked a specific dithering/grayscale mode on the photo
+      const rawImgMode = (meta.filter && meta.filter !== 'original' && meta.filter !== 'inherit')
+        ? meta.filter
+        : (cfg.bitmap?.bitmapMode || meta.bitmapMode || 'Jarvis');
+      const bmpMode = resolveXcsBitmapMode(rawImgMode, resolveXcsBitmapMode(cfg.bitmap?.bitmapMode, 'Jarvis'));
 
       const bitmapDataBlock = {
         BITMAP_ENGRAVING: {
           materialType: 'customize',
           planType: 'official',
           parameter: {
-            customize: buildBitmapCustomize(bmpPower, bmpSpeed, bmpDpi, bmpMode)
+            customize: buildBitmapCustomize({
+              power: bmpPower,
+              speed: bmpSpeed,
+              dpi: bmpDpi,
+              repeat: bmpRepeat,
+              bitmapMode: bmpMode,
+              bitmapScanMode: bmpScanMode,
+              airPump: bmpAirPump,
+              dotDuration: bmpDotDuration,
+              frequency: bmpFrequency
+            })
           }
         }
       };
+
+      const originW = Math.max(16, Number(meta.originWidthPx) || Math.round(w * 10));
+      const originH = Math.max(16, Number(meta.originHeightPx) || Math.round(h * 10));
+      const sx = Number((w / originW).toFixed(6));
+      const sy = Number((h / originH).toFixed(6));
 
       const dispObj = {
         id: dispId,
@@ -488,8 +437,12 @@ export function buildXcsProjectString(shapes, {
         width: w,
         height: h,
         angle,
-        scaleX: 1,
-        scaleY: 1,
+        scale: { x: sx, y: sy },
+        skew: { x: 0, y: 0 },
+        localSkew: { x: 0, y: 0 },
+        pivot: { x: 0, y: 0 },
+        scaleX: sx,
+        scaleY: sy,
         skewX: 0,
         skewY: 0,
         pivotX: 0,
@@ -498,21 +451,34 @@ export function buildXcsProjectString(shapes, {
         offsetY: y,
         lockRatio: true,
         isClose: true,
-        isFill: false,
+        isClosePath: true,
+        isFill: true,
         layerTag: layerColors.engrave,
         layerColor: layerColors.engrave,
         visible: true,
+        visibleState: true,
+        enableTransform: true,
+        lockState: false,
         zOrder: zOrder++,
         groupTag: groupTag || '',
         groupTags: groupTag ? [groupTag] : [],
         base64,
-        originWidth: meta.originWidthPx || Math.round(w * 10),
-        originHeight: meta.originHeightPx || Math.round(h * 10),
-        filter: meta.filter === 'dither' ? 'jarvis' : (meta.filter || 'grayscale'),
-        brightness: Number(meta.brightness) || 0,
-        contrast: Number(meta.contrast) || 0,
+        originWidth: originW,
+        originHeight: originH,
+        originSize: { width: originW, height: originH },
+        filterList: [],
+        grayValue: [0, 255],
         sharpness: 50,
-        invert: Boolean(meta.invert),
+        brightness: 0,
+        contrast: 0,
+        saturation: 0,
+        temperature: 0,
+        tone: 0,
+        colorInverted: false,
+        colorInvertedFillTransparent: false,
+        colorInvertedTransparentColor: 'black',
+        isGray: true,
+        opacity: 1,
         processingType: 'BITMAP_ENGRAVING',
         processIgnore: false,
         data: bitmapDataBlock,
@@ -522,7 +488,7 @@ export function buildXcsProjectString(shapes, {
 
       deviceDisplaysMap[dispId] = {
         type: 'BITMAP',
-        isFill: false,
+        isFill: true,
         isWhiteModel: true,
         processingType: 'BITMAP_ENGRAVING',
         processIgnore: false,
@@ -535,7 +501,17 @@ export function buildXcsProjectString(shapes, {
     const loops = shapeToWorldPolygons(s, 0.15);
     if (!loops || loops.length === 0) return null;
     const bbox = computePolygonsBBox(loops);
-    const dPath = shapeToWorldSvgPath(s);
+
+    // Localize dPath relative to (bbox.x, bbox.y) because xTool Studio translates PATH displays by (dispObj.x, dispObj.y)!
+    const localLoops = loops.map(loop => {
+      const shifted = loop.map(pt => ({
+        x: pt.x - bbox.x,
+        y: pt.y - bbox.y
+      }));
+      shifted.closed = loop.closed !== false;
+      return shifted;
+    });
+    const dPath = polygonsToSvgPath(localLoops, 3);
     if (!dPath) return null;
 
     const mode = s.laserMode || 'cut';
@@ -548,36 +524,40 @@ export function buildXcsProjectString(shapes, {
     const cutPower = clamp(Number(cfg.cut?.power) || 85, 1, 100);
     const cutSpeed = clamp(Number(cfg.cut?.speed) || 18, 1, 2000);
     const cutRepeat = clamp(Number(cfg.cut?.repeat) || 1, 1, 10);
+    const cutAirPump = clamp(Number(cfg.cut?.airPump) || 100, 10, 100);
 
     const scorePower = clamp(Number(cfg.score?.power) || 18, 1, 100);
     const scoreSpeed = clamp(Number(cfg.score?.speed) || 160, 1, 2000);
     const scoreRepeat = clamp(Number(cfg.score?.repeat) || 1, 1, 10);
+    const scoreAirPump = clamp(Number(cfg.score?.airPump) || 25, 10, 100);
 
     const engPower = clamp(Number(cfg.engrave?.power) || 30, 1, 100);
     const engSpeed = clamp(Number(cfg.engrave?.speed) || 350, 1, 2000);
     const engRepeat = clamp(Number(cfg.engrave?.repeat) || 1, 1, 10);
     const engDensity = clamp(Number(cfg.engrave?.density) || 100, 20, 400);
+    const engScanMode = cfg.engrave?.bitmapScanMode === 'oneWay' ? 'oneWay' : 'zMode';
+    const engAirPump = clamp(Number(cfg.engrave?.airPump) || 25, 10, 100);
 
     const vectorDataBlock = {
       VECTOR_CUTTING: {
         materialType: 'customize',
         planType: 'official',
         parameter: {
-          customize: buildCutCustomize(cutPower, cutSpeed, cutRepeat)
+          customize: buildCutCustomize(cutPower, cutSpeed, cutRepeat, cutAirPump)
         }
       },
       VECTOR_ENGRAVING: {
         materialType: 'customize',
         planType: 'official',
         parameter: {
-          customize: buildScoreCustomize(scorePower, scoreSpeed, scoreRepeat)
+          customize: buildScoreCustomize(scorePower, scoreSpeed, scoreRepeat, scoreAirPump)
         }
       },
       FILL_VECTOR_ENGRAVING: {
         materialType: 'customize',
         planType: 'official',
         parameter: {
-          customize: buildEngraveCustomize(engPower, engSpeed, engRepeat, engDensity)
+          customize: buildEngraveCustomize(engPower, engSpeed, engRepeat, engDensity, engScanMode, engAirPump)
         }
       }
     };
@@ -591,6 +571,10 @@ export function buildXcsProjectString(shapes, {
       width: roundMm(Math.max(0.1, bbox.width), 3),
       height: roundMm(Math.max(0.1, bbox.height), 3),
       angle: 0,
+      scale: { x: 1, y: 1 },
+      skew: { x: 0, y: 0 },
+      localSkew: { x: 0, y: 0 },
+      pivot: { x: 0, y: 0 },
       scaleX: 1,
       scaleY: 1,
       skewX: 0,
@@ -599,15 +583,22 @@ export function buildXcsProjectString(shapes, {
       pivotY: 0,
       offsetX: roundMm(bbox.x, 3),
       offsetY: roundMm(bbox.y, 3),
+      graphicX: roundMm(bbox.x, 3),
+      graphicY: roundMm(bbox.y, 3),
       lockRatio: true,
       isClose: loops[0]?.closed !== false,
+      isClosePath: loops[0]?.closed !== false,
       isFill,
+      fillRule: 'evenodd',
       lineColor: layerColor,
       strokeColor: layerColor,
       fillColor: isFill ? layerColor : '#000000',
       layerTag: layerColor,
       layerColor,
       visible: true,
+      visibleState: true,
+      enableTransform: true,
+      lockState: false,
       zOrder: zOrder++,
       groupTag: groupTag || '',
       groupTags: groupTag ? [groupTag] : [],
@@ -741,6 +732,7 @@ export function buildXcsProjectString(shapes, {
       version: 2,
       app: 'Bjørnsveen LaserStudio',
       machineKey,
+      targetMachine: isF2 ? 'xtool-f2' : 'xtool-p3',
       bedWidth,
       bedHeight,
       laserSettings: cfg,
@@ -748,7 +740,7 @@ export function buildXcsProjectString(shapes, {
     }
   };
 
-  return JSON.stringify(xcsProject, null, 2);
+  return JSON.stringify(xcsProject, (key, value) => key.startsWith('_cached') || key === 'exportDataUrl' || key === 'xcsDataUrl' ? undefined : value, 2);
 }
 
 /**
@@ -764,6 +756,7 @@ export function importXcsStringToWorkspace(rawText) {
       return {
         shapes: data.bjornsveenProject.shapes,
         machineKey: data.bjornsveenProject.machineKey,
+        targetMachine: data.bjornsveenProject.targetMachine || (data.bjornsveenProject.machineKey === 'xtool-f2' ? 'xtool-f2' : 'xtool-p3'),
         bedWidth: data.bjornsveenProject.bedWidth,
         bedHeight: data.bjornsveenProject.bedHeight,
         laserSettings: data.bjornsveenProject.laserSettings || null
@@ -776,16 +769,21 @@ export function importXcsStringToWorkspace(rawText) {
       return null;
     }
 
-    // Build device display processingType lookup if present
+    // Build device display processingType & parameter lookup if present
     const procTypeById = new Map();
+    const procDataById = new Map();
     const devValue = data.device?.data?.value;
     if (Array.isArray(devValue) && devValue[0]?.[1]?.displays?.value) {
       for (const [did, dinfo] of devValue[0][1].displays.value) {
-        if (dinfo && dinfo.processingType) {
-          procTypeById.set(did, dinfo.processingType);
+        if (dinfo) {
+          if (dinfo.processingType) procTypeById.set(did, dinfo.processingType);
+          if (dinfo.data) procDataById.set(did, dinfo.data);
         }
       }
     }
+
+    const importedSettings = getDefaultLaserSettings();
+    let foundAnyParam = false;
 
     const shapes = [];
     for (const disp of firstCanvas.displays) {
@@ -795,10 +793,38 @@ export function importXcsStringToWorkspace(rawText) {
         continue;
       }
 
-      const pType = procTypeById.get(disp.id) || '';
+      const pType = disp.processingType || procTypeById.get(disp.id) || '';
+      const pData = disp.data || procDataById.get(disp.id) || {};
       const lColor = String(disp.layerColor || disp.strokeColor || '').toLowerCase();
 
+      // Extract parameters if present in xTool Studio display data
+      const cust = pData?.[pType]?.parameter?.customize;
+      if (cust) {
+        foundAnyParam = true;
+        if (pType === 'VECTOR_CUTTING') {
+          importedSettings.cut.power = Number(cust.power) || importedSettings.cut.power;
+          importedSettings.cut.speed = Number(cust.speed) || importedSettings.cut.speed;
+          importedSettings.cut.repeat = Number(cust.repeat) || importedSettings.cut.repeat;
+        } else if (pType === 'VECTOR_ENGRAVING') {
+          importedSettings.score.power = Number(cust.power) || importedSettings.score.power;
+          importedSettings.score.speed = Number(cust.speed) || importedSettings.score.speed;
+          importedSettings.score.repeat = Number(cust.repeat) || importedSettings.score.repeat;
+        } else if (pType === 'FILL_VECTOR_ENGRAVING') {
+          importedSettings.engrave.power = Number(cust.power) || importedSettings.engrave.power;
+          importedSettings.engrave.speed = Number(cust.speed) || importedSettings.engrave.speed;
+          importedSettings.engrave.density = Number(cust.density) || importedSettings.engrave.density;
+          importedSettings.engrave.repeat = Number(cust.repeat) || importedSettings.engrave.repeat;
+        } else if (pType === 'BITMAP_ENGRAVING') {
+          importedSettings.bitmap.power = Number(cust.power) || importedSettings.bitmap.power;
+          importedSettings.bitmap.speed = Number(cust.speed) || importedSettings.bitmap.speed;
+          importedSettings.bitmap.dpi = Number(cust.dpi) || (cust.density ? Math.round(Number(cust.density) * 2.54) : importedSettings.bitmap.dpi);
+          if (cust.bitmapMode) importedSettings.bitmap.bitmapMode = resolveXcsBitmapMode(cust.bitmapMode, 'Jarvis');
+        }
+      }
+
       if (disp.type === 'BITMAP' && disp.base64) {
+        const bmpCust = pData?.BITMAP_ENGRAVING?.parameter?.customize || {};
+        const bmpMode = resolveXcsBitmapMode(bmpCust.bitmapMode || disp.filter || 'Jarvis', 'Jarvis');
         shapes.push({
           id: uid('img'),
           type: 'image',
@@ -811,14 +837,19 @@ export function importXcsStringToWorkspace(rawText) {
           rotation: roundMm(Number(disp.angle) || 0, 1),
           srcDataUrl: disp.base64,
           dataUrl: disp.base64,
+          xcsDataUrl: disp.base64,
           imageMeta: {
             brightness: Number(disp.brightness) || 0,
             contrast: Number(disp.contrast) || 0,
-            filter: disp.filter === 'jarvis' ? 'dither' : 'grayscale',
+            sharpness: Number(disp.sharpness ?? 50),
+            filter: bmpMode,
+            bitmapMode: bmpMode,
             threshold: 135,
-            invert: Boolean(disp.invert),
+            invert: Boolean(disp.colorInverted || disp.invert),
             removeWhiteBg: false,
-            maskShape: 'rect'
+            maskShape: 'rect',
+            originWidthPx: Number(disp.originWidth) || 300,
+            originHeightPx: Number(disp.originHeight) || 300
           }
         });
       } else if (disp.dPath) {
@@ -827,7 +858,7 @@ export function importXcsStringToWorkspace(rawText) {
           let laserMode = 'cut';
           if (pType === 'FILL_VECTOR_ENGRAVING' || disp.isFill) {
             laserMode = 'engrave';
-          } else if (pType === 'VECTOR_ENGRAVING' || lColor.includes('0000ff') || lColor.includes('00befe')) {
+          } else if (pType === 'VECTOR_ENGRAVING' || lColor.includes('0000ff') || lColor.includes('00befe') || lColor.includes('2366ff')) {
             laserMode = 'score';
           }
           const sh = createPathShapeFromPolygons(loops, laserMode, disp.name || 'XCS Vektor');
@@ -843,10 +874,12 @@ export function importXcsStringToWorkspace(rawText) {
       }
     }
 
+    if (foundAnyParam) importedSettings.presetKey = 'custom';
+
     return {
       shapes,
-      machineKey: String(data.extName || '').includes('F2') ? 'xtool-f2' : undefined,
-      laserSettings: null
+      targetMachine: (String(data.extName || '').includes('F2') || String(data.extId || '').includes('GS009')) ? 'xtool-f2' : 'xtool-p3',
+      laserSettings: foundAnyParam ? importedSettings : null
     };
   } catch (err) {
     return null;
@@ -872,190 +905,4 @@ export function downloadTextFile(content, filename, mimeType = 'image/svg+xml;ch
 // 4. EXTERNAL SVG IMPORTER (SUPPORTS BOTH VECTOR PATHS & EMBEDDED <image>)
 // ============================================================================
 
-export function importSvgStringToShapes(svgText) {
-  const parser = new DOMParser();
-  const doc = parser.parseFromString(svgText, 'image/svg+xml');
-  const svgEl = doc.querySelector('svg');
-  if (!svgEl) return [];
-
-  let scale = 1.0;
-  const widthAttr = svgEl.getAttribute('width') || '';
-  const viewBoxAttr = svgEl.getAttribute('viewBox') || '';
-  if (widthAttr.endsWith('mm') && viewBoxAttr) {
-    const wMm = parseFloat(widthAttr);
-    const vbParts = viewBoxAttr.trim().split(/[\s,]+/).map(Number);
-    if (wMm > 0 && vbParts.length === 4 && vbParts[2] > 0) {
-      scale = wMm / vbParts[2];
-    }
-  } else if (widthAttr.endsWith('px') || (!widthAttr.endsWith('mm') && !widthAttr.endsWith('cm'))) {
-    const vbParts = viewBoxAttr.trim().split(/[\s,]+/).map(Number);
-    if (vbParts.length === 4 && vbParts[2] > 700) {
-      scale = 25.4 / 96;
-    }
-  }
-
-  const importedShapes = [];
-  const elements = svgEl.querySelectorAll('path, rect, circle, ellipse, polygon, polyline, line, image');
-
-  elements.forEach((el, idx) => {
-    if (el.closest('defs') || el.closest('pattern') || el.closest('clipPath')) return;
-
-    const tag = el.tagName.toLowerCase();
-    if (tag === 'image') {
-      const href = el.getAttribute('href') || el.getAttribute('xlink:href') || '';
-      if (href.startsWith('data:image/')) {
-        const x = (parseFloat(el.getAttribute('x')) || 20) * scale;
-        const y = (parseFloat(el.getAttribute('y')) || 20) * scale;
-        const w = Math.max(5, (parseFloat(el.getAttribute('width')) || 60) * scale);
-        const h = Math.max(5, (parseFloat(el.getAttribute('height')) || 60) * scale);
-        importedShapes.push({
-          id: uid('img'),
-          type: 'image',
-          name: el.getAttribute('data-name') || el.getAttribute('id') || `Bitmap #${idx + 1}`,
-          laserMode: 'engrave',
-          x: roundMm(x, 2),
-          y: roundMm(y, 2),
-          width: roundMm(w, 2),
-          height: roundMm(h, 2),
-          rotation: 0,
-          srcDataUrl: href,
-          dataUrl: href,
-          imageMeta: {
-            brightness: 0,
-            contrast: 0,
-            filter: 'grayscale',
-            threshold: 135,
-            invert: false,
-            removeWhiteBg: false,
-            maskShape: 'rect'
-          }
-        });
-      }
-      return;
-    }
-
-    const stroke = (el.getAttribute('stroke') || el.style?.stroke || '').toLowerCase();
-    const fill = (el.getAttribute('fill') || el.style?.fill || '').toLowerCase();
-
-    let laserMode = 'cut';
-    if (stroke.includes('0000ff') || stroke === 'blue' || stroke.includes('3b82f6')) {
-      laserMode = 'score';
-    } else if (fill && fill !== 'none' && fill !== 'transparent' && (!stroke || stroke === 'none')) {
-      laserMode = 'engrave';
-    }
-
-    let loops = [];
-
-    if (tag === 'path') {
-      const d = el.getAttribute('d');
-      if (d) loops = parseSvgPathToPolygons(d, 0.25);
-    } else if (tag === 'rect') {
-      const x = parseFloat(el.getAttribute('x')) || 0;
-      const y = parseFloat(el.getAttribute('y')) || 0;
-      const w = parseFloat(el.getAttribute('width')) || 0;
-      const h = parseFloat(el.getAttribute('height')) || 0;
-      if (w > 0 && h > 0) {
-        const l = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }];
-        l.closed = true;
-        loops = [l];
-      }
-    } else if (tag === 'circle' || tag === 'ellipse') {
-      const cx = parseFloat(el.getAttribute('cx')) || 0;
-      const cy = parseFloat(el.getAttribute('cy')) || 0;
-      const rx = tag === 'circle' ? (parseFloat(el.getAttribute('r')) || 0) : (parseFloat(el.getAttribute('rx')) || 0);
-      const ry = tag === 'circle' ? rx : (parseFloat(el.getAttribute('ry')) || 0);
-      if (rx > 0 && ry > 0) {
-        const l = [];
-        for (let i = 0; i < 48; i++) {
-          const a = (i / 48) * Math.PI * 2;
-          l.push({ x: cx + Math.cos(a) * rx, y: cy + Math.sin(a) * ry });
-        }
-        l.closed = true;
-        loops = [l];
-      }
-    } else if (tag === 'polygon' || tag === 'polyline') {
-      const ptsAttr = (el.getAttribute('points') || '').trim();
-      const nums = ptsAttr.split(/[\s,]+/).map(Number);
-      const l = [];
-      for (let i = 0; i + 1 < nums.length; i += 2) {
-        if (!isNaN(nums[i]) && !isNaN(nums[i + 1])) {
-          l.push({ x: nums[i], y: nums[i + 1] });
-        }
-      }
-      if (l.length >= 2) {
-        l.closed = tag === 'polygon';
-        loops = [l];
-      }
-    } else if (tag === 'line') {
-      const x1 = parseFloat(el.getAttribute('x1')) || 0;
-      const y1 = parseFloat(el.getAttribute('y1')) || 0;
-      const x2 = parseFloat(el.getAttribute('x2')) || 0;
-      const y2 = parseFloat(el.getAttribute('y2')) || 0;
-      const l = [{ x: x1, y: y1 }, { x: x2, y: y2 }];
-      l.closed = false;
-      loops = [l];
-    }
-
-    if (loops.length > 0) {
-      const scaled = loops.map(l => {
-        const out = l.map(pt => ({ x: pt.x * scale, y: pt.y * scale }));
-        out.closed = l.closed !== false;
-        return out;
-      });
-      const name = el.getAttribute('data-name') || el.getAttribute('id') || `Importert ${tag} #${idx + 1}`;
-      importedShapes.push(createPathShapeFromPolygons(scaled, laserMode, name));
-    }
-  });
-
-  if (importedShapes.length > 0) {
-    const allLoops = [];
-    for (const s of importedShapes) allLoops.push(...shapeToWorldPolygons(s, 0.3));
-    const bbox = computePolygonsBBox(allLoops);
-    if (bbox.x < 0 || bbox.y < 0 || bbox.x > 400 || bbox.y > 300) {
-      const dx = 20 - bbox.x;
-      const dy = 20 - bbox.y;
-      for (const s of importedShapes) {
-        s.x = roundMm(s.x + dx, 2);
-        s.y = roundMm(s.y + dy, 2);
-      }
-    }
-  }
-
-  return importedShapes;
-}
-
-// ============================================================================
-// 5. LOCAL STORAGE AUTO-SAVE & PROJECT JSON
-// ============================================================================
-
-export function saveWorkspaceToLocal(state) {
-  try {
-    const payload = {
-      version: 2,
-      savedAt: new Date().toISOString(),
-      machineKey: state.machineKey,
-      bedWidth: state.bedWidth,
-      bedHeight: state.bedHeight,
-      snapMm: state.snapMm,
-      laserSettings: state.laserSettings || getDefaultLaserSettings(),
-      shapes: state.shapes
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  } catch (e) {
-    // Ignore quota errors
-  }
-}
-
-export function loadWorkspaceFromLocal() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (data && Array.isArray(data.shapes)) {
-      return data;
-    }
-  } catch (e) {
-    return null;
-  }
-  return null;
-}
+export { importSvgStringToShapes } from './svg-import.js';
