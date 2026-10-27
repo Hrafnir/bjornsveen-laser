@@ -1,3 +1,4 @@
+import { openDrawingWorkshop } from './drawing-ui.js';
 import { renderPuzzleWorkshop } from './puzzle-ui.js';
 import { canEngraveBetweenContours, createBetweenEngraving } from './compound-fill.js';
 import { initLayout, revealInspectorControl, updateArrangeSelection } from './ui-layout.js';
@@ -106,6 +107,7 @@ const state = {
   activeTool: 'select',
   activeLaserMode: 'cut', // 'cut' | 'score' | 'engrave' | 'guide'
   shapes: [],
+  workDrawing: null,
   selectedIds: new Set(),
 
   // Viewport transform (viewBox in mm)
@@ -175,6 +177,7 @@ async function initApp() {
     state.objectSnap = saved.objectSnap !== false;
     document.getElementById('object-snap-toggle').checked = state.objectSnap;
     state.shapes = saved.shapes;
+    state.workDrawing = saved.workDrawing || null;
     if (saved.laserSettings) {
       state.laserSettings = { ...getDefaultLaserSettings(), ...saved.laserSettings };
     }
@@ -254,8 +257,8 @@ async function initApp() {
 // UNDO / REDO & STATE SNAPSHOTS
 // ============================================================================
 
-function pushUndoSnapshot() {
-  const snapshot = JSON.stringify(state.shapes);
+function pushUndoSnapshot(includeDrawing = false) {
+  const snapshot = JSON.stringify(includeDrawing === true ? {shapes:state.shapes,workDrawing:state.workDrawing} : state.shapes);
   if (state.undoStack.length > 0 && state.undoStack[state.undoStack.length - 1] === snapshot) {
     return;
   }
@@ -278,9 +281,10 @@ function undo() {
     updateUndoRedoButtons(); renderOverlay(); return;
   }
   if (state.undoStack.length === 0) return;
-  state.redoStack.push(JSON.stringify(state.shapes));
-  const prev = state.undoStack.pop();
-  state.shapes = JSON.parse(prev);
+  const prev = JSON.parse(state.undoStack.pop());
+  state.redoStack.push(JSON.stringify(Array.isArray(prev) ? state.shapes : {shapes:state.shapes,workDrawing:state.workDrawing}));
+  state.shapes = Array.isArray(prev) ? prev : prev.shapes;
+  if(!Array.isArray(prev))state.workDrawing=prev.workDrawing||null;
   state.selectedIds.clear();
   updateUndoRedoButtons();
   saveWorkspaceToLocal(state);
@@ -292,9 +296,10 @@ function redo() {
   if (state.lineDraft || state.penPoints.length) return;
   clearPathPick();
   if (state.redoStack.length === 0) return;
-  state.undoStack.push(JSON.stringify(state.shapes));
-  const next = state.redoStack.pop();
-  state.shapes = JSON.parse(next);
+  const next = JSON.parse(state.redoStack.pop());
+  state.undoStack.push(JSON.stringify(Array.isArray(next) ? state.shapes : {shapes:state.shapes,workDrawing:state.workDrawing}));
+  state.shapes = Array.isArray(next) ? next : next.shapes;
+  if(!Array.isArray(next))state.workDrawing=next.workDrawing||null;
   state.selectedIds.clear();
   updateUndoRedoButtons();
   saveWorkspaceToLocal(state);
@@ -2893,8 +2898,9 @@ function bindHeaderEvents() {
           const text = String(reader.result);
           const xcsImported = importXcsStringToWorkspace(text);
           if (xcsImported && Array.isArray(xcsImported.shapes)) {
-            pushUndoSnapshot();
+            pushUndoSnapshot(true);
             state.shapes = xcsImported.shapes;
+            state.workDrawing = xcsImported.workDrawing || null;
             state.selectedIds.clear();
             state.editingGroupId = null;
             if (xcsImported.targetMachine) state.targetMachine = xcsImported.targetMachine;
@@ -2919,8 +2925,9 @@ function bindHeaderEvents() {
           }
           const data = JSON.parse(text);
           if (Array.isArray(data.shapes)) {
-            pushUndoSnapshot();
+            pushUndoSnapshot(true);
             state.shapes = data.shapes;
+            state.workDrawing = data.workDrawing || null;
             if (data.bedWidth) state.bedWidth = data.bedWidth;
             if (data.bedHeight) state.bedHeight = data.bedHeight;
             if (data.laserSettings) {
@@ -2977,6 +2984,15 @@ function bindHeaderEvents() {
     fileInput.value = '';
   });
 
+  document.getElementById('btn-work-drawing').addEventListener('click', () => {
+    if (!finishDrawing()) return;
+    openDrawingWorkshop({ shapes: state.shapes, document: state.workDrawing, settings: state.laserSettings,
+      materialName: LASER_MATERIAL_PRESETS[state.laserSettings.presetKey]?.name || 'Egendefinert materiale',
+      onChange: drawing => { state.workDrawing = drawing; saveWorkspaceToLocal(state); },
+      onSaveProject: () => document.getElementById('btn-save-project').click()
+    });
+  });
+
   // Save Project (.xcs directly!)
   document.getElementById('btn-save-project').addEventListener('click', async () => {
     try { await prepareBitmapExports(state.shapes, state.laserSettings); }
@@ -2986,7 +3002,8 @@ function bindHeaderEvents() {
       targetMachine: state.targetMachine,
       bedWidth: state.bedWidth,
       bedHeight: state.bedHeight,
-      laserSettings: state.laserSettings
+      laserSettings: state.laserSettings,
+      workDrawing: state.workDrawing
     });
     downloadTextFile(xcsContent, 'bjornsveen-prosjekt.xcs', 'application/json;charset=utf-8');
     showToast('💾 Lagret .XCS prosjektfil (kan åpnes i både xTool Creative Space og her!)');
@@ -5242,7 +5259,8 @@ function openExportModal(preferredFormat = 'xcs') {
       bedHeight: state.bedHeight,
       onlySelected: mode === 'selected',
       selectedIds: state.selectedIds,
-      laserSettings: state.laserSettings
+      laserSettings: state.laserSettings,
+      workDrawing: state.workDrawing
     });
     downloadTextFile(xcsContent, filename, 'application/json;charset=utf-8');
     modal.classList.remove('open');

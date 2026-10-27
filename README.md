@@ -220,3 +220,19 @@ Boks- og flexverkstedet bruker **1 mm deleavstand** som standard. Avstanden mål
 **Sparebøsse med løst lokk** har myntspor gjennom lokk og sentreringsplate. **Serviettboks** har avtakbart lokk med en større avrundet uttrekksåpning. **Kabelboks med lokk** har to kabelåpninger i kortsidene. Alle bruker de samme justerbare boks-, material- og skjøtemålene som de øvrige modellene. Flexverkstedet har i tillegg **Avrundet boks med fast topp**, med fingerskjøter i både bunn og topp. Nye flexvegger har tapper utenfor veggflaten; oppgitt delhøyde inkluderer tappene.
 
 Materialprofilen **3 mm MDF-plate (P3 CO2)** bruker nå **75 % effekt og 30 mm/s**, én passering. Velg materialprofilen på nytt for å bruke verdiene i et eksisterende prosjekt; lagrede, egendefinerte innstillinger overskrives ikke automatisk.
+
+### Arbeidstegninger og prosjektdokumentasjon
+
+Åpne **Tegning** i topplinjen. Verktøyet virker på alle synlige deler på arbeidsflaten, også egne figurer, bilder og grupper. Hjelpelinjer og generatorenes delnavn tas ikke med som materialdeler. Tegningen lagres automatisk og følger med i prosjektets `.xcs`-fil når du bruker **Lagre prosjekt**.
+
+- **Delplassering** er en egen flat måltegning. Dra delene eller skriv X/Y og rotasjon. **Spre delene for målsetting** lager rom mellom delene. Originalens kutteoppsett beholdes.
+- **Materialvisning** har egne X/Y-posisjoner og rotasjon, slik at sammenstillingen ikke roter til den flate måltegningen. Sett deler liggende (XY) eller stående (XZ/YZ), og bruk Z til å løfte eller stable dem. Delene har valgt materialtykkelse; enkeltdeler kan overstyre den. Materialnavn, tykkelse og utseende hentes fra laserprofilen ved opprettelse og kan endres i tegningen.
+- **Målsett**: klikk to punkter på delene. Hjørner og eksisterende punkter fester seg automatisk. Under **Mål og eksport** velger du fri avstand, vannrett eller loddrett mål og avstanden til mållinjen. Målene følger delenes plassering, rotasjon og størrelse. Automatiske hovedmål viser bredde/høyde; detaljark viser også diameter for sirkler og radius for avrundede rektangler. Mål til hull, skrå kanter og andre detaljer legges inn med topunktsverktøyet.
+- **Ark / dokumentasjon** viser A4/A3 i liggende format, med tittel, prosjekt, tegner, dato, revisjon, materiale, målestokk og sidetall. Dokumentasjonen inneholder oversikt med både flat tegning og sammenstilling, deleliste og valgfrie detaljark. Velg tilpasset eller fast målestokk; for stor målestokk gir beskjed før eksport.
+- **Last ned ark som SVG** lagrer det valgte arket med fysisk papirstørrelse og innebygde bilder. **PDF / utskrift** åpner nettleserens utskriftsvindu med hele dokumentet. Velg *Lagre som PDF*, 100 % / faktisk størrelse, riktig A4/A3-format og slå av nettleserens topp- og bunntekst.
+
+Navn, kopier, synlighet og sletting inne i arbeidstegningen gjelder dokumentasjonen. Grupper kan deles opp der hvis delene skal monteres hver for seg; en generert boksdel beholder sine konturer og graveringer samlet. **Hent nye deler** legger til nye objekter fra arbeidsflaten, mens **Fra kutteoppsettet** tilbakestiller delplasseringene og de manuelle målene. Endringer kan angres i tegningsverktøyet. Endres kildegeometrien på arbeidsflaten, oppdateres den i dokumentasjonen; slettede eller skjulte kilder varsles.
+
+Materialvisningen er en illustrasjon av plater med tykkelse, ikke en full 3D-modellering. Flex bøyes ikke automatisk. Mål viser den tegnede geometrien, inkludert eventuell kerfkompensasjon.
+
+`tests/drawing.html` tester åpning, materialer, uavhengig sammenstilling, målsetting, angre, lagring, ark, SVG/PDF og smale vinduer. Kjør på en separat lokal testport. `npm test` inkluderer geometriske tester og kontroll av prosjektformatet for arbeidstegninger.

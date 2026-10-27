@@ -168,7 +168,7 @@ export function workspacePayload(state) {
   };
   return copy({ version: 3, machineKey: state.machineKey, targetMachine: state.targetMachine,
     bedWidth: state.bedWidth, bedHeight: state.bedHeight, snapMm: state.snapMm, objectSnap: state.objectSnap,
-    laserSettings: state.laserSettings, shapes: state.shapes });
+    laserSettings: state.laserSettings, shapes: state.shapes, workDrawing: state.workDrawing || null });
 }
 
 export const { saveWorkspaceToLocal, flushWorkspaceSave, loadWorkspaceFromLocal, hasUnprotectedChanges } = createWorkspaceStorage();

@@ -193,7 +193,8 @@ export function buildXcsProjectString(shapes, {
   bedHeight = 400,
   onlySelected = false,
   selectedIds = new Set(),
-  laserSettings = null
+  laserSettings = null,
+  workDrawing = null
 } = {}) {
   const cfg = laserSettings || getDefaultLaserSettings();
   const canvasId = makeUuidV4();
@@ -755,7 +756,8 @@ export function buildXcsProjectString(shapes, {
       bedWidth,
       bedHeight,
       laserSettings: cfg,
-      shapes: sourceList
+      shapes: sourceList,
+      workDrawing
     }
   };
 
@@ -778,6 +780,7 @@ export function importXcsStringToWorkspace(rawText) {
         targetMachine: data.bjornsveenProject.targetMachine || (data.bjornsveenProject.machineKey === 'xtool-f2' ? 'xtool-f2' : 'xtool-p3'),
         bedWidth: data.bjornsveenProject.bedWidth,
         bedHeight: data.bjornsveenProject.bedHeight,
+        workDrawing: data.bjornsveenProject.workDrawing || null,
         laserSettings: data.bjornsveenProject.laserSettings || null
       };
     }
