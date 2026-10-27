@@ -1,3 +1,4 @@
+import { materialById } from './drawing-materials.js';
 import { uid, shapeToWorldPolygons, computePolygonsBBox, rotatePoint } from './geometry.js';
 import { objectSnapPoints } from './point-snap.js';
 
@@ -31,6 +32,7 @@ export function createDrawingDocument(shapes,settings={},materialName='') {
   const preset=settings.presetKey||'';
   return {version:1,title:'Arbeidstegning',project:'',author:'',revision:'A',date:new Date().toLocaleDateString('sv-SE'),notes:'',paper:'A4',scale:'auto',material:materialName||'Materiale',thickness:Number(settings.thicknessMm)||0,
     finish:preset.includes('mdf')?'mdf':preset.includes('acrylic')?'acrylic':preset.includes('alu')?'metal':'wood',autoDimensions:true,includeDetails:true,
+    annotations:[],customPages:[],sheetLayouts:{},
     items:shapes.filter(s=>!s.hidden&&drawingLeaves([s]).length).map(newDrawingItem),dimensions:[]};
 }
 // Read legacy/partial metadata defensively; never mutate a source workspace.
@@ -42,10 +44,15 @@ export function normalizeDrawingDocument(raw,shapes,settings={},materialName='')
   doc.finish=Object.hasOwn(MATERIAL_COLORS,doc.finish)?doc.finish:'wood';
   doc.scale=['auto','0.1','0.2','0.5','1','2','5'].includes(String(doc.scale))?String(doc.scale):'auto';
   doc.thickness=Number.isFinite(Number(doc.thickness))?Math.max(0,Math.min(100,Number(doc.thickness))):0;
+  doc.materialId=materialById(doc.materialId)?.id||null;
+  doc.annotations=(Array.isArray(doc.annotations)?doc.annotations:[]).filter(n=>n&&typeof n.id==='string'&&typeof n.page==='string').map(n=>({...n,text:String(n.text||'').slice(0,3000),kind:n.kind==='callout'?'callout':'note'}));
+  doc.customPages=(Array.isArray(doc.customPages)?doc.customPages:[]).filter(p=>p&&typeof p.id==='string').map(p=>({id:p.id,title:String(p.title||'Dokumentasjon').slice(0,100)}));
+  doc.sheetLayouts=doc.sheetLayouts&&typeof doc.sheetLayouts==='object'?doc.sheetLayouts:{};
   const seen=new Set();
   doc.items=(Array.isArray(doc.items)?doc.items:[]).filter(p=>p&&typeof p.id==='string'&&typeof p.sourceId==='string'&&!seen.has(p.id)&&seen.add(p.id)).map(p=>{
     const q={...p};for(const k of ['x','y','z','rotation'])q[k]=Number.isFinite(Number(p[k]))?Math.max(-100000,Math.min(100000,Number(p[k]))):0;
     for(const [k,fallback] of [['assemblyX','x'],['assemblyY','y'],['assemblyRotation','rotation']])q[k]=Number.isFinite(Number(p[k]))?Math.max(-100000,Math.min(100000,Number(p[k]))):q[fallback];
+    q.materialId=materialById(q.materialId)?.id||null;
     q.name=String(p.name||'Del').slice(0,180);q.plane=['xy','xz','yz'].includes(p.plane)?p.plane:'xy';q.visible=p.visible!==false;q.solid=p.solid!==false;
     if(q.thickness!=null)q.thickness=Math.max(0,Math.min(100,Number(q.thickness)||0));return q;
   });
@@ -108,7 +115,7 @@ export function splitDrawingGroup(doc,item,shapes) {
     const child=newDrawingItem(shape),b=sourceGeometry(shape).bounds;
     const center=flatPoint({item,bounds:parent.bounds},{x:b.x-parent.bounds.x+b.width/2,y:b.y-parent.bounds.y+b.height/2});
     const assembled=point3d({item,bounds:parent.bounds},{x:b.x-parent.bounds.x+b.width/2,y:b.y-parent.bounds.y+b.height/2});
-    return {...child,x:center.x-b.width/2,y:center.y-b.height/2,assemblyX:assembled.x-b.width/2,assemblyY:assembled.y-b.height/2,assemblyRotation:item.assemblyRotation??item.rotation,z:item.z,rotation:item.rotation,thickness:item.thickness};
+    return {...child,materialId:item.materialId,x:center.x-b.width/2,y:center.y-b.height/2,assemblyX:assembled.x-b.width/2,assemblyY:assembled.y-b.height/2,assemblyRotation:item.assemblyRotation??item.rotation,z:item.z,rotation:item.rotation,thickness:item.thickness};
   });
   doc.items.splice(doc.items.indexOf(item),1,...parts);
   doc.dimensions=doc.dimensions.filter(d=>d.a.itemId!==item.id&&d.b.itemId!==item.id);return true;

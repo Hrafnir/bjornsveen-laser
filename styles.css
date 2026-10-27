@@ -1289,3 +1289,15 @@ body { display: flex; flex-direction: column; height: 100dvh; }
  .drawing-canvas { min-height: 120px; }
  .drawing-footer { padding: 6px; }
 }
+.drawing-material-swatch { min-height: 30px; border: 5px solid; border-radius: 5px; color: #132b3e; padding: 5px 8px; font-size: 11px; text-shadow: 0 1px 2px white; }
+.drawing-material-swatch + .btn { width: 100%; }
+#dw-note-list { display: grid; gap: 4px; }
+.drawing-canvas [data-annotation-id], .drawing-canvas [data-sheet-view] { cursor: move; }
+.drawing-canvas [data-dimension-id] { cursor: grab; }
+.drawing-dimension-list .btn[data-select-dimension] { flex: 1; }
+.drawing-canvas.paper-view { overflow: auto; }
+.drawing-canvas.paper-view > svg { width: calc((100% - 24px) * var(--drawing-sheet-zoom, 1)); height: calc((100% - 24px) * var(--drawing-sheet-zoom, 1)); max-width: none; max-height: none; }
+.drawing-page-bar { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+.drawing-page-bar label { min-width: 0; }
+.drawing-page-bar label:first-child { flex: 1 1 180px; }
+.drawing-page-bar label:last-child { flex: 0 1 130px; }

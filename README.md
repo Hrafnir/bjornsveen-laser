@@ -236,3 +236,18 @@ Navn, kopier, synlighet og sletting inne i arbeidstegningen gjelder dokumentasjo
 Materialvisningen er en illustrasjon av plater med tykkelse, ikke en full 3D-modellering. Flex bøyes ikke automatisk. Mål viser den tegnede geometrien, inkludert eventuell kerfkompensasjon.
 
 `tests/drawing.html` tester åpning, materialer, uavhengig sammenstilling, målsetting, angre, lagring, ark, SVG/PDF og smale vinduer. Kjør på en separat lokal testport. `npm test` inkluderer geometriske tester og kontroll av prosjektformatet for arbeidstegninger.
+
+
+### Redigerbare dokumentasjonssider og materialbank
+
+I **Tegning → Ark / dokumentasjon** ligger **Rediger dokumentasjonssiden** øverst i panelet. Dra måltegningen eller materialvisningen til ønsket sted, eller skriv venstre/topp/bredde/høyde i millimeter. Visninger kan skjules enkeltvis. **Ny dokumentside** legger til en side med egen tittel og eget oppsett. **Tilbakestill visningsoppsett** gjenoppretter standardplasseringen på den aktive siden. Visningszoom på 150–300 % gjør små detaljer lettere å redigere; eksportens fysiske målestokk endres ikke.
+
+**Tekst / notat** lager en flyttbar tekstboks på den aktive siden. Du kan endre teksten, tekstbredden og skriftstørrelsen. **Notat med peker** har i tillegg en pekelinje med eget målpunkt (X/Y på arket). Notater, sider og oppsett følger med i prosjektlagring, SVG og PDF. Redigeringsrammene vises bare i programmet. Tekstbokser som ikke får plass varsles og må justeres før eksport. Lange generelle merknader tas med på egne sider med prosjektnotater, slik at teksten ikke bare blir forkortet i tittelfeltet.
+
+**Målsett** virker både i Delplassering og direkte i måltegningen på arket. Klikk et eksisterende mål, eller velg det i mållisten, for å endre retning, beskrivelse og mållinjens avstand. Dra mållinjen for å plassere den. Beskrivelsen kommer foran den beregnede lengden; den erstatter ikke måleverdien. Automatiske mål på oversiktsark viser samlet utstrekning, mens detaljark viser delens hovedmål. Vertikale og skrå mål har tekst som følger mållinjen, med avstand mellom figuren og hjelpelinjene.
+
+**Materialbanken** har bjørkekryssfiner, MDF, eik, valnøtt, furu, bambus, klar/svart/hvit akryl, børstet aluminium, papp, lær og filt. Hvert materiale har egen overflate, kantfarge, enkel struktur og foreslått tykkelse. Velg materiale og trykk **Bruk materialet og tykkelsen**, eller velg eget materiale for én del. Egne delmaterialer og tykkelser står i delelisten og detaljarkene. Banken gjelder dokumentasjonen; laserens effekt/hastighet velges i Laser-panelet. Klar akryl illustreres frostet, uten fysisk simulert transparens.
+
+Materialvisningen skjuler flater og kantlinjer som ligger bak andre flater, også ved hull, konkave konturer og stående plater. Buede vegger tegnes uten kunstige vertikale skjøtestreker mellom kurvesegmentene. Prosjektets geometri og kuttlinjer endres ikke av visningen.
+
+`tests/drawing-surfaces.test.js` kontrollerer synlig flatedekning og baksidefjerning, kurver, hull, fingerskjøter, prosjektlagring, materialer og teksteksport. `tests/drawing.html` dekker redigering, drag, zoom, notater, eksport og smale vinduer. `tests/drawing-visual.html` viser representative materialflater for visuell kontroll.

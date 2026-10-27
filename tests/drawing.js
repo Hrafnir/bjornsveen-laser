@@ -20,6 +20,7 @@ const clickPoint=(x,y)=>{const svg=$('dw-canvas').querySelector('svg'),pt=svg.cr
 const rect=(id,name,x,y,width,height)=>({id,name,type:'rect',x,y,width,height,rotation:0,laserMode:'cut'});
 const base=rect('base','Bunnplate',20,20,100,60),wall=rect('wall','Bakvegg',125,20,100,40),side=rect('side','Sidevegg',230,20,60,40);
 key('Escape');d.querySelector('[data-tool="select"]').click();key('a',{metaKey:true});key('Delete');clipboard('paste',encodeClipboard([base,wall,side]));key('a',{metaKey:true});
+const fixtureFile=new w.DataTransfer();fixtureFile.items.add(new w.File([JSON.stringify({shapes:JSON.parse(clipboard('copy')).shapes,workDrawing:null})],'fresh-drawing.json',{type:'application/json'}));$('file-import-input').files=fixtureFile.files;$('file-import-input').dispatchEvent(new w.Event('change',{bubbles:true}));await pause(300);key('a',{metaKey:true});
 const before=clipboard('copy');edit('laser-preset-select','mdf-3mm');
 let saved,initialX;
 await test('Global drawing button seeds all visible sources and selected material',async()=>{
@@ -83,6 +84,49 @@ await test('Autosave restores title, dimensions and assembly placements after re
 await test('Assembly placement is independent from flat dimension layout',async()=>{
  view('flat');const x=Number($('dw-x').value);view('iso');edit('dw-x','80');edit('dw-rotation','30');view('flat');near(Number($('dw-x').value),x);near(Number($('dw-rotation').value),0);view('iso');near(Number($('dw-x').value),80);near(Number($('dw-rotation').value),30);
 });
+await test('Material bank applies distinct appearances and thickness, with an override per part',async()=>{
+ view('flat');edit('dw-material-preset','plywood-birch');$('dw-apply-material').click();assert($('dw-material').value==='Bjørkekryssfiner');near(Number($('dw-thickness').value),3);
+ edit('dw-item-material','walnut');near(Number($('dw-item-thickness').value),6);view('iso');assert($('dw-canvas').innerHTML.includes('#79563e'));const doc=await stored();assert(doc.materialId==='plywood-birch');assert(doc.items.some(p=>p.materialId==='walnut'));edit('dw-item-material','');
+});
+await test('Custom documentation pages support notes, callouts and independent view layout',async()=>{
+ view('sheet');$('dw-add-page').click();edit('dw-page-title','Montering og overflate');$('dw-add-callout').click();edit('dw-note-text','Lim sideveggene mot bunnen.\nPuss kantene før montering.');edit('dw-note-x','160');edit('dw-note-y','120');edit('dw-note-width','100');edit('dw-note-target-x','220');edit('dw-note-target-y','90');assert($('dw-canvas').textContent.includes('Lim sideveggene'));
+ edit('dw-edit-view','flat');edit('dw-view-width','110');edit('dw-view-height','90');edit('dw-view-x','15');edit('dw-view-y','35');const doc=await stored();assert(doc.customPages.at(-1).title==='Montering og overflate');assert(doc.annotations.at(-1).kind==='callout');assert(doc.sheetLayouts['custom:'+doc.customPages.at(-1).id].flat.width>0);
+});
+await test('Notes and view frames drag on paper, undo restores their positions',async()=>{
+ const host=$('dw-canvas'),capture=host.setPointerCapture;host.setPointerCapture=()=>{};
+ const send=(type,p,target=host)=>{const svg=host.querySelector('svg'),q=svg.createSVGPoint();q.x=p.x;q.y=p.y;const c=q.matrixTransform(svg.getScreenCTM());target.dispatchEvent(new w.PointerEvent(type,{clientX:c.x,clientY:c.y,button:0,bubbles:true}));};
+ try{let a=(await stored()).annotations.at(-1);const x=a.x,y=a.y;send('pointerdown',{x:x+5,y:y+5},host.querySelector('[data-annotation-id] rect'));send('pointermove',{x:x-5,y:y-5});send('pointerup',{x:x-5,y:y-5});a=(await stored()).annotations.at(-1);near(a.x,x-10);near(a.y,y-10);$('dw-undo').click();near((await stored()).annotations.at(-1).x,x);
+ const vx=Number($('dw-view-x').value);send('pointerdown',{x:20,y:40},host.querySelector('[data-sheet-view="flat"] rect'));send('pointermove',{x:30,y:50});send('pointerup',{x:30,y:50});near(Number($('dw-view-x').value),vx+10);$('dw-undo').click();near(Number($('dw-view-x').value),vx);
+ }finally{host.setPointerCapture=capture;}
+});
+await test('A dimension can be created directly on a sheet and edited without changing its actual length',async()=>{
+ $('dw-measure').click();const svg=$('dw-canvas').querySelector('svg'),g=svg.querySelector('[data-view-transform="flat"]'),part=g.querySelector('[data-drawing-item]');const box=part.getBBox();
+ const hit=(x,y)=>{const q=svg.createSVGPoint();q.x=x;q.y=y;const p=q.matrixTransform(g.getScreenCTM());part.dispatchEvent(new w.PointerEvent('pointerdown',{clientX:p.x,clientY:p.y,button:0,bubbles:true}));};
+ // Use geometry bounds (excluding labels) to select two real rectangle corners.
+ const geometry=part.querySelector('path').getBBox();hit(geometry.x,geometry.y);
+ const current=$('dw-canvas').querySelector('[data-view-transform="flat"] [data-drawing-item]');const matrix=$('dw-canvas').querySelector('[data-view-transform="flat"]').getScreenCTM(),q=svg.createSVGPoint();q.x=geometry.x+geometry.width;q.y=geometry.y;const p=q.matrixTransform(matrix);current.dispatchEvent(new w.PointerEvent('pointerdown',{clientX:p.x,clientY:p.y,button:0,bubbles:true}));
+ localKey('Escape');const old=(await stored()).dimensions.at(-1);assert(old);edit('dw-edit-dimension-label','Bredde');edit('dw-edit-dimension-offset','-15');edit('dw-edit-dimension-kind','horizontal');assert($('dw-canvas').textContent.includes('Bredde ·'));const next=(await stored()).dimensions.at(-1);assert(next.labelText==='Bredde'&&next.offset===-15);assert(JSON.stringify(old.a)===JSON.stringify(next.a));
+});
+await test('Existing dimension lines drag on paper; zoom only changes the screen view',async()=>{
+ const host=$('dw-canvas'),capture=host.setPointerCapture;host.setPointerCapture=()=>{};const previous=(await stored()).dimensions.at(-1);
+ try{const target=[...host.querySelectorAll('[data-dimension-id]')].at(-1).querySelector('path:last-child'),mid=target.getPointAtLength(target.getTotalLength()/2),screen=mid.matrixTransform(target.getScreenCTM());
+ target.dispatchEvent(new w.PointerEvent('pointerdown',{clientX:screen.x,clientY:screen.y,button:0,bubbles:true}));host.dispatchEvent(new w.PointerEvent('pointermove',{clientX:screen.x,clientY:screen.y+10,button:0,bubbles:true}));host.dispatchEvent(new w.PointerEvent('pointerup',{clientX:screen.x,clientY:screen.y+10,button:0,bubbles:true}));
+ const after=(await stored()).dimensions.at(-1);assert(Number.isFinite(after.offset));assert(Math.abs(after.offset-previous.offset)>1);assert(JSON.stringify(after.a)===JSON.stringify(previous.a));$('dw-undo').click();near((await stored()).dimensions.at(-1).offset,previous.offset);
+ }finally{host.setPointerCapture=capture;}
+ const saved=JSON.stringify(await stored()),before=host.querySelector('svg').getBoundingClientRect().width;edit('dw-paper-zoom','2');await pause(30);assert(host.querySelector('svg').getBoundingClientRect().width>before*1.9);assert(host.scrollWidth>host.clientWidth);assert(JSON.stringify(await stored())===saved);edit('dw-paper-zoom','1');
+});
+await test('Overflowing notes are flagged; long project notes get complete extra pages',async()=>{
+ $('dw-add-note').click();edit('dw-note-text','Lang informasjon '.repeat(180));edit('dw-note-y','160');assert(!$('dw-error').hidden);assert($('dw-export-svg').disabled);$('dw-remove-note').click();assert($('dw-error').hidden);edit('dw-notes','Prosjektnotat: '.repeat(90)+'SISTE LINJE BEVART');view('sheet');assert([...$('dw-page').options].some(o=>o.textContent.includes('Prosjektnotater')));const value=[...$('dw-page').options].find(o=>o.textContent.includes('Prosjektnotater')).value;edit('dw-page',value);assert($('dw-canvas').textContent.includes('SISTE LINJE BEVART'));edit('dw-notes','');
+});
+await test('Custom annotations and layout survive reopening; export excludes editing frames',async()=>{
+ const saved=await stored();$('dw-close').click();$('btn-work-drawing').click();assert(JSON.stringify((await stored()).annotations)===JSON.stringify(saved.annotations));view('sheet');const option=[...$('dw-page').options].find(o=>o.textContent==='Montering og overflate');edit('dw-page',option.value);assert($('dw-canvas').textContent.includes('Puss kantene'));
+ const original=w.HTMLAnchorElement.prototype.click;let content;w.HTMLAnchorElement.prototype.click=function(){content=w.fetch(this.href).then(r=>r.text())};try{$('dw-export-svg').click();const svg=await content;assert(svg.includes('Puss kantene'));assert(!svg.includes('stroke-dasharray="2 1"'));assert(svg.includes('data-annotation-id'));}finally{w.HTMLAnchorElement.prototype.click=original;}
+});
+await test('Page-editing controls remain inside narrow viewports',async()=>{
+ for(const width of [390,320]){frame.style.width=width+'px';await pause(60);for(const el of $('dw-page-editor').querySelectorAll('button,input,select,textarea')){if(el.closest('[hidden]')||!el.getClientRects().length)continue;const b=el.getBoundingClientRect();assert(b.left>=-1&&b.right<=width+1,el.id+' overflow');}}
+ frame.style.width='1280px';
+});
+
 // Leave a coherent sample assembly for visual review, using the actual controls.
 view('flat');$('dw-spread').click();view('iso');const buttons=()=>[...d.querySelectorAll('[data-select-part]')];
 buttons()[0].click();edit('dw-rotation','0');edit('dw-x','20');edit('dw-y','20');edit('dw-z','0');edit('dw-plane','xy');
