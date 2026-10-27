@@ -179,3 +179,11 @@ Velg en figur, linje eller flere objekter og bruk **Objektfarge** i høyrepanele
 Fargene følger med i prosjektlagring, kopiering og angre. De endrer ikke kutt, score eller gravering; lasereksport bruker fortsatt laserlagenes vanlige farger.
 
 For å fjerne for eksempel en stjerne fra en trekant: legg stjerna foran trekanten, Shift-velg begge og trykk **Lag hull** under **Kombiner former**. Stjerna kan være kun omriss. Den nederste valgte figuren beholder farge, laseroperasjon og plassering i lagrekkefølgen. De andre valgte figurene trekkes fra. Dette virker også når du redigerer deler inne i en gruppe. Angre gjenoppretter de opprinnelige figurene.
+
+### Paneler og små vinduer
+
+- **Oppsett** samler maskin, platestørrelse, rutenett og festing til objekter. **Fil** samler åpning og eksport. Lagre og Lasersjekk er direkte tilgjengelige.
+- Høyrepanelet har fanene **Objekt**, **Lag** og **Laser**. Avanserte valg ligger under **Linjer, offset og mønster** og **Juster og ordne**. Farger vises når et vektorobjekt er valgt; formoperasjoner vises når flere objekter er valgt.
+- **Panel** viser/skjuler høyrepanelet. Under 900 px åpnes det over tegneflaten. Tegneflaten beholder målestokk og sentrum når panelet åpnes eller lukkes.
+- Offset-knappen åpner riktig fane og innstillinger automatisk. Tekstredigering åpner tekstfeltet. Menyer lukkes med Escape eller klikk utenfor; panel-fanene støtter piltaster.
+- `tests/layout.html` kontrollerer skjermbredder fra 320 til 1440 px, menyer, paneler, felt, eksport og boksgenerator. Kjør på separat testport, som de øvrige nettlesertestene.

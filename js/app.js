@@ -1,3 +1,4 @@
+import { initLayout, revealInspectorControl } from './ui-layout.js';
 import { normalizeDisplayColor, colorLeaves, displayColor, selectionColors } from './appearance.js';
 import { isEditablePath, isPathEndpoint, removePathAnchors, removePathSegments, connectPathEndpoints, splitPathSegment, nearestSegmentParameter } from './path-edit.js';
 import { smoothNodes, nodesToPath, moveAnchor, moveControl, fitBezier } from './bezier.js';
@@ -154,6 +155,7 @@ const hintBannerEl = document.getElementById('workspace-hint');
 // ============================================================================
 
 async function initApp() {
+  initLayout();
   window.addEventListener('workspace-storage', e => {
     const el = document.getElementById('save-status');
     el.textContent = e.detail.message;
@@ -224,10 +226,21 @@ async function initApp() {
     if (hasUnprotectedChanges()) { e.preventDefault(); e.returnValue = ''; }
   });
   window.addEventListener('pagehide', () => { saveWorkspaceToLocal(state); void flushWorkspaceSave(); });
-  window.addEventListener('resize', () => {
-    fitBedToViewport();
-    renderAll();
-  });
+  // Preserve scale and center when the inspector changes the canvas size.
+  let lastViewport = viewportEl.getBoundingClientRect();
+  new ResizeObserver(() => {
+    const rect = viewportEl.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    if (lastViewport.height > 0 && (rect.width !== lastViewport.width || rect.height !== lastViewport.height)) {
+      const scale = state.viewH / lastViewport.height;
+      const width = rect.width * scale, height = rect.height * scale;
+      state.viewX += (state.viewW - width) / 2;
+      state.viewY += (state.viewH - height) / 2;
+      state.viewW = width; state.viewH = height;
+    }
+    lastViewport = rect;
+    applyViewBox(); renderOverlay();
+  }).observe(viewportEl);
 
   setTimeout(() => {
     fitBedToViewport();
@@ -1796,6 +1809,7 @@ function bindCanvasEvents() {
       }
       if (s && s.type === 'text') {
         const input = document.getElementById('text-content-input');
+        revealInspectorControl('text-content-input');
         input.focus();
         input.select();
         return;
@@ -2117,6 +2131,7 @@ function onCanvasPointerDown(e) {
         setActiveTool('select');
         renderAll();
         const input = document.getElementById('text-content-input');
+        revealInspectorControl('text-content-input');
         input.focus();
         input.select();
         return;
@@ -2149,6 +2164,7 @@ function onCanvasPointerDown(e) {
     setActiveTool('select');
     renderAll();
     const input = document.getElementById('text-content-input');
+    revealInspectorControl('text-content-input');
     input.focus();
     input.select();
     return;
@@ -2627,6 +2643,9 @@ function layerColorStyle(shape) {
 
 function renderAppearanceUI() {
   const selected = getSelectedShapes(), targets = colorLeaves(selected), colors = selectionColors(selected);
+  document.querySelector('.object-color-controls').hidden = !targets.length;
+  document.querySelector('.shape-appearance-controls').hidden = !vectorLeaves(selected).length;
+  document.querySelector('.boolean-controls').hidden = selected.length < 2;
   const picker = document.getElementById('object-color');
   picker.disabled = !targets.length;
   picker.value = colors.length === 1 ? colors[0] : '#111827';
@@ -2687,6 +2706,7 @@ function setActiveTool(toolName) {
   }
 
   renderAll();
+  if (['nodes', 'pen'].includes(toolName)) revealInspectorControl('path-edit-section');
 }
 
 function bindToolbarEvents() {
@@ -2730,6 +2750,7 @@ function bindToolbarEvents() {
   }
   document.getElementById('btn-offset-tool').addEventListener('click', () => {
     if (!finishDrawing()) return;
+    revealInspectorControl('offset-controls');
     document.getElementById('offset-controls').scrollIntoView({ block: 'center', behavior: 'smooth' });
     document.getElementById('offset-dist-input').focus();
   });
@@ -4076,6 +4097,7 @@ function bindKeyboardShortcuts() {
       document.querySelectorAll('.modal-backdrop.open').forEach(modal => modal.classList.remove('open'));
       e.preventDefault(); return;
     }
+    if (e.target instanceof Element && e.target.closest('summary, [role="tab"]') && ['Enter', ' '].includes(e.key)) return;
     const isInput = canvasCommandsBlocked(e);
 
     if (e.code === 'Space' && !isInput) {
