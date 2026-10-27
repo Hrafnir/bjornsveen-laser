@@ -1224,3 +1224,11 @@ body { display: flex; flex-direction: column; height: 100dvh; }
   .modal-tabs { padding: 8px; gap: 2px; }
   .modal-tab-btn { padding: 6px 8px; font-size: 11px; }
 }
+
+/* Alignment pictograms: reference axis plus differently sized objects. */
+.alignment-grid { grid-template-columns: repeat(6, minmax(0,1fr)); }
+.alignment-grid .btn { min-height: 36px; padding: 5px; }
+.align-icon { width: 22px; height: 22px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: square; stroke-linejoin: miter; }
+.align-icon rect { fill: var(--bg-panel-elevated); }
+.align-both-btn { width: 100%; margin: 2px 0 6px; }
+.alignment-help { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; }

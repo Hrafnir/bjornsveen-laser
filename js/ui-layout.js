@@ -1,5 +1,18 @@
 // Layout controls only; object state and laser settings stay in app.js.
 let showPanel;
+let previousSelectionCount = 0;
+
+export function updateArrangeSelection(count) {
+  document.querySelectorAll('[data-align]').forEach(button => { button.disabled = count === 0; });
+  // Open once when entering multi-selection; respect a later manual collapse or tab change.
+  if (count >= 2 && previousSelectionCount < 2) {
+    document.getElementById('arrange-objects').open = true;
+    revealInspectorControl('arrange-objects');
+    document.getElementById('panel-object').scrollTop = 0;
+  }
+  previousSelectionCount = count;
+}
+
 export function revealInspectorControl(id) {
   const control = document.getElementById(id);
   if (!control) return;

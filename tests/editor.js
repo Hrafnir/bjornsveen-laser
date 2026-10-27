@@ -1,4 +1,4 @@
-import { buildSmoothSplineLoop, createPathShapeFromPolygons, pathNodesInWorld, parseSvgPathToPolygons } from '../js/geometry.js';
+import { getShapesBBox, buildSmoothSplineLoop, createPathShapeFromPolygons, pathNodesInWorld, parseSvgPathToPolygons } from '../js/geometry.js';
 const frame=document.querySelector('#editor');
 await new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
 const w=frame.contentWindow,d=frame.contentDocument,$=id=>d.getElementById(id);
@@ -328,5 +328,45 @@ await test('Lag hull edits children inside a group, keeps the group and rejects 
  const result=copiedShape();assert(result.displayColor==='#a855f7');assert(parseSvgPathToPolygons(result.d).length===2);
  key('Escape');assert(ids()[0]===group);assert(shapes()[0].children.length===1);
  reset();chain([[30,30],[60,60]]);tool('rect');drag([30,30],[90,90]);tool('select');key('a',{metaKey:true});$('btn-bool-subtract').click();assert(shapes().length===2);
+});
+await test('multi-selection reveals arrangement at the top, respects manual collapse and reopens for the next selection',()=>{
+ reset();$('arrange-objects').open=false;tool('rect');drag([20,30],[60,70]);tool('ellipse');drag([100,60],[120,90]);tool('select');
+ assert(!$('arrange-objects').open,'opened for a single object');$('tab-laser').click();if(!$('inspector-panel').hidden)$('btn-toggle-panel').click();
+ key('a',{metaKey:true});assert($('arrange-objects').open,'did not open');assert(!$('panel-object').hidden && !$('inspector-panel').hidden,'panel not revealed');
+ assert($('panel-object').firstElementChild===$('arrange-objects'),'arrangement is not first');
+ $('arrange-objects').open=false;order('front');assert(!$('arrange-objects').open,'manual collapse was ignored');
+ selectRow(ids()[0]);selectRow(ids()[1],true);assert($('arrange-objects').open,'new multi-selection did not reopen');
+});
+await test('one center X+Y action centers unequal objects, preserves size and is undone in one step',()=>{
+ reset();tool('rect');drag([20,30],[60,70]);tool('ellipse');drag([100,60],[120,90]);tool('select');key('a',{metaKey:true});
+ const before=JSON.parse(clipboard('copy').text).shapes, ref=getShapesBBox(before);
+ d.querySelector('[data-align="center-both"]').click();const after=JSON.parse(clipboard('copy').text).shapes;
+ after.forEach((s,i)=>{const box=getShapesBBox([s]);near(box.x+box.width/2,ref.x+ref.width/2);near(box.y+box.height/2,ref.y+ref.height/2);near(s.width,before[i].width);near(s.height,before[i].height)});
+ $('btn-undo').click();key('a',{metaKey:true});const restored=JSON.parse(clipboard('copy').text).shapes;restored.forEach((s,i)=>{near(s.x,before[i].x);near(s.y,before[i].y)});
+ $('btn-redo').click();key('a',{metaKey:true});const redone=JSON.parse(clipboard('copy').text).shapes;near(getShapesBBox([redone[0]]).x+redone[0].width/2,ref.x+ref.width/2);
+});
+await test('alignment uses visible bounds of rotated shapes and moves groups intact',()=>{
+ reset();tool('rect');drag([20,30],[80,50]);edit('prop-rot','45');tool('ellipse');drag([130,70],[150,100]);tool('select');key('a',{metaKey:true});
+ d.querySelector('[data-align="left"]').click();let selected=JSON.parse(clipboard('copy').text).shapes;near(getShapesBBox([selected[0]]).x,getShapesBBox([selected[1]]).x,.05);
+ key('g',{metaKey:true});const group=copiedShape(),children=group.children.map(c=>({x:c.x,y:c.y}));
+ tool('rect');drag([200,120],[240,160]);tool('select');key('a',{metaKey:true});d.querySelector('[data-align="center-both"]').click();
+ selected=JSON.parse(clipboard('copy').text).shapes;const a=getShapesBBox([selected[0]]),b=getShapesBBox([selected[1]]);near(a.x+a.width/2,b.x+b.width/2,.05);near(a.y+a.height/2,b.y+b.height/2,.05);
+ near(selected[0].children[1].x-selected[0].children[0].x,children[1].x-children[0].x);near(selected[0].children[1].y-selected[0].children[0].y,children[1].y-children[0].y);
+});
+const nestedHexagons=()=>{
+ reset();tool('polygon');drag([30,30],[150,150]);edit('prop-sides','6');$('btn-shape-outline').click();
+ tool('polygon');drag([45,45],[135,135]);edit('prop-sides','6');$('btn-shape-outline').click();tool('select');key('a',{metaKey:true});
+};
+await test('Graver mellom konturer makes one engraving with a real hole, retains stacking and supports undo',()=>{
+ nestedHexagons();const original=ids();assert(!$('btn-engrave-between').disabled);tool('rect');drag([180,30],[220,60]);const unrelated=ids()[2];tool('select');
+ selectRow(original[0]);selectRow(original[1],true);$('btn-engrave-between').click();assert(shapes().length===2);assert(ids()[1]===unrelated);
+ assert(copiedShape().laserMode==='engrave');assert(parseSvgPathToPolygons(shapes()[0].getAttribute('d')).length===2);assert(shapes()[0].getAttribute('fill-rule')==='evenodd');
+ $('btn-undo').click();assert(ids().join()===[...original,unrelated].join());$('btn-redo').click();assert(shapes().length===2);
+ selectRow(ids()[0]);$('btn-shape-outline').click();assert(shapes()[0].getAttribute('fill')==='none');assert(parseSvgPathToPolygons(shapes()[0].getAttribute('d')).length===2);
+});
+await test('Graver mellom konturer handles selected groups and group editing without losing unrelated objects',()=>{
+ nestedHexagons();key('g',{metaKey:true});const group=ids()[0];assert(!$('btn-engrave-between').disabled);$('btn-engrave-between').click();assert(copiedShape().type==='path');assert(parseSvgPathToPolygons(copiedShape().d).length===2);
+ $('btn-undo').click();assert(ids()[0]===group);d.querySelector(`#layer-list [data-id="${group}"] [data-action="edit-group"]`).click();key('a',{metaKey:true});$('btn-engrave-between').click();
+ assert(copiedShape().laserMode==='engrave');key('Escape');assert(ids()[0]===group);assert(shapes()[0].children.length===1);
 });
 document.querySelector('#summary').textContent=`${passed} bestått, ${failed} feilet`;

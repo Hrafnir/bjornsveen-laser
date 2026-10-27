@@ -187,3 +187,11 @@ For å fjerne for eksempel en stjerne fra en trekant: legg stjerna foran trekant
 - **Panel** viser/skjuler høyrepanelet. Under 900 px åpnes det over tegneflaten. Tegneflaten beholder målestokk og sentrum når panelet åpnes eller lukkes.
 - Offset-knappen åpner riktig fane og innstillinger automatisk. Tekstredigering åpner tekstfeltet. Menyer lukkes med Escape eller klikk utenfor; panel-fanene støtter piltaster.
 - `tests/layout.html` kontrollerer skjermbredder fra 320 til 1440 px, menyer, paneler, felt, eksport og boksgenerator. Kjør på separat testport, som de øvrige nettlesertestene.
+
+### Justering av flere objekter
+
+**Juster og ordne** ligger øverst i Objekt-panelet og åpnes automatisk når utvalget går fra færre enn to til minst to objekter. De seks ikonene justerer venstre, vannrett sentrum, høyre, topp, loddrett sentrum og bunn. **Sentrer X + Y** gir alle valgte objekter samme sentrum i én operasjon. Justeringen bruker figurenes synlige avgrensning, også ved rotasjon og gruppering. Ett valgt objekt justeres mot platen. Manuell lukking respekteres frem til neste flervalg.
+
+### Gravering mellom konturer
+
+Velg ytterformen og innerformen og trykk **Graver mellom konturer** ved fyll/omriss i Objekt-panelet. Det opprettes én gravert flate med tomt hull i midten, uavhengig av lagrekkefølge. Det virker også på grupper med lukkede vektorformer og på en eksisterende sti med flere konturer. Flere innvendige former gir flere hull; ved kryssende eller nestede konturer veksler flaten mellom fylt og tomt for hver grense. Lagposisjon beholdes, og ett angresteg gjenoppretter originalene. Resultatet kan fortsatt byttes til **Kun omriss** for å kutte både ytre og indre kontur.

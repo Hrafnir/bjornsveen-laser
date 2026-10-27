@@ -1,4 +1,5 @@
-import { initLayout, revealInspectorControl } from './ui-layout.js';
+import { canEngraveBetweenContours, createBetweenEngraving } from './compound-fill.js';
+import { initLayout, revealInspectorControl, updateArrangeSelection } from './ui-layout.js';
 import { normalizeDisplayColor, colorLeaves, displayColor, selectionColors } from './appearance.js';
 import { isEditablePath, isPathEndpoint, removePathAnchors, removePathSegments, connectPathEndpoints, splitPathSegment, nearestSegmentParameter } from './path-edit.js';
 import { smoothNodes, nodesToPath, moveAnchor, moveControl, fitBezier } from './bezier.js';
@@ -591,6 +592,8 @@ function renderAll() {
   renderPathEditUI();
   renderAppearanceUI();
   renderLayerList();
+  // Wait until the pointer gesture finishes before opening/resizing the inspector.
+  if (!state.interaction) updateArrangeSelection(getSelectedShapes().length);
   const activeList = getActiveContainerList();
   for (const btn of document.querySelectorAll('[data-order]')) {
     const reordered = reorderObjects(activeList, state.selectedIds, btn.dataset.order);
@@ -2646,6 +2649,7 @@ function renderAppearanceUI() {
   document.querySelector('.object-color-controls').hidden = !targets.length;
   document.querySelector('.shape-appearance-controls').hidden = !vectorLeaves(selected).length;
   document.querySelector('.boolean-controls').hidden = selected.length < 2;
+  document.getElementById('btn-engrave-between').disabled = !canEngraveBetweenContours(selected);
   const picker = document.getElementById('object-color');
   picker.disabled = !targets.length;
   picker.value = colors.length === 1 ? colors[0] : '#111827';
@@ -2748,6 +2752,20 @@ function bindToolbarEvents() {
       } catch (error) { showToast(error.message); }
     });
   }
+  document.getElementById('btn-engrave-between').addEventListener('click', () => {
+    if (!finishDrawing()) return;
+    try {
+      const selected = getSelectedShapes(), result = createBetweenEngraving(selected);
+      const ids = new Set(selected.map(s => s.id)), list = getActiveContainerList();
+      const index = list.findIndex(s => ids.has(s.id));
+      pushUndoSnapshot();
+      const remaining = list.filter(s => !ids.has(s.id));
+      remaining.splice(index, 0, result);
+      list.splice(0, list.length, ...remaining);
+      state.selectedIds = new Set([result.id]); clearPathPick(); renderAll();
+      showToast('Området mellom konturene er nå én gravert flate. Angre gjenoppretter originalene.');
+    } catch (error) { showToast(error.message); }
+  });
   document.getElementById('btn-offset-tool').addEventListener('click', () => {
     if (!finishDrawing()) return;
     revealInspectorControl('offset-controls');
@@ -3849,12 +3867,15 @@ function alignSelectedShapes(mode) {
     : getShapesBBox(sel);
 
   for (const s of sel) {
-    if (mode === 'left') moveShapesBy([s], refBox.x - s.x, 0);
-    if (mode === 'center-h') moveShapesBy([s], (refBox.x + refBox.width / 2) - (s.x + s.width / 2), 0);
-    if (mode === 'right') moveShapesBy([s], (refBox.x + refBox.width) - (s.x + s.width), 0);
-    if (mode === 'top') moveShapesBy([s], 0, refBox.y - s.y);
-    if (mode === 'center-v') moveShapesBy([s], 0, (refBox.y + refBox.height / 2) - (s.y + s.height / 2));
-    if (mode === 'bottom') moveShapesBy([s], 0, (refBox.y + refBox.height) - (s.y + s.height));
+    const box = getShapesBBox([s]);
+    let dx = 0, dy = 0;
+    if (mode === 'left') dx = refBox.x - box.x;
+    if (mode === 'center-h' || mode === 'center-both') dx = refBox.x + refBox.width / 2 - (box.x + box.width / 2);
+    if (mode === 'right') dx = refBox.x + refBox.width - (box.x + box.width);
+    if (mode === 'top') dy = refBox.y - box.y;
+    if (mode === 'center-v' || mode === 'center-both') dy = refBox.y + refBox.height / 2 - (box.y + box.height / 2);
+    if (mode === 'bottom') dy = refBox.y + refBox.height - (box.y + box.height);
+    moveShapesBy([s], dx, dy);
   }
   renderAll();
 }
