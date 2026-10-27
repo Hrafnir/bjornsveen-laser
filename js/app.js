@@ -700,6 +700,9 @@ function createSvgElementForShape(s, sw) {
     label.setAttribute('font-size', String(s.height * 1.25));
     label.setAttribute('font-weight', '600');
     label.setAttribute('fill', '#047857');
+    label.setAttribute('stroke', '#f8fafc');
+    label.setAttribute('stroke-width', String(s.height*.12));
+    label.setAttribute('paint-order', 'stroke');
     if (s.rotation) label.setAttribute('transform', `rotate(${s.rotation} ${s.x + s.width / 2} ${s.y + s.height / 2})`);
     return label;
   }
@@ -4399,7 +4402,7 @@ function openGeneratorModal(tabName) {
   insertBtn.disabled = false;
 
   if (tabName === 'box') renderBoxGeneratorUI(bodyEl);
-  else if (tabName === 'flex') renderFlexGeneratorUI(bodyEl, { parseNumber: evalMathExpr, onChange: shapes => { state.modalPreviewShapes = shapes; insertBtn.disabled = shapes.length === 0; } });
+  else if (tabName === 'flex') renderFlexGeneratorUI(bodyEl, { layoutWidthMm:state.bedWidth, layoutHeightMm:state.bedHeight, parseNumber: evalMathExpr, onChange: shapes => { state.modalPreviewShapes = shapes; insertBtn.disabled = shapes.length === 0; } });
   else if (tabName === 'sign') renderSignGeneratorUI(bodyEl);
   else if (tabName === 'puzzle') renderPuzzleGeneratorUI(bodyEl);
   else if (tabName === 'gear') renderGearGeneratorUI(bodyEl);
@@ -4448,9 +4451,9 @@ function renderBoxGeneratorUI(container) {
         <div class="box-help" id="gen-box-cell-size"></div>
       </div>
       <details class="box-options"><summary>Skjøter og plassering</summary>
-        <div class="prop-grid">${input('fw', 'Ønsket tappbredde', 14)}${input('gap', 'Avstand mellom delene', 6)}</div>
+        <div class="prop-grid">${input('fw', 'Ønsket tappbredde', 14)}${input('gap', 'Avstand mellom delene', 1)}</div>
         <div class="box-help">Tappbredden tilpasses parvis slik at kantene passer sammen. Hull kuttes før ytterkonturene i XCS.</div>
-        <label class="box-check"><input type="checkbox" id="gen-box-labels" checked /> Vis delnavn under delene</label>
+        <label class="box-check"><input type="checkbox" id="gen-box-labels" checked /> Vis delnavn på delene (eksporteres ikke)</label>
       </details>
     </div>
     <div class="box-preview-column">
@@ -4484,7 +4487,8 @@ function renderBoxGeneratorUI(container) {
   const update = () => {
     const type = el('type').value, divider = el('dividers').checked || type === 'dividers';
     el('note').textContent = BOX_TYPES.find(t => t.id === type).note;
-    el('lid-options').hidden = !['lid', 'sliding', 'hinged'].includes(type);
+    el('lid-options').hidden = !['lid', 'sliding', 'hinged', 'coin-bank', 'cable', 'tissue'].includes(type);
+    el('finger-hole').disabled = ['coin-bank','tissue'].includes(type);
     el('hinge-options').hidden = type !== 'hinged';
     el('hinge-fields').hidden = !el('hinge-holes').checked;
     el('compartments').hidden = !divider;
@@ -4492,7 +4496,7 @@ function renderBoxGeneratorUI(container) {
     el('error').hidden = true;
     try {
       model = buildBoxModel({
-        boxType: type, dimMode: el('dimmode').value,
+        boxType: type, dimMode: el('dimmode').value, layoutWidthMm:state.bedWidth, layoutHeightMm:state.bedHeight,
         lengthMm: number('l'), widthMm: number('w'), heightMm: number('h'),
         thicknessMm: number('t'), kerfMm: number('kerf'), fingerWidthMm: number('fw'),
         partGapMm: number('gap'), lidClearanceMm: number('clearance'),
@@ -4510,7 +4514,7 @@ function renderBoxGeneratorUI(container) {
       const c = model.compartments;
       el('cell-size').textContent = divider ? `${c.columns * c.rows} rom, hvert ${roundMm(c.cellLength, 2)} × ${roundMm(c.cellWidth, 2)} mm. ${c.columns === 1 || c.rows === 1 ? 'Skillevegger i én retning limes fast.' : 'Skilleveggene tres sammen halv-i-halv.'}` : '';
       const bbox = computePolygonsBBox(flatParts.filter(s => s.laserMode === 'cut').flatMap(s => shapeToWorldPolygons(s)));
-      container.querySelector('#gen-preview-caption').textContent = `Platebehov: ${roundMm(bbox.width, 1)} × ${roundMm(bbox.height, 1)} mm · 1:1`;
+      container.querySelector('#gen-preview-caption').textContent = `Platebehov: ${roundMm(bbox.width, 1)} × ${roundMm(bbox.height, 1)} mm · 1:1${bbox.x+bbox.width>state.bedWidth || bbox.y+bbox.height>state.bedHeight ? ' · Fordel delene på flere plater' : ''}`;
       renderPreview();
     } catch (error) {
       model = null; preview = null; state.modalPreviewShapes = []; insertBtn.disabled = true;

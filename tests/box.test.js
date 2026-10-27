@@ -55,7 +55,7 @@ test('box faces assemble without gaps or collisions at seams and triple corners'
 });
 
 test('every box variant has square, simple finger contours and complete part counts', () => {
-  const counts = { open: 5, closed: 6, lid: 7, sliding: 10, hinged: 6, tray: 5, dividers: 7 };
+  const counts = { open: 5, closed: 6, lid: 7, sliding: 10, hinged: 6, tray: 5, dividers: 7, 'coin-bank':7, tissue:7, cable:7 };
   for (const { id: boxType } of BOX_TYPES) {
     const model = buildBoxModel({ boxType });
     assert.equal(model.parts.length, counts[boxType]);
@@ -179,7 +179,8 @@ test('each movable box part keeps its holes and readable, non-exported label tog
     const label = group.children.find(s => s.guideLabel);
     const outline = group.children.find(s => s.cutStage === 'box-outline');
     assert.ok(label && outline);
-    assert.ok(label.y > outline.y + outline.height);
+    assert.ok(label.x >= outline.x && label.x + label.width <= outline.x + outline.width + .001);
+    assert.ok(label.y >= outline.y && label.y + label.height <= outline.y + outline.height + .001);
     assert.equal(label.boxPart.id, outline.boxPart.id);
     assert.equal(label.laserMode, 'guide');
     const bounds = computePolygonsBBox(shapeToWorldPolygons(group));
@@ -199,4 +200,41 @@ test('dividers below a sliding lid clear both lower rails', () => {
     near(railBottom - (model.thickness + divider.height), model.clearance);
     assert.ok(divider.height > 0);
   }
+});
+
+test('1 mm packing keeps labels inside and never changes part geometry or orientation',()=>{
+ for(const boxType of BOX_TYPES.map(t=>t.id)){
+  const m=buildBoxModel({boxType}),a=boxModelToShapes(m),b=boxModelToShapes({...m,addLabels:false});
+  assert.equal(m.gap,1);
+  const cutA=a.filter(s=>s.cutStage==='box-outline'),cutB=b.filter(s=>s.cutStage==='box-outline');
+  assert.deepEqual(cutA.map(s=>s.d),cutB.map(s=>s.d),'labels consumed packing space');
+  for(let i=0;i<cutA.length;i++){
+   const s=cutA[i],p=m.parts.find(p=>p.id===s.boxPart.id),nominal=computePolygonsBBox([p.outline]);
+   near(s.width,nominal.width+m.kerf,.002);near(s.height,nominal.height+m.kerf,.002);
+   for(const other of cutA.slice(i+1))assert.ok(s.x+s.width+.998<=other.x||other.x+other.width+.998<=s.x||s.y+s.height+.998<=other.y||other.y+other.height+.998<=s.y);
+  }
+ }
+ assert.throws(()=>buildBoxModel({partGapMm:.9}));
+});
+
+test('new box designs have usable openings aligned through their removable lids',()=>{
+ for(const boxType of ['coin-bank','tissue']){
+  const m=buildBoxModel({boxType}),lid=m.parts.find(p=>p.id==='lid'),locator=m.parts.find(p=>p.id==='locator');
+  assert.equal(lid.holes.length,1);assert.equal(locator.holes.length,1);
+  const a=computePolygonsBBox(lid.holes),b=computePolygonsBBox(locator.holes);
+  near(a.width,b.width);near(a.height,b.height);near(a.x,b.x+m.thickness+m.clearance);near(a.y,b.y+m.thickness+m.clearance);
+  if(boxType==='coin-bank'){near(a.width,35);near(a.height,5)}
+ }
+ const cable=buildBoxModel({boxType:'cable'});
+ for(const id of ['left','right'])assert.equal(cable.parts.find(p=>p.id===id).holes.length,1);
+});
+
+test('packing prefers a layout inside the selected bed over a narrower overlong strip',()=>{
+ for(const [width,height] of [[600,400],[300,300],[250,400]]){
+  const m=buildBoxModel({boxType:'lid',layoutWidthMm:width,layoutHeightMm:height});
+  const b=computePolygonsBBox(boxModelToShapes(m).filter(s=>s.cutStage==='box-outline').flatMap(s=>shapeToWorldPolygons(s)));
+  assert.ok(b.x+b.width<=width-9.998&&b.y+b.height<=height-9.998,`${width}x${height}: ${JSON.stringify(b)}`);
+  const stockArea=m.parts.reduce((n,p)=>{const r=computePolygonsBBox([p.outline]);return n+r.width*r.height},0);
+  if(width>=300)assert.ok(stockArea/(b.width*b.height)>.8,'too much unused stock on the unconstrained plate');
+ }
 });

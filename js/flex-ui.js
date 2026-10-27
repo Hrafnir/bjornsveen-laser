@@ -3,7 +3,7 @@ import { groupBoxParts } from './box-generator.js';
 import { renderShapesPreviewSvg } from './generators.js';
 import { computePolygonsBBox, shapeToWorldPolygons, roundMm } from './geometry.js';
 
-export function renderFlexGeneratorUI(container, { onChange, parseNumber }) {
+export function renderFlexGeneratorUI(container, { onChange, parseNumber, layoutWidthMm=600, layoutHeightMm=400 }) {
   const field = (id, label, value) => `<div class="prop-field"><label for="gen-flex-${id}">${label}</label><div class="input-with-unit"><input id="gen-flex-${id}" class="input-control math-input" type="text" inputmode="decimal" value="${value}"/><span class="unit">mm</span></div></div>`;
   container.innerHTML = `
     <div class="generator-controls box-controls">
@@ -21,16 +21,16 @@ export function renderFlexGeneratorUI(container, { onChange, parseNumber }) {
         <div class="box-help">Snittene går langs bøyeaksen. En endemarg lager en sammenhengende kant som begrenser hvor mye delen kan bøyes.</div>
       </div>
       <div id="gen-flex-box-options" class="box-options">
-        <div class="prop-grid">${field('radius', 'Ytre hjørneradius', 22)}${field('clearance', 'Klaring, lokk og styrering', 0.2)}${field('seam', 'Åpning i veggskjøt', 0.2)}</div>
+        <div class="prop-grid">${field('radius', 'Ytre hjørneradius', 22)}${field('finger', 'Ønsket tappbredde', 14)}${field('clearance', 'Klaring, lokk og styrering', 0.2)}${field('seam', 'Åpning i veggskjøt', 0.2)}</div>
         <div class="prop-field"><label for="gen-flex-pieces">Del opp veggen</label><select id="gen-flex-pieces" class="select-control"><option value="2">To deler – kortere kuttedeler</option><option value="1">Én sammenhengende vegg</option></select></div>
-        <div class="box-help">Limkonstruksjon med styrering og skjøtelapper. Snittene åpnes mot topp og bunn ved hjørnene. Vegglengden beregnes midt i materialet; prøvemonter før liming.</div>
+        <div class="box-help">Fingerskjøter forbinder de rette veggpartiene med bunn og eventuelt lokk. Hjørnene har åpne flexsnitt; styrering og skjøtelapper hjelper monteringen. Vegglengden beregnes midt i materialet; prøvemonter før liming.</div>
       </div>
       <details class="box-options" open><summary>Flexinnstillinger</summary>
         <div class="prop-grid">${field('pitch', 'Avstand mellom snittkolonner', 2)}${field('cut-length', 'Lengde på hvert snitt', 18)}${field('bridge', 'Bro mellom snitt i kolonnen', 2)}</div>
         <div class="box-help">Annenhver kolonne forskyves et halvt mønster. Tettere kolonner og lengre snitt gir vanligvis mer ettergivelse, men også en svakere del. Snittenes bredde er laserens kerf.</div>
         <button type="button" class="btn" id="gen-flex-sample">Lag prøvebit med mine flexmål</button>
       </details>
-      <details class="box-options"><summary>Plassering og delnavn</summary>${field('gap', 'Avstand mellom delene', 6)}<label class="box-check"><input type="checkbox" id="gen-flex-labels" checked/> Vis lesbare delnavn (eksporteres ikke)</label></details>
+      <details class="box-options"><summary>Plassering og delnavn</summary>${field('gap', 'Avstand mellom delene', 1)}<label class="box-check"><input type="checkbox" id="gen-flex-labels" checked/> Vis lesbare delnavn (eksporteres ikke)</label></details>
     </div>
     <div class="box-preview-column">
       <div class="box-view-tabs" role="group" aria-label="Flexforhåndsvisning"><button type="button" class="btn active" id="gen-flex-view-cuts" aria-pressed="true">Kuttedeler</button><button type="button" class="btn" id="gen-flex-view-assembly" aria-pressed="false">Sammensatt</button></div>
@@ -56,17 +56,18 @@ export function renderFlexGeneratorUI(container, { onChange, parseNumber }) {
     el('note').textContent = FLEX_TYPES.find(t => t.id === el('type').value).note;
     el('error').hidden = true;
     try {
-      model = buildFlexModel({ flexType: el('type').value, lengthMm: num('length'), widthMm: num('width'), heightMm: num('height'), thicknessMm: num('thickness'), kerfMm: num('kerf'), flexWidthMm: num('flex-width'), endMarginMm: num('margin'), axis: el('axis').value, radiusMm: num('radius'), clearanceMm: num('clearance'), seamGapMm: num('seam'), wallPieces: Number(el('pieces').value), pitchMm: num('pitch'), cutLengthMm: num('cut-length'), bridgeMm: num('bridge'), partGapMm: num('gap'), addLabels: el('labels').checked });
+      model = buildFlexModel({ flexType: el('type').value, layoutWidthMm, layoutHeightMm, lengthMm: num('length'), widthMm: num('width'), heightMm: num('height'), thicknessMm: num('thickness'), kerfMm: num('kerf'), flexWidthMm: num('flex-width'), endMarginMm: num('margin'), axis: el('axis').value, radiusMm: num('radius'), clearanceMm: num('clearance'), seamGapMm: num('seam'), wallPieces: Number(el('pieces').value), pitchMm: num('pitch'), cutLengthMm: num('cut-length'), bridgeMm: num('bridge'), partGapMm: num('gap'), fingerWidthMm: num('finger'), addLabels: el('labels').checked });
       const shapes = flexModelToShapes(model);
       onChange(groupBoxParts(shapes));
-      preview = renderShapesPreviewSvg(shapes, { strokeScale: 0.00065 });
+      preview = renderShapesPreviewSvg(shapes, { strokeScale: 0.0012 });
       const bounds = computePolygonsBBox(shapes.filter(s => s.laserMode === 'cut').flatMap(s => shapeToWorldPolygons(s)));
       const count = model.parts.reduce((sum, part) => sum + part.slits.length, 0);
       const lines = [`${model.parts.length} ${model.parts.length === 1 ? 'del' : 'deler'} · ${count} flexsnitt`, `Platebehov: ${roundMm(bounds.width, 1)} × ${roundMm(bounds.height, 1)} mm`];
+      if(bounds.x+bounds.width>layoutWidthMm||bounds.y+bounds.height>layoutHeightMm)lines.push('Fordel delene på flere plater, eller endre boksmålene.');
       if (panel) lines.push(`Bøyeområde: ${model.flexWidth} mm · ${model.axis === 'vertical' ? 'loddrett' : 'vannrett'} akse`);
       else {
         const d = model.inner;
-        lines.push(`Indre: ${roundMm(d.length, 1)} × ${roundMm(d.width, 1)} × ${roundMm(d.height, 1)} mm`, `Veggdeler: ${model.parts.filter(p => p.id.startsWith('wall-')).map(p => `${roundMm(p.width, 2)} × ${roundMm(p.height, 2)}`).join(' / ')} mm`, 'Styreringen tar litt plass langs innerkanten av bunnen.');
+        lines.push(`Indre: ${roundMm(d.length, 1)} × ${roundMm(d.width, 1)} × ${roundMm(d.height, 1)} mm`, `Veggdeler: ${model.parts.filter(p => p.id.startsWith('wall-')).map(p => `${roundMm(p.width, 2)} × ${roundMm(p.stockHeight || p.height, 2)}`).join(' / ')} mm`, 'Styreringen tar litt plass langs innerkanten av bunnen.');
       }
       el('dimensions').replaceChildren(...lines.map((line, i) => { const node = document.createElement(i ? 'span' : 'strong'); node.textContent = line; return node; }));
       container.querySelector('#gen-preview-caption').textContent = panel ? 'Flat del · 1:1 · rosa = flexsnitt' : 'Ytre mål inkluderer bunn og eventuelt lokk';

@@ -369,4 +369,28 @@ await test('Graver mellom konturer handles selected groups and group editing wit
  $('btn-undo').click();assert(ids()[0]===group);d.querySelector(`#layer-list [data-id="${group}"] [data-action="edit-group"]`).click();key('a',{metaKey:true});$('btn-engrave-between').click();
  assert(copiedShape().laserMode==='engrave');key('Escape');assert(ids()[0]===group);assert(shapes()[0].children.length===1);
 });
+await test('Box workshop uses 1 mm spacing and inserts all three new designs with contained labels',()=>{
+ reset();
+ const input=(id,value)=>{$(id).value=value;$(id).dispatchEvent(new w.Event('input',{bubbles:true}));$(id).dispatchEvent(new w.Event('change',{bubbles:true}))};
+ for(const type of ['coin-bank','tissue','cable']){
+  d.querySelector('[data-tab="box"]').click();assert($('gen-box-gap').value==='1');input('gen-box-type',type);
+  assert($('gen-box-error').hidden,$('gen-box-error').textContent);assert(!$('btn-modal-insert').disabled);
+  $('gen-box-view-assembly').click();assert($('gen-preview-svg').querySelector('svg[aria-label*="Sammensatt"]'));
+  $('btn-modal-insert').click();d.activeElement?.blur();const parts=JSON.parse(clipboard('copy').text).shapes;
+  assert(parts.length===7);for(const part of parts){const label=part.children.find(s=>s.guideLabel);assert(label.y>=part.y&&label.y+label.height<=part.y+part.height+.01)}
+  reset();
+ }
+});
+await test('Flex workshop uses matching top and bottom fingers and preserves spacing after insertion',()=>{
+ d.querySelector('[data-tab="flex"]').click();assert($('gen-flex-gap').value==='1');
+ $('gen-flex-preset').value='closed';$('gen-flex-preset').dispatchEvent(new w.Event('change',{bubbles:true}));
+ assert($('gen-flex-error').hidden,$('gen-flex-error').textContent);assert($('gen-flex-type').value==='rounded-closed');
+ $('btn-modal-insert').click();d.activeElement?.blur();const parts=JSON.parse(clipboard('copy').text).shapes;
+ const wall=parts.flatMap(p=>p.children).find(p=>p.cutStage==='box-outline'&&p.boxPart.id==='wall-0');
+ assert(wall.height>60,'wall tabs missing');assert(parseSvgPathToPolygons(wall.d)[0].length>4);
+ reset();
+});
+await test('Selecting the 3 mm MDF preset updates the visible cut fields to 75 percent and 30 mm/s',()=>{
+ $('tab-laser').click();edit('laser-preset-select','mdf-3mm');assert(Number($('ls-cut-power').value)===75);assert(Number($('ls-cut-speed').value)===30);$('tab-object').click();
+});
 document.querySelector('#summary').textContent=`${passed} bestått, ${failed} feilet`;

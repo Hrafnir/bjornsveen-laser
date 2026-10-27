@@ -156,3 +156,42 @@ test('unsafe webs, overlong cuts, impossible radii and invalid inputs are reject
     { flexType: 'rounded', wallPieces: 3 }, { flexType: 'rounded', lengthMm: 80, widthMm: 80, radiusMm: 40 }
   ]) assert.throws(() => buildFlexModel(options), JSON.stringify(options));
 });
+
+test('flex tabs and plate sockets cover each straight joint once at actual assembled coordinates', () => {
+  for(const flexType of ['rounded','rounded-lid','rounded-closed'])for(const wallPieces of [1,2])for(const thicknessMm of [1.5,3,6]) {
+    const m=buildFlexModel({flexType,wallPieces,thicknessMm,lengthMm:180,widthMm:100,heightMm:80,radiusMm:25});
+    const bottom=m.parts.find(p=>p.id==='bottom'),lid=m.parts.find(p=>p.id==='lid'),t=m.thickness;
+    assert.ok(m.joints.length>=4);
+    for(const wall of wallParts(m)) {
+      const bounds=computePolygonsBBox([wall.outline]);near(bounds.y,-t);near(bounds.height,wall.height+t+(lid?t:0));
+      for(const joint of wall.joints) {
+        assert.ok(joint.end-joint.start>=t);
+        assert.ok(!m.route.bends.some(b=>joint.start<b.start+b.width&&joint.end>b.start));
+        const mid=(joint.start+joint.end)/2,p=m.route.at(mid),localX=mid-wall.routeStart;
+        assert.equal(pointInMultiPolygon(p,[bottom.outline]),false,'bottom collides with wall tab');
+        assert.equal(pointInMultiPolygon({x:localX,y:-t/2},[wall.outline]),true,'missing bottom tab');
+        if(lid){assert.equal(pointInMultiPolygon(p,[lid.outline]),false);assert.equal(pointInMultiPolygon({x:localX,y:wall.height+t/2},[wall.outline]),true)}
+        // At either side of a tab the plate occupies the stock-height band instead.
+        for(const s of [joint.start-.05,joint.end+.05]){
+          const q=m.route.at(s);assert.equal(pointInMultiPolygon(q,[bottom.outline]),true);
+          assert.equal(pointInMultiPolygon({x:s-wall.routeStart,y:-t/2},[wall.outline]),false);
+        }
+        if(flexType==='rounded-lid'){
+          assert.equal(pointInMultiPolygon(m.route.at(joint.start-m.clearance/2),[lid.outline]),false,'missing removable-lid clearance');
+          assert.equal(pointInMultiPolygon(m.route.at(joint.start-m.clearance-.05),[lid.outline]),true,'excessive lid play');
+        }
+      }
+    }
+  }
+});
+
+test('flex kerf compensation preserves mating dimensions, and slit endpoints stop at the bend edges',()=>{
+ for(const kerfMm of [.08,.17,.3]){
+  const m=buildFlexModel({flexType:'rounded-lid',kerfMm}),shapes=flexModelToShapes(m);
+  for(const wall of wallParts(m)){
+   const cut=shapes.find(s=>s.cutStage==='box-outline'&&s.boxPart.id===wall.id),b=computePolygonsBBox([wall.outline]);
+   near(cut.width,b.width+kerfMm,.002);near(cut.height,b.height+kerfMm,.002);
+   for(const slit of wall.slits){assert.ok(!wall.joints.some(j=>wall.routeStart+slit[0].x>j.start&&wall.routeStart+slit[0].x<j.end));}
+  }
+ }
+});

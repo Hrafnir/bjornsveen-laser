@@ -61,5 +61,14 @@ await test('Export dialog and generator fit small windows and remain scrollable'
  await size(390,640);$('btn-preflight').click();await pause(50);const modal=d.querySelector('.modal-backdrop.open');assert(modal,'export did not open');within(modal.querySelector('.modal-window'));horizontalControls(modal);
  modal.classList.remove('open');d.querySelector('[data-generator="box"]').click();await pause(100);const generator=$('generator-modal');assert(generator.classList.contains('open'),'generator not open');within(generator.querySelector('.modal-window'));horizontalControls(generator);$('btn-close-modal').click();
 });
+await test('Flex finger controls and the three new box designs fit 320px and 1024px windows',async()=>{
+ for(const width of [320,1024]){
+  await size(width);d.querySelector('[data-generator="flex"]').click();$('gen-flex-preset').value='closed';$('gen-flex-preset').dispatchEvent(new w.Event('change'));
+  assert($('gen-flex-error').hidden,$('gen-flex-error').textContent);horizontalControls($('generator-modal'));$('btn-close-modal').click();
+  d.querySelector('[data-generator="box"]').click();
+  for(const type of ['coin-bank','tissue','cable']){$('gen-box-type').value=type;$('gen-box-type').dispatchEvent(new w.Event('change'));assert($('gen-box-error').hidden,$('gen-box-error').textContent);horizontalControls($('generator-modal'));}
+  $('btn-close-modal').click();
+ }
+});
 await size(1280);$('tab-object').click();if($('inspector-panel').hidden)$('btn-toggle-panel').click();
 document.querySelector('#summary').textContent=`${passed} bestått, ${failed} feilet`;

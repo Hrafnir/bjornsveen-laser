@@ -21,7 +21,7 @@ export const LASER_MATERIAL_PRESETS = {
     name: '🟫 3 mm MDF-plate (P3 CO2)',
     machine: 'xtool-p3',
     thicknessMm: 3.0,
-    cut: { power: 90, speed: 15, repeat: 1, airPump: 100 },
+    cut: { power: 75, speed: 30, repeat: 1, airPump: 100 },
     score: { power: 20, speed: 150, repeat: 1, airPump: 25 },
     engrave: { power: 35, speed: 320, density: 100, repeat: 1, bitmapScanMode: 'zMode', airPump: 25 },
     bitmap: { power: 35, speed: 280, dpi: 254, repeat: 1, bitmapMode: 'Jarvis', bitmapScanMode: 'zMode', airPump: 25, dotDuration: 200, frequency: 40 }

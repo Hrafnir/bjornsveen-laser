@@ -1,3 +1,4 @@
+import { packPartBounds } from './part-layout.js';
 import { uid, roundMm, shapeToWorldPolygons, createPathShapeFromPolygons, computePolygonsBBox, polygonsToSvgPath, pointInMultiPolygon } from './geometry.js';
 import { createTextShape } from './fonts.js';
 
@@ -8,6 +9,9 @@ export const BOX_TYPES = [
   { id: 'hinged', name: 'Boks med hengsellokk', note: 'For to løse, utvendige hengsler mellom bakvegg og lokk. Hullmål må passe hengslene dine; skruer/hengsler følger ikke med i kuttefilen.' },
   { id: 'tray', name: 'Brett med bærehåndtak', note: 'Åpen boks med avrundede håndtakshull i kortsidene.' },
   { id: 'dividers', name: 'Sorteringsboks med rom', note: 'Skilleveggene tres sammen halv-i-halv. Ved rom i bare én retning må skilleveggene limes fast.' },
+  { id: 'coin-bank', name: 'Sparebøsse med løst lokk', note: 'Lokk med myntåpning og sentreringsplate. Lim sentreringsplaten under lokket; lokket kan løftes av for tømming.' },
+  { id: 'tissue', name: 'Serviettboks', note: 'Avtakbart lokk med avrundet uttrekksåpning. Lim sentreringsplaten under lokket, og løft lokket av ved påfylling.' },
+  { id: 'cable', name: 'Kabelboks med lokk', note: 'Løst lokk og to avrundede kabelåpninger i kortsidene. Til oppbevaring og organisering av kabler.' },
   { id: 'closed', name: 'Lukket boks med fast topp', note: 'Seks deler med fingerskjøter. Toppen monteres sammen med veggene og er ikke et avtakbart lokk.' }
 ];
 const EPS = 1e-8;
@@ -138,9 +142,9 @@ export function buildBoxModel(options = {}) {
   const kerf = numberOption(options, 'kerfMm', 0.08, 0, Math.min(1, t / 3));
   const finger = numberOption(options, 'fingerWidthMm', 14, t, 80);
   const clearance = numberOption(options, 'lidClearanceMm', 0.2, 0.05, Math.min(1, t / 2));
-  const gap = numberOption(options, 'partGapMm', 6, 2, 30);
-  const jointTop = type === 'closed', overlay = ['lid', 'hinged'].includes(type), sliding = type === 'sliding';
-  const roof = type === 'lid' ? 2 * t : sliding ? 2 * t + clearance : (jointTop || overlay) ? t : 0;
+  const gap = numberOption(options, 'partGapMm', 1, 1, 30);
+  const jointTop = type === 'closed', looseLid = ['lid','coin-bank','cable','tissue'].includes(type), overlay = looseLid || type === 'hinged', sliding = type === 'sliding';
+  const roof = looseLid ? 2 * t : sliding ? 2 * t + clearance : (jointTop || overlay) ? t : 0;
   let L = numberOption(options, 'lengthMm', 120, 20, 900);
   let W = numberOption(options, 'widthMm', 85, 20, 900);
   let H = numberOption(options, 'heightMm', 55, 15, 500);
@@ -172,19 +176,34 @@ export function buildBoxModel(options = {}) {
   }
   if (jointTop) add('top', 'Fast topp', L, W, panelLoop(L, W, [alongL(true), alongW(true), alongL(true), alongW(true)]), [], 'top');
   if (overlay) add('lid', 'Lokk', L, W, rect(L, W));
-  if (type === 'lid') add('locator', 'Sentreringsplate – lim under lokket', inner.length - 2 * clearance, inner.width - 2 * clearance, rect(inner.length - 2 * clearance, inner.width - 2 * clearance));
+  if (looseLid) add('locator', 'Sentreringsplate – lim under lokket', inner.length - 2 * clearance, inner.width - 2 * clearance, rect(inner.length - 2 * clearance, inner.width - 2 * clearance));
   if (sliding) {
     add('lid', 'Skyvelokk', inner.length - 2 * clearance, W - t - clearance, rect(inner.length - 2 * clearance, W - t - clearance));
     for (const id of ['left-lower', 'right-lower', 'left-upper', 'right-upper']) add('rail-' + id, 'Skinne ' + ({'left-lower':'venstre nedre','right-lower':'høyre nedre','left-upper':'venstre øvre','right-upper':'høyre øvre'}[id]), inner.width, t, rect(inner.width, t));
   }
   const lid = parts.find(p => p.id === 'lid');
-  if (lid && options.fingerHoleLid !== false) {
+  if (lid && !['coin-bank','tissue'].includes(type) && options.fingerHoleLid !== false) {
     const r = Math.min(8, (Math.min(lid.width, lid.height) - 4 * t) / 4);
     if (r < 1.5) throw new Error('Lokket er for lite til fingerhullet. Slå av fingerhull eller øk boksen.');
     const cx = lid.width / 2, cy = lid.height / 2;
     lid.holes.push(circle(cx, cy, r));
     const locator = parts.find(p => p.id === 'locator');
     if (locator) locator.holes.push(circle(locator.width / 2, locator.height / 2, r));
+  }
+  if (type === 'coin-bank') {
+    const slotW = Math.min(35, inner.length - 4 * t), slotH = Math.min(5, inner.width - 4 * t);
+    if (slotW < 20 || slotH < 3) throw new Error('Øk boksen for å få plass til myntåpningen.');
+    for (const part of parts.filter(p => ['lid','locator'].includes(p.id))) part.holes.push(roundedHole(part.width/2, part.height/2, slotW, slotH));
+  }
+  if (type === 'tissue') {
+    const holeW = Math.min(L*.65,L-6*t), holeH = Math.min(W*.4,W-6*t,holeW*.5);
+    if (holeH < 8) throw new Error('Øk boksen for å få plass til uttrekksåpningen.');
+    for(const part of parts.filter(p=>['lid','locator'].includes(p.id)))part.holes.push(roundedHole(part.width/2,part.height/2,holeW,holeH));
+  }
+  if (type === 'cable') {
+    const holeH=Math.min(18,inner.height-2*t),holeW=Math.min(40,W-6*t);
+    if(holeH<6||holeW<holeH+4)throw new Error('Øk boksens bredde/høyde for kabelåpningene.');
+    for(const part of parts.filter(p=>['left','right'].includes(p.id)))part.holes.push(roundedHole(W/2,B/2,holeW,holeH));
   }
   if (type === 'tray') {
     const holeH = Math.min(16, B - 4 * t), holeW = Math.min(50, W - 6 * t);
@@ -213,16 +232,14 @@ export function buildBoxModel(options = {}) {
   for (let i = 0; i < rows - 1; i++) add('divider-long-' + i, `Lang skillevegg ${i + 1}`, inner.length - 2 * endPlay, divH, dividerLoop(inner.length - 2 * endPlay, divH, xCenters.map(x => x - endPlay), t, true));
   for (let i = 0; i < columns - 1; i++) add('divider-short-' + i, `Kort skillevegg ${i + 1}`, inner.width - 2 * endPlay, divH, dividerLoop(inner.width - 2 * endPlay, divH, yCenters.map(y => y - endPlay), t, false));
   parts.forEach(validatePartHoles);
-  return { type, thickness: t, kerf, gap, clearance, outer: { length: L, width: W, height: H }, inner, bodyHeight: B, frontHeight: frontH, parts, compartments: { columns, rows, cellLength: cellL, cellWidth: cellW }, addLabels: options.addLabels !== false };
+  return { type, thickness: t, kerf, gap, layout:{width:options.layoutWidthMm ?? 600,height:options.layoutHeightMm ?? 400}, clearance, outer: { length: L, width: W, height: H }, inner, bodyHeight: B, frontHeight: frontH, parts, compartments: { columns, rows, cellLength: cellL, cellWidth: cellW }, addLabels: options.addLabels !== false };
 }
 
 // Layout uses compensated bounds, not nominal dimensions, so cuts cannot overlap.
 export function boxModelToShapes(model) {
   const shapes = [], labels = [];
   const cuts = model.parts.map(part => ({ part, outline: offsetBoxLoop(part.outline, model.kerf / 2), holes: part.holes.map(loop => offsetBoxLoop(loop, -model.kerf / 2)) }));
-  const totalArea = cuts.reduce((sum, c) => { const b = computePolygonsBBox([c.outline]); return sum + (b.width + model.gap) * (b.height + model.gap); }, 0);
-  const rowWidth = Math.max(...cuts.map(c => computePolygonsBBox([c.outline]).width), Math.sqrt(totalArea) * 1.4);
-  let x = 10, y = 10, rowHeight = 0;
+  const positions = packPartBounds(cuts.map(c => computePolygonsBBox([c.outline])), model.gap,model.layout);
   const shapeAt = (loops, dx, dy, name, stage, part) => {
     const placed = loops.map(loop => {
       const translated = loop.map(p => pt(roundMm(p.x + dx, 3), roundMm(p.y + dy, 3)));
@@ -234,29 +251,26 @@ export function boxModelToShapes(model) {
     // bounding box to 0.01 mm and inadvertently rescaling mating edges.
     Object.assign(shape, shape.origBBox);
     shape.cutStage = stage;
-    shape.boxPart = { id: part.id, name: part.name, nominalWidth: part.width, nominalHeight: part.height };
+    shape.boxPart = { id: part.id, name: part.name, nominalWidth: part.width, nominalHeight: part.stockHeight || part.height };
     return shape;
   };
-  for (const { part, outline, holes } of cuts) {
+  for (const [index, { part, outline, holes }] of cuts.entries()) {
     const b = computePolygonsBBox([outline]);
-    if (x > 10 && x - 10 + b.width > rowWidth) { x = 10; y += rowHeight + model.gap; rowHeight = 0; }
+    const {x,y} = positions[index];
     const dx = x - b.x, dy = y - b.y;
     if (part.slits?.length) shapes.push(shapeAt(part.slits, dx, dy, `${part.name} – flexsnitt`, 'flex-slits', part));
     if (holes.length) shapes.push(shapeAt(holes, dx, dy, `Boks ${part.name} – hull`, 'box-holes', part));
     shapes.push(shapeAt([outline], dx, dy, `Boks ${part.name}`, 'box-outline', part));
-    let labelHeight = 0;
     if (model.addLabels) {
       const labelText = part.id === 'locator' ? 'Lokkinnlegg' : part.name.replace(' side', '').replace('Skinne venstre', 'Skinne V').replace('Skinne høyre', 'Skinne H');
       const label = createTextShape({ x: 0, y: 0, text: labelText, fontKey: 'singleline', fontSizeMm: 8, spacingMm: 0, laserMode: 'guide' });
-      const labelScale = Math.min(1, Math.max(1, b.width - 2) / label.width);
+      const labelScale = Math.min(1, Math.max(1, b.width - 2) / label.width, Math.max(1, b.height - 2) / label.height);
       label.width *= labelScale; label.height *= labelScale;
-      label.x = x + (b.width - label.width) / 2; label.y = y + b.height + 3;
+      label.x = x + (b.width - label.width) / 2; label.y = y + (b.height - label.height) / 2;
       label.guideLabel = true;
       label.boxPart = { id: part.id, name: part.name };
       labels.push(label);
-      labelHeight = label.height + 5;
     }
-    x += b.width + model.gap; rowHeight = Math.max(rowHeight, b.height + labelHeight);
   }
   return [...shapes, ...labels];
 }

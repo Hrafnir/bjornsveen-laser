@@ -667,7 +667,7 @@ export function renderShapesPreviewSvg(shapes, { strokeScale = 0.0045 } = {}) {
     if (s.guideLabel && s.laserMode === 'guide') {
       const text = String(s.textMeta?.text || s.name).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&apos;'}[c]));
       const cx = s.x + s.width / 2, cy = s.y + s.height / 2;
-      return `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" font-size="${s.height * 1.25}" font-weight="600" fill="#047857" transform="rotate(${s.rotation || 0} ${cx} ${cy})">${text}</text>`;
+      return `<text x="${cx}" y="${cy}" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" font-size="${s.height * 1.25}" font-weight="600" fill="#047857" stroke="#f8fafc" stroke-width="${s.height*.12}" paint-order="stroke" transform="rotate(${s.rotation || 0} ${cx} ${cy})">${text}</text>`;
     }
     const color = getCutStage(s)?.color || (
       s.laserMode === 'cut' ? '#ff1e1e' :

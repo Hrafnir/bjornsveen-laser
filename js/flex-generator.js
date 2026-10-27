@@ -1,16 +1,19 @@
+import Clipper from '../vendor/clipper.module.js';
 import { cleanBoxLoop, boxModelToShapes, groupBoxParts } from './box-generator.js';
 import { computePolygonsBBox, polygonsToSvgPath } from './geometry.js';
 
 export const FLEX_TYPES = [
   { id: 'panel', name: 'Flexpanel / trehengsel', note: 'En flat del med et bøyeområde i midten. Snittene følger bøyeaksen. Endemarg 0 åpner snittene mot kanten, slik at en stiv ramme ikke hindrer bøying.' },
-  { id: 'rounded', name: 'Avrundet, åpen boks', note: 'Veggen bøyes rundt bunnens avrundede hjørner. Lim styreringen sentrert på bunnen, og lim veggen oppå bunnen rundt ringen. Lim skjøtelappen på innsiden av veggskjøten.' },
-  { id: 'rounded-lid', name: 'Avrundet boks med lokk', note: 'Lim styreringen sentrert på bunnen og veggen rundt ringen. Lim skjøtelappene på innsiden. Lim lokkinnlegget sentrert under lokket; klaringen gjør lokket avtakbart.' }
+  { id: 'rounded', name: 'Avrundet, åpen boks', note: 'Fingerskjøter låser veggen til bunnen langs de rette partiene. Bøy hjørnene rundt styreringen og lim bunnskjøter og skjøtelapper etter prøvemontering.' },
+  { id: 'rounded-closed', name: 'Avrundet boks med fast topp', note: 'Fingerskjøter låser både bunn og topp til veggen. Prøvemonter før skjøtene limes. Toppen er fast og boksen åpnes ikke etter liming.' },
+  { id: 'rounded-lid', name: 'Avrundet boks med lokk', note: 'Fingerskjøter mot både bunn og lokk. Lim bunnskjøtene og skjøtelappene; la lokket være ulimt. Lokkinnlegg og klaring gjør lokket avtakbart.' }
 ];
 export const FLEX_PRESETS = [
   { id: 'hinge', name: 'Trehengsel', options: { flexType: 'panel', lengthMm: 120, widthMm: 70, flexWidthMm: 35 } },
   { id: 'sample', name: 'Prøvebit', options: { flexType: 'panel', lengthMm: 80, widthMm: 50, flexWidthMm: 40 } },
   { id: 'tray', name: 'Avrundet brett', options: { flexType: 'rounded', lengthMm: 150, widthMm: 100, heightMm: 40, radiusMm: 25 } },
   { id: 'lid', name: 'Boks med lokk', options: { flexType: 'rounded-lid', lengthMm: 140, widthMm: 90, heightMm: 65, radiusMm: 22 } },
+  { id: 'closed', name: 'Avrundet med fast topp', options: { flexType: 'rounded-closed', lengthMm: 140, widthMm: 90, heightMm: 65, radiusMm: 22 } },
   { id: 'capsule', name: 'Kapselboks', options: { flexType: 'rounded-lid', lengthMm: 160, widthMm: 80, heightMm: 60, radiusMm: 40 } }
 ];
 const pt = (x, y) => ({ x, y });
@@ -57,7 +60,7 @@ export function buildFlexSlits({ x, width, height, pitch, cutLength, bridge, mar
 export function roundedWallRoute(L, W, R, t) {
   const r = R - t / 2, a = L - 2 * R, b = W - 2 * R;
   const segments = [], bends = []; let length = 0;
-  const line = (len, x, y, dx, dy) => { if (len > 1e-8) { segments.push({ start: length, length: len, at: s => pt(x + dx * s, y + dy * s) }); length += len; } };
+  const line = (len, x, y, dx, dy) => { if (len > 1e-8) { segments.push({ kind:'straight', start: length, length: len, at: s => pt(x + dx * s, y + dy * s) }); length += len; } };
   const arc = (cx, cy, angle) => {
     const len = Math.PI * r / 2;
     bends.push({ start: length, width: len });
@@ -73,7 +76,44 @@ export function roundedWallRoute(L, W, R, t) {
     const segment = segments.find(seg => s <= seg.start + seg.length + 1e-8) || segments.at(-1);
     return segment.at(Math.max(0, Math.min(segment.length, s - segment.start)));
   };
-  return { length, bends, at };
+  return { length, bends, at, straights: segments.filter(s=>s.kind==='straight') };
+}
+
+// Finger stations are shared by the developed wall and both plates. Keep them
+// on straight spans: solid tabs across a bend would prevent the living hinge.
+export function straightFingerSpans(route, start, end, t, target) {
+  const spans=[];
+  for(const segment of route.straights){
+    const a=Math.max(start+t,segment.start+t),b=Math.min(end-t,segment.start+segment.length-t);
+    if(b-a<3*t)continue;
+    let count=Math.max(3,Math.round((b-a)/target));if(count%2===0)count++;
+    while(count>3&&(b-a)/count<t)count-=2;
+    for(let i=1;i<count;i+=2)spans.push({start:a+(b-a)*i/count,end:a+(b-a)*(i+1)/count});
+  }
+  return spans;
+}
+function fingeredFlexWall(width,height,spans,t,top) {
+  const lower=[pt(0,0)],upper=[pt(0,height)];
+  for(const s of spans){
+    lower.push(pt(s.start,0),pt(s.start,-t),pt(s.end,-t),pt(s.end,0));
+    if(top)upper.push(pt(s.start,height),pt(s.start,height+t),pt(s.end,height+t),pt(s.end,height));
+  }
+  lower.push(pt(width,0));upper.push(pt(width,height));
+  return cleanBoxLoop([...lower,...upper.reverse()]);
+}
+function notchedFlexPlate(outline,spans,route,t,clearance=0) {
+  const scale=100000,clip=new Clipper.Clipper(),result=new Clipper.Paths();
+  const path=loop=>loop.map(p=>({X:Math.round(p.x*scale),Y:Math.round(p.y*scale)}));
+  clip.AddPath(path(outline),Clipper.PolyType.ptSubject,true);
+  for(const span of spans){
+    const a=route.at(span.start-clearance),b=route.at(span.end+clearance),len=Math.hypot(b.x-a.x,b.y-a.y);
+    const normal=pt(-(b.y-a.y)/len,(b.x-a.x)/len); // inward on the clockwise route
+    const at=(p,n)=>pt(p.x+normal.x*n,p.y+normal.y*n);
+    clip.AddPath(path([at(a,-t/2-.01),at(b,-t/2-.01),at(b,t/2),at(a,t/2)]),Clipper.PolyType.ptClip,true);
+  }
+  clip.Execute(Clipper.ClipType.ctDifference,result,Clipper.PolyFillType.pftNonZero,Clipper.PolyFillType.pftNonZero);
+  if(result.length!==1)throw new Error('Fingerskjøtene deler platen. Øk boksen eller reduser materialtykkelsen.');
+  return cleanBoxLoop(result[0].map(p=>pt(p.X/scale,p.Y/scale)));
 }
 
 export function buildFlexModel(options = {}) {
@@ -86,12 +126,12 @@ export function buildFlexModel(options = {}) {
   const bridge = number(options, 'bridgeMm', 2, 0.5, 12, 'Bro mellom snitt');
   const L = number(options, 'lengthMm', 120, 20, 900, 'Lengde');
   const W = number(options, 'widthMm', 70, 20, 600, 'Bredde');
-  const gap = number(options, 'partGapMm', 6, 2, 30, 'Deleavstand');
+  const gap = number(options, 'partGapMm', 1, 1, 30, 'Deleavstand');
   const parts = [], pattern = { pitch, cutLength, bridge, kerf };
   const add = (id, name, width, height, outline = rect(width, height), holes = []) => {
     const part = { id, name, width, height, outline, holes, slits: [] }; parts.push(part); return part;
   };
-  const model = { type, thickness, kerf, gap, parts, pattern, addLabels: options.addLabels !== false };
+  const model = { type, thickness, kerf, gap, layout:{width:options.layoutWidthMm ?? 600,height:options.layoutHeightMm ?? 400}, parts, pattern, addLabels: options.addLabels !== false };
   if (type === 'panel') {
     const axis = options.axis ?? 'vertical';
     if (!['vertical', 'horizontal'].includes(axis)) throw new Error('Ukjent bøyeakse.');
@@ -104,7 +144,8 @@ export function buildFlexModel(options = {}) {
     if (axis === 'horizontal') part.slits = part.slits.map(line => { const rotated = line.map(p => pt(p.y, p.x)); rotated.closed = false; return rotated; });
     return Object.assign(model, { outer: { length: L, width: W, height: thickness }, axis, flexWidth, margin });
   }
-  const t = thickness, hasLid = type === 'rounded-lid';
+  const t = thickness, hasLid = ['rounded-lid','rounded-closed'].includes(type), removableLid = type === 'rounded-lid';
+  const finger = number(options, 'fingerWidthMm', 14, t, 80, 'Tappbredde');
   const H = number(options, 'heightMm', 60, 20, 400, 'Ytre høyde med lokk');
   const R = number(options, 'radiusMm', 22, t + 1, Math.min(L, W) / 2, 'Ytre hjørneradius');
   const clearance = number(options, 'clearanceMm', 0.2, 0.05, Math.min(1, t / 2), 'Lokk- og styreringsklaring');
@@ -118,7 +159,8 @@ export function buildFlexModel(options = {}) {
   const joinH = wallH - t - (hasLid ? t : 0) - 2 * clearance;
   if (joinH < 2 * t) throw new Error('Boksen er for lav til skjøtelapp og lokk. Øk høyden.');
   const route = roundedWallRoute(L, W, R, t);
-  add('bottom', 'Avrundet bunn', L, W, roundedFlexOutline(L, W, R));
+  const bottom=add('bottom', 'Avrundet bunn', L, W, roundedFlexOutline(L, W, R));
+  const joints=[];
   const ringW = L - 2 * inset, ringH = W - 2 * inset, ringR = R - inset;
   const ringHole = roundedFlexOutline(ringW - 2 * ringWidth, ringH - 2 * ringWidth, Math.max(0, ringR - ringWidth)).map(p => pt(p.x + ringWidth, p.y + ringWidth));
   add('ring', 'Styrering – lim på bunn', ringW, ringH, roundedFlexOutline(ringW, ringH, ringR), [ringHole]);
@@ -126,6 +168,10 @@ export function buildFlexModel(options = {}) {
     const start = i * route.length / wallPieces + seamGap / 2, end = (i + 1) * route.length / wallPieces - seamGap / 2;
     const wall = add('wall-' + i, `Flexvegg ${i + 1}`, end - start, wallH);
     wall.routeStart = start; wall.bends = [];
+    wall.joints = straightFingerSpans(route, start, end, t, finger);
+    joints.push(...wall.joints);
+    wall.outline = fingeredFlexWall(wall.width, wallH, wall.joints.map(j=>({start:j.start-start,end:j.end-start})), t, hasLid);
+    wall.stockHeight = wallH + t + (hasLid ? t : 0);
     for (const bend of route.bends) {
       if (bend.start < start || bend.start + bend.width > end) continue;
       wall.bends.push({ x: bend.start - start, width: bend.width });
@@ -133,11 +179,13 @@ export function buildFlexModel(options = {}) {
     }
     add('join-' + i, `Skjøtelapp ${i + 1}`, joinWidth, joinH);
   }
+  if(!joints.length)throw new Error('De rette veggpartiene er for korte til fingerskjøter. Øk lengden eller reduser radius.');
+  bottom.outline = notchedFlexPlate(bottom.outline, joints, route, t);
   if (hasLid) {
-    add('lid', 'Løst lokk', L, W, roundedFlexOutline(L, W, R));
-    add('locator', 'Lokkinnlegg', ringW, ringH, roundedFlexOutline(ringW, ringH, ringR));
+    add('lid', removableLid ? 'Løst fingerlokk' : 'Fast fingertopp', L, W, notchedFlexPlate(roundedFlexOutline(L,W,R),joints,route,t,removableLid?clearance:0));
+    if(removableLid)add('locator', 'Lokkinnlegg', ringW, ringH, roundedFlexOutline(ringW, ringH, ringR));
   }
-  return Object.assign(model, { outer: { length: L, width: W, height: H }, inner: { length: L - 2 * t, width: W - 2 * t, height: H - (hasLid ? 3 : 1) * t }, radius: R, bodyTop: B, clearance, seamGap, wallPieces, route });
+  return Object.assign(model, { outer: { length: L, width: W, height: H }, inner: { length: L - 2 * t, width: W - 2 * t, height: H - (removableLid ? 3 : hasLid ? 2 : 1) * t }, radius: R, bodyTop: B, clearance, seamGap, wallPieces, route, joints, fingerWidth: finger });
 }
 
 export const flexModelToShapes = model => boxModelToShapes(model);
@@ -161,10 +209,12 @@ export function renderFlexAssemblySvg(model) {
   const surfaces = [];
   for (const wall of model.parts.filter(p => p.id.startsWith('wall-'))) {
     const steps = Math.ceil(wall.width / 2);
-    for (let i = 0; i < steps; i++) {
-      const s = wall.routeStart + wall.width * i / steps, e = wall.routeStart + wall.width * (i + 1) / steps;
+    const stations=[...new Set([...Array.from({length:steps+1},(_,i)=>wall.routeStart+wall.width*i/steps),...wall.joints.flatMap(j=>[j.start,j.end])])].sort((a,b)=>a-b);
+    for (let i = 0; i < stations.length-1; i++) {
+      const s=stations[i],e=stations[i+1],mid=(s+e)/2;
       const a = model.route.at(s), b = model.route.at(e);
-      surfaces.push({ depth: (a.x + a.y + b.x + b.y) / 2, loop: [project(a.x, a.y, t), project(b.x, b.y, t), project(b.x, b.y, model.bodyTop), project(a.x, a.y, model.bodyTop)] });
+      const tab=wall.joints.some(j=>mid>j.start&&mid<j.end),bottom=tab?0:t,top=model.bodyTop+(tab&&byId('lid')?t:0);
+      surfaces.push({ depth: (a.x + a.y + b.x + b.y) / 2, loop: [project(a.x, a.y, bottom), project(b.x, b.y, bottom), project(b.x, b.y, top), project(a.x, a.y, top)] });
     }
   }
   surfaces.sort((a, b) => a.depth - b.depth);
@@ -182,7 +232,7 @@ export function renderFlexAssemblySvg(model) {
   path([rim, innerRim], '#f2d7b3');
   if (byId('lid')) {
     const z = H + 20;
-    plate(byId('locator'), t + model.clearance, t + model.clearance, z - t, '#bd9363');
+    if(byId('locator'))plate(byId('locator'), t + model.clearance, t + model.clearance, z - t, '#bd9363');
     plate(byId('lid'), 0, 0, z, '#efd5b0');
   }
   const bounds = computePolygonsBBox(paths), pad = 12;
