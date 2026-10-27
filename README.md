@@ -195,3 +195,19 @@ For å fjerne for eksempel en stjerne fra en trekant: legg stjerna foran trekant
 ### Gravering mellom konturer
 
 Velg ytterformen og innerformen og trykk **Graver mellom konturer** ved fyll/omriss i Objekt-panelet. Det opprettes én gravert flate med tomt hull i midten, uavhengig av lagrekkefølge. Det virker også på grupper med lukkede vektorformer og på en eksisterende sti med flere konturer. Flere innvendige former gir flere hull; ved kryssende eller nestede konturer veksler flaten mellom fylt og tomt for hver grense. Lagposisjon beholdes, og ett angresteg gjenoppretter originalene. Resultatet kan fortsatt byttes til **Kun omriss** for å kutte både ytre og indre kontur.
+
+### Puslespill fra bilder og frie ytterkonturer
+
+Velg et bilde og trykk **Lag puslespill av bildet** i Objekt-panelet, eller åpne **Puslespill** og velg et bilde fra arbeidsflaten. Bildet og kuttlinjene samles i én gruppe på bildets plass. Størrelse, proporsjonslås, rader, kolonner og låsstørrelse kan endres før innsetting. Originalbildet beholdes, slik at senere endringer ikke bygger på en allerede beskåret eller dithret kopi.
+
+- **Automatisk** bruker motivets ytterkant når bildet har transparens, ellers hele bilderammen.
+- **Motivsilhuett** finner også sammenhengende ensfarget bakgrunn; toleranse og konturforenkling kan justeres. Største sammenhengende motiv beholdes. Innvendige hull og små, separate motiver brukes ikke som ytterkutt. Dette er ikke automatisk motivutklipping fra vilkårlige fotografiske bakgrunner.
+- **Rektangulær bildekant**, **Avrundede hjørner** og **Oval / sirkel** gir faste rammevalg. Positivt kantinnrykk flytter kuttet innover; negativt gir en kant utenfor.
+- **Bruk valgt / redigert ytterkontur** bruker en lukket form valgt sammen med bildet. Formen erstattes sammen med bildet, slik at ytterkuttet ikke blir liggende dobbelt. Konkave konturer støttes; kuttene deles der de går utenfor motivet. Én sammenhengende ytterkontur uten hull kreves.
+- Brikketyper: **Klassiske låsebrikker**, **Kantede låsebrikker**, **Bølgebrikker (uten låsehode)** og **Rette ruter**. Rader og kolonner beskriver rutenettet; uregelmessige konturer kan gi færre eller avskårne kantbrikker.
+
+Velg den ferdige gruppen og bruk **Endre puslespill** for å endre oppsettet. For frie kurver: gå inn i gruppen, velg ytterkonturen og rediger med **Anker (A)**. Åpne deretter **Endre puslespill** og bruk den redigerte ytterkonturen for å beregne brikkelinjer og bildebeskjæring på nytt. Bilderamme, avrundet ramme og oval har henholdsvis 4, 8 og 4 ankerpunkter; eksisterende Bézier-håndtak beholdes ved ny beregning uten kantinnrykk.
+
+Bildebeskjæring følger med i forhåndsvisning, prosjektlagring og XCS/SVG-eksport. Innvendige kutt er åpne stier og deles mellom nabobrikker. Kuttrekkefølgen er fortsatt **vannrette → loddrette → ytterkontur**, etter graveringen. Innsetting og oppdatering kan angres i ett steg.
+
+`npm test` inkluderer geometriske tester for bildepuslespill. `tests/image-puzzle.html` tester bildeflyt, angre, ny beregning, silhuett, eksportbeskjæring og skjermbredder i nettleseren. Kjør nettlesertestene på en separat lokal testport; de bruker sin egen testtegning.

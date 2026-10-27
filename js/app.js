@@ -1,3 +1,4 @@
+import { renderPuzzleWorkshop } from './puzzle-ui.js';
 import { canEngraveBetweenContours, createBetweenEngraving } from './compound-fill.js';
 import { initLayout, revealInspectorControl, updateArrangeSelection } from './ui-layout.js';
 import { normalizeDisplayColor, colorLeaves, displayColor, selectionColors } from './appearance.js';
@@ -1277,6 +1278,7 @@ function renderInspector() {
       return;
     }
     groupSection.style.display = 'block';
+    document.getElementById('btn-edit-puzzle').hidden = !grp.puzzleMeta;
     document.getElementById('group-count-badge').textContent = `${grp.children.length} deler`;
     const gNameInput = document.getElementById('group-name-input');
     if (document.activeElement !== gNameInput) {
@@ -3528,6 +3530,8 @@ function bindInspectorEvents() {
   }
 
   // One-click "⭕ + Lag rød kuttelinje rundt bildet" (creates a composite Group with the bitmap + red cut outline!)
+  document.getElementById('btn-bmp-puzzle').addEventListener('click', () => openGeneratorModal('puzzle'));
+  document.getElementById('btn-edit-puzzle').addEventListener('click', () => openGeneratorModal('puzzle'));
   const addBmpCutBtn = document.getElementById('btn-bmp-add-cutline');
   if (addBmpCutBtn) {
     addBmpCutBtn.addEventListener('click', () => {
@@ -4275,9 +4279,30 @@ function bindModalEvents() {
 
   document.getElementById('btn-modal-insert').addEventListener('click', () => {
     if (!state.modalPreviewShapes || state.modalPreviewShapes.length === 0) return;
-    pushUndoSnapshot();
-    state.shapes.push(...state.modalPreviewShapes);
-    state.selectedIds = new Set(state.modalPreviewShapes.map(s => s.id));
+    const plan = state.modalInsertPlan;
+    if (plan) {
+      const locate = (list, id, rootId = null) => {
+        for (const shape of list) {
+          if (shape.id === id) return { list, shape, rootId: rootId || shape.id };
+          if (shape.type === 'group') { const found = locate(shape.children || [], id, rootId || shape.id); if (found) return found; }
+        }
+        return null;
+      };
+      const target = locate(state.shapes, plan.replaceId);
+      if (!target) { showToast('Originalbildet finnes ikke lenger. Åpne puslespillverktøyet på nytt.'); return; }
+      pushUndoSnapshot();
+      target.list.splice(target.list.indexOf(target.shape), 1, ...state.modalPreviewShapes);
+      for (const id of plan.removeIds) {
+        const old = locate(state.shapes,id);
+        if (old && old.shape.id !== plan.replaceId) old.list.splice(old.list.indexOf(old.shape),1);
+      }
+      if (state.editingGroupId === plan.replaceId) state.editingGroupId = null;
+      state.selectedIds = new Set(target.list === getActiveContainerList() ? state.modalPreviewShapes.map(s=>s.id) : [target.rootId]);
+    } else {
+      pushUndoSnapshot();
+      state.shapes.push(...state.modalPreviewShapes);
+      state.selectedIds = new Set(state.modalPreviewShapes.map(s => s.id));
+    }
     genModal.classList.remove('open');
     setActiveTool('select');
     renderAll();
@@ -4361,6 +4386,8 @@ function bindModalEvents() {
 function openGeneratorModal(tabName) {
   if (!finishDrawing()) return;
   state.activeGeneratorTab = tabName;
+  state.modalPreviewShapes = [];
+  state.modalInsertPlan = null;
   document.querySelectorAll('.modal-tab-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tabName);
   });
@@ -4635,73 +4662,22 @@ function renderSignGeneratorUI(container) {
 
 // ---- 3. Jigsaw Puzzle Modal UI ----
 function renderPuzzleGeneratorUI(container) {
-  let currentSeed = 42;
-  container.innerHTML = `
-    <div class="generator-controls">
-      <div class="info-box">
-        🧩 <strong>Puslespill-generator:</strong> Kutter i tre etapper: <strong>1. Vannrette → 2. Loddrette → 3. Ytterkontur.</strong> Eksporter som XCS for ferdig ordnede kuttelag. Gravering kjøres før kuttene.
-      </div>
-      <div class="prop-grid">
-        <div class="prop-field">
-          <label>Bredde (mm)</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="gen-puz-w" class="input-control math-input" value="150" /><span class="unit">mm</span></div>
-        </div>
-        <div class="prop-field">
-          <label>Høyde (mm)</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="gen-puz-h" class="input-control math-input" value="110" /><span class="unit">mm</span></div>
-        </div>
-        <div class="prop-field">
-          <label>Antall kolonner (Bredde)</label>
-          <input type="text" inputmode="decimal" id="gen-puz-cols" class="input-control math-input" value="4" />
-        </div>
-        <div class="prop-field">
-          <label>Antall rader (Høyde)</label>
-          <input type="text" inputmode="decimal" id="gen-puz-rows" class="input-control math-input" value="3" />
-        </div>
-        <div class="prop-field">
-          <label>Hjørneradius ramme</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="gen-puz-rx" class="input-control math-input" value="6" /><span class="unit">mm</span></div>
-        </div>
-        <div class="prop-field">
-          <label>Lås-størrelse (%)</label>
-          <input type="text" inputmode="decimal" id="gen-puz-tab" class="input-control math-input" value="22" />
-        </div>
-        <div class="prop-field full-width">
-          <button id="btn-puz-randomize" class="btn" type="button">🎲 Generer ny tilfeldig variasjon på brikkene</button>
-        </div>
-      </div>
-    </div>
-    <div class="generator-preview-box">
-      <div id="gen-preview-svg" style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;"></div>
-      <div id="gen-preview-caption" class="preview-caption"></div>
-    </div>
-  `;
-
-  const update = () => {
-    const cols = clamp(Math.round(evalMathExpr(document.getElementById('gen-puz-cols').value, 4)), 2, 15);
-    const rows = clamp(Math.round(evalMathExpr(document.getElementById('gen-puz-rows').value, 3)), 2, 15);
-    const shapes = generateJigsawPuzzle({
-      widthMm: evalMathExpr(document.getElementById('gen-puz-w').value, 150),
-      heightMm: evalMathExpr(document.getElementById('gen-puz-h').value, 110),
-      cols,
-      rows,
-      cornerRadiusMm: evalMathExpr(document.getElementById('gen-puz-rx').value, 6),
-      tabSizePct: evalMathExpr(document.getElementById('gen-puz-tab').value, 22),
-      seed: currentSeed
-    });
-    state.modalPreviewShapes = shapes;
-    const { svgHtml } = renderShapesPreviewSvg(shapes);
-    document.getElementById('gen-preview-svg').innerHTML = svgHtml;
-    document.getElementById('gen-preview-caption').innerHTML =
-      `<span>Totalt <strong>${cols * rows} brikker</strong> (${cols} × ${rows})</span><span>1:1 mm kuttelinjer</span>`;
-  };
-
-  container.querySelectorAll('input').forEach(el => el.addEventListener('input', update));
-  document.getElementById('btn-puz-randomize').addEventListener('click', () => {
-    currentSeed = Math.floor(Math.random() * 90000) + 1;
-    update();
+  const leaves = shapes => shapes.flatMap(s => s.hidden ? [] : s.type === 'group' ? leaves(s.children || []) : [s]);
+  const selected = getSelectedShapes();
+  const editingGroup = selected.find(s=>s.puzzleMeta) || (getEditingGroup()?.puzzleMeta ? getEditingGroup() : null);
+  const selectedLeaves = leaves(editingGroup ? [editingGroup] : selected);
+  const images = leaves(state.shapes).filter(s=>s.type==='image');
+  const initialImage = selectedLeaves.find(s=>s.type==='image') || null;
+  const customOutline = selectedLeaves.find(s=>s.cutStage==='puzzle-outline') || selectedLeaves.find(s=>s.type!=='image' && canFillShape(s));
+  renderPuzzleWorkshop(container, {
+    images, initialImage, customOutline, editingGroup, parseNumber: evalMathExpr, bitmapMode: state.laserSettings.bitmap?.bitmapMode || 'Jarvis',
+    onChange: result => {
+      if (state.activeGeneratorTab !== 'puzzle') return;
+      state.modalPreviewShapes = result?.shapes || [];
+      state.modalInsertPlan = result?.plan || null;
+      document.getElementById('btn-modal-insert').disabled = !result;
+    }
   });
-  update();
 }
 
 // ---- 4. Involute Gear Generator Modal UI ----

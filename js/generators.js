@@ -18,7 +18,7 @@ import {
   booleanMultiPolygons
 } from './geometry.js';
 import { createTextShape } from './fonts.js';
-import { PUZZLE_CUT_STAGES, getCutStage } from './cut-order.js';
+import { getCutStage } from './cut-order.js';
 import { LASER_ICONS, createIconShape, traceImageToPolygons } from './icons.js';
 
 // ============================================================================
@@ -247,130 +247,7 @@ export function generateSignOrKeyring({
 // 3. JIGSAW PUZZLE GENERATOR ("PUSLESPILL-GENERATOR")
 // ============================================================================
 
-/**
- * Generates a single interlocking jigsaw puzzle tab segment between (x0,y0) and (x1,y1).
- */
-function sampleJigsawEdge(x0, y0, x1, y1, flipSign = 1, tabScale = 0.22, skew = 0) {
-  const dx = x1 - x0;
-  const dy = y1 - y0;
-  const nx = -dy * flipSign;
-  const ny = dx * flipSign;
-
-  const pt = (u, v) => ({
-    x: x0 + dx * u + nx * v,
-    y: y0 + dy * u + ny * v
-  });
-
-  const s = tabScale;
-  const c = skew * 0.04;
-  // Classic interlocking puzzle neck + rounded head constructed from 3 cubic Beziers
-  const beziers = [
-    [pt(0, 0), pt(0.35, -s * 0.08), pt(0.40 + c, -s * 0.22), pt(0.37 + c, s * 0.32)],
-    [pt(0.37 + c, s * 0.32), pt(0.30 + c, s * 1.05), pt(0.70 + c, s * 1.05), pt(0.63 + c, s * 0.32)],
-    [pt(0.63 + c, s * 0.32), pt(0.60 + c, -s * 0.22), pt(0.65, -s * 0.08), pt(1, 0)]
-  ];
-
-  const out = [{ x: x0, y: y0 }];
-  for (const [p0, p1, p2, p3] of beziers) {
-    const steps = 14;
-    for (let i = 1; i <= steps; i++) {
-      const t = i / steps;
-      const mt = 1 - t;
-      out.push({
-        x: mt * mt * mt * p0.x + 3 * mt * mt * t * p1.x + 3 * mt * t * t * p2.x + t * t * t * p3.x,
-        y: mt * mt * mt * p0.y + 3 * mt * mt * t * p1.y + 3 * mt * t * t * p2.y + t * t * t * p3.y
-      });
-    }
-  }
-  return out;
-}
-
-export function generateJigsawPuzzle({
-  widthMm = 160,
-  heightMm = 120,
-  cols = 4,
-  rows = 3,
-  cornerRadiusMm = 6,
-  tabSizePct = 22,
-  seed = 42
-} = {}) {
-  const W = clamp(Number(widthMm) || 160, 30, 800);
-  const H = clamp(Number(heightMm) || 120, 30, 600);
-  const C = clamp(Math.round(Number(cols) || 4), 2, 16);
-  const R = clamp(Math.round(Number(rows) || 3), 2, 16);
-  const rx = clamp(Number(cornerRadiusMm) || 6, 0, Math.min(W, H) / 4);
-  const tabScale = clamp((Number(tabSizePct) || 22) / 100, 0.14, 0.32);
-  const ox = 20;
-  const oy = 20;
-
-  // Deterministic PRNG from seed
-  let s = (Number(seed) || 42) % 2147483647;
-  if (s <= 0) s += 2147483646;
-  const rand = () => {
-    s = (s * 16807) % 2147483647;
-    return (s - 1) / 2147483646;
-  };
-
-  // Keep the outer contour attached until both sets of internal cuts are done.
-  const outline = {
-    id: uid('rect'),
-    type: 'rect',
-    name: `Puslespill ytterramme (${W}×${H} mm)`,
-    laserMode: 'cut',
-    x: ox,
-    y: oy,
-    width: W,
-    height: H,
-    rx,
-    rotation: 0
-  };
-
-  // 1. Internal horizontal jigsaw cut lines
-  const cellW = W / C;
-  const cellH = H / R;
-  const horizontalLoops = [];
-  const verticalLoops = [];
-
-  for (let r = 1; r < R; r++) {
-    const y = oy + r * cellH;
-    const rowPts = [];
-    for (let c = 0; c < C; c++) {
-      const x0 = ox + c * cellW;
-      const x1 = ox + (c + 1) * cellW;
-      const flip = rand() > 0.5 ? 1 : -1;
-      const skew = (rand() - 0.5) * 2;
-      const seg = sampleJigsawEdge(x0, y, x1, y, flip, tabScale, skew);
-      if (c > 0) seg.shift();
-      rowPts.push(...seg);
-    }
-    rowPts.closed = false;
-    horizontalLoops.push(rowPts);
-  }
-
-  // 2. Internal vertical jigsaw cut lines
-  for (let c = 1; c < C; c++) {
-    const x = ox + c * cellW;
-    const colPts = [];
-    for (let r = 0; r < R; r++) {
-      const y0 = oy + r * cellH;
-      const y1 = oy + (r + 1) * cellH;
-      const flip = rand() > 0.5 ? 1 : -1;
-      const skew = (rand() - 0.5) * 2;
-      const seg = sampleJigsawEdge(x, y0, x, y1, flip, tabScale, skew);
-      if (r > 0) seg.shift();
-      colPts.push(...seg);
-    }
-    colPts.closed = false;
-    verticalLoops.push(colPts);
-  }
-
-  const shapes = [
-    createPathShapeFromPolygons(horizontalLoops, 'cut', `Puslespill 1 – Vannrette (${R - 1} linjer)`),
-    createPathShapeFromPolygons(verticalLoops, 'cut', `Puslespill 2 – Loddrette (${C - 1} linjer)`),
-    { ...outline, name: `Puslespill 3 – Ytterkontur (${W}×${H} mm)` }
-  ];
-  return shapes.map((shape, index) => ({ ...shape, cutStage: PUZZLE_CUT_STAGES[index].id }));
-}
+export { generateJigsawPuzzle } from './puzzle-generator.js';
 
 // ============================================================================
 // 4. TRUE INVOLUTE SPUR GEAR GENERATOR ("TANNHJUL-GENERATOR")
@@ -783,7 +660,9 @@ export function renderShapesPreviewSvg(shapes, { strokeScale = 0.0045 } = {}) {
     }
     if (s.type === 'image' && (s.dataUrl || s.srcDataUrl)) {
       const href = s.dataUrl || s.srcDataUrl;
-      return `<image x="${s.x}" y="${s.y}" width="${s.width}" height="${s.height}" preserveAspectRatio="none" href="${href}" />`;
+      const cx=s.x+s.width/2,cy=s.y+s.height/2;
+      const transform=`rotate(${s.rotation||0} ${cx} ${cy}) translate(${cx} ${cy}) scale(${s.flipX?-1:1} ${s.flipY?-1:1}) translate(${-cx} ${-cy})`;
+      return `<image x="${s.x}" y="${s.y}" width="${s.width}" height="${s.height}" preserveAspectRatio="none" transform="${transform}" href="${href}" />`;
     }
     if (s.guideLabel && s.laserMode === 'guide') {
       const text = String(s.textMeta?.text || s.name).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&apos;'}[c]));

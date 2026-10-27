@@ -238,6 +238,7 @@ export function processBitmapElementToDataUrl(imgElement, {
   threshold = 135,      // 10 .. 245
   invert = false,
   removeWhiteBg = false,
+  puzzleClip = null,    // normalized contours used by image puzzles
   maskShape = 'rect',   // 'rect' | 'rounded' | 'circle' | 'heart' | 'star'
   maxDimPx = 650
 } = {}) {
@@ -254,6 +255,16 @@ export function processBitmapElementToDataUrl(imgElement, {
   const ctx = canvas.getContext('2d', { willReadFrequently: true });
   if (!ctx) return '';
 
+  // Puzzle cropping survives preview regeneration and full-resolution laser exports.
+  if (Array.isArray(puzzleClip) && puzzleClip.length) {
+    ctx.save(); ctx.beginPath();
+    for (const loop of puzzleClip) {
+      if (!Array.isArray(loop) || loop.length < 3) continue;
+      loop.forEach((p,i) => { if (i) ctx.lineTo(p.x*cw,p.y*ch); else ctx.moveTo(p.x*cw,p.y*ch); });
+      ctx.closePath();
+    }
+    ctx.clip('evenodd');
+  }
   // Apply geometric mask clip if requested
   if (maskShape && maskShape !== 'rect') {
     ctx.save();
@@ -298,6 +309,7 @@ export function processBitmapElementToDataUrl(imgElement, {
     ctx.restore();
   }
 
+  if (Array.isArray(puzzleClip) && puzzleClip.length) ctx.restore();
   const imgData = ctx.getImageData(0, 0, cw, ch);
   const data = imgData.data;
   const total = cw * ch;
