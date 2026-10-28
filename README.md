@@ -2,7 +2,7 @@
 
 Et intuitivt, lynraskt og 100 % nettbasert vektorgrafikkverktøy utviklet spesielt for **Bjørnsveen skaperverksted** (ungdomsskoleelever og voksne).
 
-Programmet kjører direkte i nettleseren uten installasjon eller innlogging. Tegninger og bilder behandles lokalt. Fonter og biblioteker følger appen, uten tredjepartsforespørsler under bruk. Appen eksporterer ferdige **1:1 millimeter `.svg`-filer** tilpasset **xTool P3 (CO2-laser)** og **xTool F2 Ultra (UV-laser)**.
+Programmet kjører direkte i nettleseren uten installasjon eller innlogging. Tegninger og bilder behandles lokalt. Fonter og biblioteker følger appen, uten tredjepartsforespørsler under bruk. Appen eksporterer **native `.xs`-prosjekter til xTool Studio**, eldre `.xcs` og **1:1 millimeter `.svg`-filer** tilpasset **xTool P3 (CO2-laser)** og **xTool F2 Ultra (UV-laser)**.
 
 ---
 
@@ -76,7 +76,7 @@ Testene kontrollerer skjøtene som ekstruderte flater i en 3D-sammenstilling, al
 Kjør `npm test` med Node.js 24 eller nyere for regresjonstestene. Appen trenger ingen byggejobb eller npm-installasjon. For nettlesertestene, start `python3 -m http.server 8767 --bind 127.0.0.1` og åpne `http://127.0.0.1:8767/tests/browser.html`. Nettlesertestene bruker en egen testdatabase og testnøkkel. Åpne selve editoren på samme server for manuell kontroll av kopiering, angre, gjenåpning, bildekontroller og eksport.
 
 - **Lagring:** IndexedDB lagrer prosjektet etter endringer. Eldre localStorage-prosjekter migreres først når den nye lagringen er bekreftet. Tomme prosjekter gjenopprettes som tomme. En liten synkron gjenopprettingsjournal beskytter de siste endringene ved rask gjenåpning; store eksisterende bilder refereres fra IndexedDB. Status nederst viser når lagringen er ferdig eller har feilet. Dersom et nytt stort bilde ennå ikke er sikret, ber nettleseren deg vente før lukking. Lagre en `.laserprosjekt`-fil før du bytter maskin/nettleser; lokal nettleserlagring er ikke en sikkerhetskopi.
-- **Maskin:** «Maskin for XCS-eksport» bestemmer maskinen. Valg av en maskinflate øverst setter også målmaskinen. En plate eller materialprofil endrer ikke dette valget. Kontroller at materialparametrene passer valgt maskin; profilene er utgangspunkter og er ikke fysisk kalibrert av denne testpakken.
+- **Maskin:** «Maskin for xTool-eksport» bestemmer maskinen. Valg av en maskinflate øverst setter også målmaskinen. En plate eller materialprofil endrer ikke dette valget. Kontroller at materialparametrene passer valgt maskin; profilene er utgangspunkter og er ikke fysisk kalibrert av denne testpakken.
 - **Foto:** Originalbildet beholdes. Redigering bruker en forhåndsvisning på inntil 750 piksler, mens eksport beregner oppløsning fra fysisk størrelse og valgt DPI. Eksport oppskalerer ikke kilden og begrenses til 8192 piksler per side / 16 megapiksler for å begrense minnebruk. «Følg fotomodus» bruker den globale modusen; et eksplisitt bildefilter overstyrer den. Gamle bilder som allerede er redusert til 750 piksler må importeres på nytt for å få tilbake detaljene.
 - **SVG:** Import støtter vanlige former og baner, nestede gruppetransformasjoner, fargearv, viewBox og absolutte enheter (mm/cm/in/pt/pc/px). Uten enheter brukes SVG-standarden 96 px per tomme. Tekst, CSS-regler, `<use>`, masker, klipping, filtre, nestede SVG-arbeidsflater, prosentmål og skjevstilte bitmapbilder må bakes inn i kildeprogrammet. Ustøttet innhold gir en melding, og ugyldig XML avvises. Duplikatkontrollen sammenligner hele baner med 0,001 mm koordinatavrunding; den finner ikke alle delvis overlappende kutt.
 - **Tekst:** Google-fontene følger med lokalt med lisenser. Tekstkonturer hentes fra TTF-filene med OpenType.js og samples til polygoner, uten rastersporing. Tidligere systemfontvalg bruker navngitte lokale alternativer i fontvelgeren. Eksisterende lagrede tekstbaner beholdes til teksten redigeres. Endring av slik tekst kan derfor gi et annet utseende enn den opprinnelige systemfonten.
@@ -263,3 +263,14 @@ Materialvisningen skjuler flater og kantlinjer som ligger bak andre flater, ogs�
 - Nettlesere uten direkte filtilgang tilbyr åpning og nedlasting av en oppdatert kopi. Filstatus viser filnavn og ulagrede endringer. Ved endringer i filen utenfor programmet stoppes lagringen; åpne filen på nytt eller bruk Lagre som for å bevare begge versjoner. Nettleserens automatiske gjenoppretting fortsetter separat og erstatter ikke lagring i prosjektfilen.
 
 `tests/project-document.test.js` tester format, bilder, lagring, avbrudd, feil og filkonflikter. `tests/project-file.html` tester åpning, Cmd+S, gjenåpning og Lagre som gjennom de faktiske UI-knappene, med ekte filhåndtak til isolerte testfiler i nettleserens private lagring. Ingen brukerfiler på disk skrives av testene. `tests/drawing.html` kontrollerer prosjektark, tekstbokser og én-sides utskrift uten å sende noe til en fysisk skriver.
+
+
+## xTool Studio-format og behandlingsrekkefølge
+
+**Eksporter .XS** bruker xTool Studios nye workspace-v2-format. Det er en ZIP-pakke med geometri, grupper, bilder, behandlingsprofiler og maskininnstillinger. `.XCS` er fortsatt tilgjengelig i eksportdialogen for eldre Creative Space. `.laserprosjekt` er formatet for videre redigering av hele prosjektet og dokumentasjonen i LaserStudio.
+
+Standard kjørerekkefølge er **gravering/foto → score → flex-snitt og innvendige kutt → vanlige kutt → puslespill-/boksytterkonturer**. Puslespill kutter vannrett før loddrett og til slutt ytterkonturen. Under **Laser → Avansert · behandlingsrekkefølge** kan du flytte behandlingene opp/ned og tilbakestille anbefalingen. Innstillingen følger prosjektet og endrer ikke objektenes synlige stabling.
+
+XS og XCS aktiverer **By layer** og lagrer lagrekkefølgen. xTool viser høyeste `order` øverst; tidligere eksport brukte motsatt retning. SVG har ikke maskinens behandlingsinnstillinger. For SVG må rekkefølgen stilles inn i mottakerprogrammet. Innenfor samme fargelag bestemmer xTool banen; rekkefølge for hvert enkelt objekt er ikke del av dette verktøyet. Gamle eksportfiler må eksporteres på nytt for å få rettingen.
+
+Kompatibiliteten er kontrollert ved åpning og lokal lagring i xTool Studio 1.7.30, med vektorer, grupper og bitmap. Dette er ikke en fysisk lasertest. Se `tests/XS_FORMAT.md` for formatgrunnlag og regresjonstester.

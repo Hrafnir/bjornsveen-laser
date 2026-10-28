@@ -1311,3 +1311,9 @@ body { display: flex; flex-direction: column; height: 100dvh; }
 .drawing-inline-note { position:absolute; z-index:5; resize:both; padding:8px; border:2px solid #0284c7; border-radius:4px; background:#fff; color:#172b3a; font:14px/1.4 Arial,sans-serif; box-shadow:0 4px 16px #172b3a30; }
 .drawing-canvas.placing-note, .drawing-canvas.placing-note * { cursor:crosshair; }
 @media(max-width:760px){ .drawing-document-tools { padding:4px 6px; } .drawing-header .project-file-status { font-size:10px; } .drawing-body { grid-template-rows:minmax(85px,22%) minmax(0,1fr); } .drawing-canvas { min-height:100px; } }
+
+.processing-order-list {list-style:none;padding:0;margin:8px 0;display:grid;gap:5px;}
+.processing-order-list li {display:grid;grid-template-columns:12px minmax(0,1fr) 28px 28px;gap:5px;align-items:center;font-size:11px;}
+.processing-order-list li .btn {padding:3px;min-width:0;} .processing-order-list small {display:block;color:var(--text-muted);}
+.order-swatch {width:11px;height:11px;border-radius:3px;border:1px solid #64748b;} .order-help,.order-warning {font-size:11px;line-height:1.5;overflow-wrap:anywhere;}
+.order-help {color:var(--text-muted);} .order-warning {color:#fbbf24;}

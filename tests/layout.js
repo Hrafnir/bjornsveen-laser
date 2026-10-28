@@ -24,6 +24,7 @@ for(const width of [1440,1280,1024,820,640,390,320]) await test(`All controls st
  for(const id of ['tab-object','tab-layers','tab-laser']){
   $(id).click();await pause(10);within($('inspector-panel'));horizontalControls($($(id).getAttribute('aria-controls')));
  }
+ $('advanced-laser').open=true;horizontalControls($('panel-laser'));$('advanced-laser').open=false;
  $('tab-object').click();$('advanced-shapes').open=true;$('arrange-objects').open=true;horizontalControls($('panel-object'));
  $('advanced-shapes').open=false;$('arrange-objects').open=false;
 });

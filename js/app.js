@@ -1,4 +1,7 @@
-import { createLocalProject, createProjectHandleStore, PROJECT_EXTENSION } from './project-document.js';
+import { buildXsProject, importXsProject } from './xs-project.js';
+import { processingPlan } from './processing-order.js';
+import { mountProcessingOrder } from './processing-order-ui.js';
+import { createLocalProject, createProjectHandleStore, PROJECT_EXTENSION, serializeProjectDocument } from './project-document.js';
 import { openDrawingWorkshop } from './drawing-ui.js';
 import { renderPuzzleWorkshop } from './puzzle-ui.js';
 import { canEngraveBetweenContours, createBetweenEngraving } from './compound-fill.js';
@@ -144,6 +147,7 @@ const state = {
 };
 
 let localProject=null;
+let refreshProcessingOrder=()=>{};
 function saveWorkspaceToLocal(value){persistWorkspaceToLocal(value);localProject?.refresh();}
 function showProjectFileStatus(info){
   const text=info.busy?'Behandler prosjektfil …':info.name?`${info.name} · ${info.dirty?'Ulagrede endringer':info.connected?'Lagret i lokal fil':'Filkopi'}${info.message.startsWith('Ikke lagret:')?' · '+info.message:''}`:'Nettleserlagring · velg Lagre prosjektfil for et lokalt dokument';
@@ -267,6 +271,11 @@ async function initApp() {
   syncLaserSettingsUI();
   await initLocalProject();
   bindHeaderEvents();
+  refreshProcessingOrder = mountProcessingOrder(document.getElementById('laser-processing-order'), {
+    getShapes: () => state.shapes,
+    getSettings: () => state.laserSettings,
+    onChange: order => { state.laserSettings.processingOrder = order; saveWorkspaceToLocal(state); }
+  });
   bindToolbarEvents();
   bindCanvasEvents();
   bindInspectorEvents();
@@ -618,6 +627,7 @@ function removeChildFromGroup(groupId, childId) {
 }
 
 function renderAll() {
+  refreshProcessingOrder();
   const paths=getActiveContainerList();
   for (const kind of ['anchors','segments']) state.pathPick[kind]=state.pathPick[kind].filter(p=>{
     const shape=paths.find(s=>s.id===p.shapeId);
@@ -2939,6 +2949,19 @@ function bindHeaderEvents() {
     if (!file) return;
     const name = file.name.toLowerCase();
 
+    if (name.endsWith('.xs')) {
+      void (async () => {
+        try {
+          const data = await importXsProject(await file.arrayBuffer());
+          await localProject.openFile({
+            name: file.name.replace(/\.xs$/i, PROJECT_EXTENSION),
+            text: async () => serializeProjectDocument(data)
+          });
+        } catch (error) { showToast(error.message); }
+      })();
+      fileInput.value = '';
+      return;
+    }
     if(name.endsWith(PROJECT_EXTENSION)){void localProject.openFile(file).catch(error=>showToast(error.message));fileInput.value='';return;}
     if (name.endsWith('.xcs') || name.endsWith('.json')) {
       const reader = new FileReader();
@@ -3044,9 +3067,9 @@ function bindHeaderEvents() {
     try{await localProject.openFile(file);}catch(error){showToast(error.message);}
   });
 
-  // Laser Pre-flight & Export Modal (.XCS and .SVG)
+  // Laser pre-flight and XS / XCS / SVG export.
   document.getElementById('btn-preflight').addEventListener('click', () => openExportModal());
-  document.getElementById('btn-export-xcs').addEventListener('click', () => openExportModal('xcs'));
+  document.getElementById('btn-export-xcs').addEventListener('click', () => openExportModal('xs'));
   document.getElementById('btn-export-svg').addEventListener('click', () => openExportModal('svg'));
 }
 
@@ -3654,6 +3677,7 @@ function bindInspectorEvents() {
       const preset = LASER_MATERIAL_PRESETS[key];
       if (!preset) return;
       state.laserSettings = JSON.parse(JSON.stringify({
+        processingOrder: state.laserSettings.processingOrder,
         presetKey: key,
         thicknessMm: preset.thicknessMm,
         cut: preset.cut,
@@ -5183,8 +5207,8 @@ function renderImageTraceUI(container) {
   if (state.traceImageElement) updatePreview();
 }
 
-// ---- Pre-flight Check & .XCS / .SVG Export Modal ----
-function openExportModal(preferredFormat = 'xcs') {
+// ---- Pre-flight Check & .XS / .XCS / .SVG Export Modal ----
+function openExportModal(preferredFormat = 'xs') {
   const modal = document.getElementById('export-modal');
   const body = document.getElementById('export-modal-body');
   const fixDupBtn = document.getElementById('btn-fix-duplicates');
@@ -5248,14 +5272,14 @@ function openExportModal(preferredFormat = 'xcs') {
 
       <div style="background:var(--bg-input);padding:9px 11px;border-radius:8px;border:1px solid var(--border-color);font-size:11.5px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span>⚡ <strong>${state.targetMachine === 'xtool-f2' ? 'F2 Ultra UV' : 'P3'} – .XCS laserinnstillinger:</strong> ${presetName}</span>
+          <span>⚡ <strong>${state.targetMachine === 'xtool-f2' ? 'F2 Ultra UV' : 'P3'} – laserinnstillinger:</strong> ${presetName}</span>
           <span style="color:#38bdf8;font-size:10.5px;">(Endres i høyre panel)</span>
         </div>
       </div>
 
       <div class="prop-grid" style="margin-top:2px;">
         <div class="prop-field full-width">
-          <label>Prosjektnavn / Filnavn ved nedlasting</label>
+          <label for="export-format-select">xTool-format</label><select id="export-format-select" class="select-control"><option value="xs">.XS – xTool Studio (anbefalt)</option><option value="xcs">.XCS – eldre Creative Space</option></select><label>Prosjektnavn / Filnavn ved nedlasting</label>
           <input type="text" id="export-filename-input" class="input-control" value="bjornsveen-laser-design" />
         </div>
         <div class="prop-field full-width">
@@ -5269,24 +5293,28 @@ function openExportModal(preferredFormat = 'xcs') {
       </div>
 
       <div style="font-size:11.5px;color:var(--text-muted);background:#0f172a;padding:10px;border-radius:6px;border:1px solid var(--border-color);">
-        <strong>📦 .XCS (xTool Prosjekt) vs. ⬇ .SVG (1:1 mm):</strong><br/>
-        • <strong>📦 Last ned .XCS:</strong> Lagrer hele prosjektet i xTool Creative Space sitt eget format med sammensatte grupper, innebygde bitmap-bilder OG ferdige innstillinger for Styrke (%), Hastighet (mm/s), Passeringer og DPI!<br/>
-        • <strong>⬇ Last ned .SVG:</strong> Lagrer 1:1 millimeter vektorfil (med innebygde bitmap-bilder) som kan dras rett inn i xTool Creative Space eller LightBurn.
+        <strong>xTool Studio .XS</strong> lagrer grupper, bilder, laserinnstillinger og behandlingsrekkefølge i det nye prosjektformatet. Velg .XCS bare for eldre Creative Space.<br/>
+        <strong>SVG</strong> lagrer geometri og bilder i 1:1 mm. Kjørerekkefølge må stilles inn i mottakerprogrammet.
+        <p id="export-processing-summary"><strong>Rekkefølge:</strong> ${processingPlan(state.shapes,cfg).filter(p=>p.count).map(p=>p.name).join(' → ')||'Ingen objekter'}</p>
       </div>
     </div>
   `;
 
   const getBaseFilename = () => {
     const raw = (document.getElementById('export-filename-input').value || 'bjornsveen-laser-design').trim();
-    return raw.replace(/\.(svg|xcs|json)$/i, '');
+    return raw.replace(/\.(svg|xs|xcs|json)$/i, '');
   };
 
+  const formatSelect=document.getElementById('export-format-select');
+  formatSelect.value = preferredFormat === 'xcs' ? 'xcs' : 'xs';
+  formatSelect.onchange=()=>{document.getElementById('btn-confirm-download-xcs').textContent='📦 Last ned .'+formatSelect.value.toUpperCase();};formatSelect.onchange();
+  document.getElementById('export-crop-select').addEventListener('change',e=>{const shapes=e.target.value==='selected'?state.shapes.filter(s=>state.selectedIds.has(s.id)):state.shapes;document.getElementById('export-processing-summary').textContent='Rekkefølge: '+processingPlan(shapes,cfg).filter(p=>p.count).map(p=>p.name).join(' → ')});
   document.getElementById('btn-confirm-download-xcs').onclick = async () => {
     try { await prepareBitmapExports(state.shapes, state.laserSettings); }
     catch (error) { showToast(error.message); return; }
     const mode = document.getElementById('export-crop-select').value;
-    const filename = `${getBaseFilename()}.xcs`;
-    const xcsContent = buildXcsProjectString(state.shapes, {
+    const format=formatSelect.value,filename=`${getBaseFilename()}.${format}`;
+    const options={
       machineKey: state.machineKey,
       targetMachine: state.targetMachine,
       bedWidth: state.bedWidth,
@@ -5294,9 +5322,9 @@ function openExportModal(preferredFormat = 'xcs') {
       onlySelected: mode === 'selected',
       selectedIds: state.selectedIds,
       laserSettings: state.laserSettings,
-      workDrawing: state.workDrawing
-    });
-    downloadTextFile(xcsContent, filename, 'application/json;charset=utf-8');
+      workDrawing: state.workDrawing, title:getBaseFilename()
+    };
+    try{const content=format==='xs'?buildXsProject(state.shapes,options):buildXcsProjectString(state.shapes,options);downloadTextFile(content,filename,format==='xs'?'application/zip':'application/json;charset=utf-8');}catch(error){showToast(error.message);return;}
     modal.classList.remove('open');
     showToast(`📦 Lastet ned "${filename}" med vektorer, bitmap og laserinnstillinger!`);
   };

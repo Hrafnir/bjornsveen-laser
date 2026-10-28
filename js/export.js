@@ -1,3 +1,4 @@
+import { xToolLayerData, processingOrder } from './processing-order.js';
 import { mapNodes, nodesBounds, nodesToPath } from './bezier.js';
 const escapeXml = value => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c]));
 // ============================================================================
@@ -144,31 +145,13 @@ export function buildLaserSvgString(shapes, {
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${widthMm}mm" height="${heightMm}mm" viewBox="${minX} ${minY} ${widthMm} ${heightMm}">`
   ];
 
-  if (bitmapElements.length > 0) {
-    lines.push(`  <g id="Lag_0_Bitmap_Foto_Gravering">`);
-    lines.push(...bitmapElements);
-    lines.push(`  </g>`);
-  }
-  if (engravePaths.length > 0) {
-    lines.push(`  <g id="Lag_1_Gravering_Engrave">`);
-    lines.push(...engravePaths);
-    lines.push(`  </g>`);
-  }
-  if (scorePaths.length > 0) {
-    lines.push(`  <g id="Lag_2_Linje_Score">`);
-    lines.push(...scorePaths);
-    lines.push(`  </g>`);
-  }
-  if (cutPaths.length > 0) {
-    lines.push(`  <g id="Lag_3_Kutt_Cut">`);
-    lines.push(...cutPaths);
-    lines.push(`  </g>`);
-  }
-
-  for (const stage of CUT_STAGES) {
-    const paths = stagedCutPaths.get(stage.id);
-    if (!paths.length) continue;
-    lines.push(`  <g id="${stage.id}" data-name="${escapeXml(stage.name)}">`, ...paths, `  </g>`);
+  for(const id of processingOrder(cfg)) {
+    if(id==='engrave'){
+      if(bitmapElements.length)lines.push('  <g id="Lag_0_Bitmap_Foto_Gravering">',...bitmapElements,'  </g>');
+      if(engravePaths.length)lines.push('  <g id="Lag_1_Gravering_Engrave">',...engravePaths,'  </g>');
+    }else if(id==='score'&&scorePaths.length)lines.push('  <g id="Lag_2_Linje_Score">',...scorePaths,'  </g>');
+    else if(id==='cut'&&cutPaths.length)lines.push('  <g id="Lag_3_Kutt_Cut">',...cutPaths,'  </g>');
+    else {const stage=CUT_STAGES.find(s=>s.id===id),paths=stagedCutPaths.get(id);if(paths?.length)lines.push(`  <g id="${id}" data-name="${escapeXml(stage.name)}">`,...paths,'  </g>');}
   }
 
   lines.push(`</svg>`);
@@ -645,32 +628,7 @@ export function buildXcsProjectString(shapes, {
     convertShapeToDisplay(s, null);
   }
 
-  const layerData = {
-    '#000000': {
-      name: 'Gravering & Foto (Svart)',
-      order: 1,
-      visible: true,
-      panel: 0
-    },
-    '#0000ff': {
-      name: 'Linje / Score (Blå)',
-      order: 2,
-      visible: true,
-      panel: 0
-    },
-    '#ff0000': {
-      name: 'Gjennomkutt (Rød)',
-      order: 3,
-      visible: true,
-      panel: 0
-    }
-  };
-
-  for (const stage of CUT_STAGES) {
-    if (displays.some(display => display.layerTag === stage.color)) {
-      layerData[stage.color] = { name: stage.name, order: stage.order, visible: true, panel: 0 };
-    }
-  }
+  const layerData=xToolLayerData(displays,cfg);
 
   const liftingPlatformModeData = {
     material: 0,

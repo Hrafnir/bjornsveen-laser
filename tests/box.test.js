@@ -149,7 +149,7 @@ test('compensated parts remain 1:1 through layout and XCS, with holes cut first'
   const xcs = JSON.parse(buildXcsProjectString([...shapes].reverse()));
   const { displays, layerData } = xcs.canvas[0];
   const hole = displays.find(d => d.bjornsveenShape.cutStage === 'box-holes'), contour = displays.find(d => d.bjornsveenShape.cutStage === 'box-outline');
-  assert.ok(layerData[hole.layerTag].order < layerData[contour.layerTag].order);
+  assert.ok(layerData[hole.layerTag].order > layerData[contour.layerTag].order);
   assert.ok(displays.every(d => d.processingType === 'VECTOR_CUTTING'));
   for (const d of displays) { near(d.width, d.bjornsveenShape.width, 0.002); near(d.height, d.bjornsveenShape.height, 0.002); }
   const restored = importXcsStringToWorkspace(JSON.stringify(xcs));

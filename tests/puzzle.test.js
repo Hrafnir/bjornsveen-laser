@@ -9,7 +9,7 @@ const stages = ['puzzle-horizontal', 'puzzle-vertical', 'puzzle-outline'];
 const near = (a, b) => assert.ok(Math.abs(a - b) < 0.02, `${a} != ${b}`);
 const stageLayers = xcs => Object.entries(xcs.canvas[0].layerData)
   .filter(([color]) => xcs.canvas[0].displays.some(d => d.layerTag === color && d.bjornsveenShape.cutStage))
-  .sort((a, b) => a[1].order - b[1].order);
+  .sort((a, b) => b[1].order - a[1].order);
 
 test('puzzles contain horizontal, vertical and outline stages with each shared edge cut once', () => {
   for (const [cols, rows, seed] of [[2, 2, 1], [4, 3, 42], [16, 16, 9000]]) {
@@ -52,7 +52,9 @@ test('XCS schedules puzzle cuts by separate layers regardless of nesting or obje
     assert.deepEqual(layers.map(([color]) => xcs.canvas[0].displays.find(d => d.layerTag === color).bjornsveenShape.cutStage), stages);
     const [firstColor, firstLayer] = layers[0];
     assert.notEqual(firstColor, '#ff0000');
-    for (const color of ['#000000', '#0000ff', '#ff0000']) assert.ok(xcs.canvas[0].layerData[color].order < firstLayer.order);
+    for (const color of ['#000000', '#0000ff']) assert.ok(xcs.canvas[0].layerData[color].order > firstLayer.order);
+    assert.ok(xcs.canvas[0].layerData['#ff0000'].order < layers[1][1].order);
+    assert.ok(xcs.canvas[0].layerData['#ff0000'].order > layers[2][1].order);
     const device = xcs.device.data.value[0][1];
     assert.equal(device.data[device.mode].isProcessByLayer, true);
     assert.equal(device.data[device.mode].processPath, 'layer');

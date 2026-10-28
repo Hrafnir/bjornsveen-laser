@@ -128,7 +128,7 @@ test('SVG and XCS preserve open slits once, kerf, physical bounds and cut order 
   const data = JSON.parse(buildXcsProjectString([...groups].reverse()));
   const { displays, layerData } = data.canvas[0];
   const order = stage => layerData[displays.find(d => d.bjornsveenShape.cutStage === stage).layerTag].order;
-  assert.ok(order('flex-slits') < order('box-holes') && order('box-holes') < order('box-outline'));
+  assert.ok(order('flex-slits') > order('box-holes') && order('box-holes') > order('box-outline'));
   const paths = displays.filter(d => d.bjornsveenShape.cutStage === 'flex-slits');
   assert.ok(paths.every(d => d.processingType === 'VECTOR_CUTTING' && !d.isClose && !d.isClosePath));
   const restored = importXcsStringToWorkspace(JSON.stringify(data));

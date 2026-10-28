@@ -53,7 +53,7 @@ await test('Puzzle SVG roundtrip preserves the three cut stages and colors',()=>
  const displays=xcs.canvas[0].displays;
  assert(new Set(displays.map(d=>d.layerTag)).size===3);
  const orders=displays.map(d=>xcs.canvas[0].layerData[d.layerTag].order);
- assert(orders[0]<orders[1] && orders[1]<orders[2]);
+ assert(orders[0]>orders[1] && orders[1]>orders[2]);
 });
 await test('All box variants render, show readable guide labels and export cut stages',()=>{
  for(const type of BOX_TYPES) {
