@@ -1,12 +1,14 @@
 import { encodeClipboard } from '../js/object-commands.js';
 import { createWorkspaceStorage } from '../js/storage.js';
-import { importXcsStringToWorkspace } from '../js/export.js';
+import { parseProjectDocument } from '../js/project-document.js';
+import { importXcsStringToWorkspace, buildXcsProjectString } from '../js/export.js';
 const frame=document.querySelector('#editor');
 await new Promise(r=>frame.addEventListener('load',r,{once:true}));
 let w=frame.contentWindow,d=frame.contentDocument;
 const $=id=>d.getElementById(id),pause=ms=>new Promise(r=>setTimeout(r,ms));
 const ready=async()=>{for(let i=0;i<250&&$('save-status').textContent.includes('Åpner');i++)await pause(20);await pause(100)};
 await ready();
+if(w.showSaveFilePicker)w.showSaveFilePicker=async()=>null;
 let passed=0,failed=0;
 const assert=(v,m='Assertion failed')=>{if(!v)throw Error(m)},near=(a,b)=>assert(Math.abs(a-b)<.02,`${a} != ${b}`);
 async function test(name,fn){const li=document.createElement('li');document.querySelector('#results').append(li);try{await fn();li.className='pass';li.textContent='PASS: '+name;passed++}catch(e){li.className='fail';li.textContent='FAIL: '+name+' — '+e.stack;failed++}}
@@ -59,7 +61,7 @@ let xcs;
 await test('Save Project includes documentation; SVG download is a paper sheet',async()=>{
  const original=w.HTMLAnchorElement.prototype.click;let downloads=[];
  w.HTMLAnchorElement.prototype.click=function(){downloads.push({name:this.download,body:w.fetch(this.href).then(r=>r.text())})};
- try{$('dw-save').click();await pause(500);const file=downloads.find(f=>f.name.endsWith('.xcs'));assert(file,'no XCS download');xcs=await file.body;const project=importXcsStringToWorkspace(xcs);assert(project.workDrawing.title==='Lampe – arbeidstegning');assert(project.shapes.length===3);$('dw-export-svg').click();const svg=downloads.find(f=>f.name.endsWith('.svg'));assert(svg);assert((await svg.body).includes('width="297mm"'));}finally{w.HTMLAnchorElement.prototype.click=original;}
+ try{$('dw-save').click();await pause(500);const file=downloads.find(f=>f.name.endsWith('.laserprosjekt'));assert(file,'no project download');const project=parseProjectDocument(await file.body);xcs=buildXcsProjectString(project.shapes,project);assert(project.workDrawing.title==='Lampe – arbeidstegning');assert(project.shapes.length===3);$('dw-export-svg').click();const svg=downloads.find(f=>f.name.endsWith('.svg'));assert(svg);assert((await svg.body).includes('width="297mm"'));}finally{w.HTMLAnchorElement.prototype.click=original;}
 });
 await test('PDF action builds all pages in an isolated print document, with no actual printing in tests',async()=>{
  let printed=false;const append=d.body.append.bind(d.body);
@@ -125,6 +127,18 @@ await test('Custom annotations and layout survive reopening; export excludes edi
 await test('Page-editing controls remain inside narrow viewports',async()=>{
  for(const width of [390,320]){frame.style.width=width+'px';await pause(60);for(const el of $('dw-page-editor').querySelectorAll('button,input,select,textarea')){if(el.closest('[hidden]')||!el.getClientRects().length)continue;const b=el.getBoundingClientRect();assert(b.left>=-1&&b.right<=width+1,el.id+' overflow');}}
  frame.style.width='1280px';
+});
+
+await test('One pager keeps other pages and prints only the selected project sheet',async()=>{
+ $('dw-onepager').click();assert($('dw-print-scope').value==='current');assert($('dw-canvas').textContent.includes('Ark 1/1'));assert($('dw-canvas').textContent.includes('Materialvisning'));assert($('dw-canvas').textContent.includes('Måltegning'));edit('dw-note-text','Monter og lim delene. Puss kantene før maling.');
+ const count=(await stored()).annotations.length;$('dw-onepager').click();assert((await stored()).annotations.length===count);assert($('dw-canvas').textContent.includes('Monter og lim'));
+ let printed=0;const append=d.body.append.bind(d.body);d.body.append=(...els)=>{for(const el of els)if(el.classList?.contains('drawing-print-frame')){const handler=el.onload;el.onload=async()=>{el.contentWindow.print=()=>{printed++};await handler()}}return append(...els)};
+ try{for(const button of ['dw-print','dw-pdf']){const before=printed;$(button).click();for(let i=0;i<100&&printed===before;i++)await pause(20);assert(printed>before);const doc=d.querySelector('.drawing-print-frame').contentDocument;assert(doc.querySelectorAll('.sheet').length===1);assert(doc.body.textContent.includes('Monter og lim'));assert(doc.body.textContent.includes('Ark 1/1'));}assert([...$('dw-page').options].some(o=>o.textContent.includes('Detalj')));}finally{d.body.append=append;}
+});
+await test('Text box can be placed, edited on the sheet, moved and reopened',async()=>{
+ $('dw-place-note').click();clickPoint(170,100);const editor=$('dw-canvas').querySelector('textarea');assert(editor,'inline editor missing');editor.value='Limfuge: bruk trelim';editor.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',ctrlKey:true,bubbles:true,cancelable:true}));assert($('dw-canvas').textContent.includes('Limfuge'));const doc=await stored(),a=doc.annotations.at(-1);near(a.x,170);near(a.y,100);
+ const target=$('dw-canvas').querySelector(`[data-annotation-id="${a.id}"]`);target.dispatchEvent(new w.MouseEvent('dblclick',{bubbles:true}));const second=$('dw-canvas').querySelector('textarea');assert(second);second.value='Limfuge: press sammen i 30 minutter';second.blur();assert($('dw-canvas').textContent.includes('30 minutter'));
+ $('dw-close').click();$('btn-work-drawing').click();assert($('dw-canvas').textContent.includes('30 minutter'));assert($('dw-print-scope').value==='current');
 });
 
 // Leave a coherent sample assembly for visual review, using the actual controls.

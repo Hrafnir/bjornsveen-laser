@@ -1,22 +1,22 @@
 import { DRAWING_MATERIALS, materialById, drawingMaterial } from './drawing-materials.js';
-import { drawingPageKey, sheetViewBox, setSheetViewBox, clampAnnotation } from './drawing-page-layout.js';
+import { drawingPageKey, sheetViewBox, setSheetViewBox, clampAnnotation, ensureOnePager } from './drawing-page-layout.js';
 import { packPartBounds } from './part-layout.js';
 import { uid, evalMathExpr } from './geometry.js';
 import { normalizeDrawingDocument, drawingParts, drawingSourceMap, newDrawingItem, syncDrawingSources, splitDrawingGroup, partSnapPoints, dimensionAnchor, dimensionValue, createDrawingDocument, flatPoint } from './drawing-model.js';
 import { drawingBounds, drawingAnnotatedBounds, renderDrawingGeometry, renderAutoDimensions, renderManualDimensions, renderDrawingSheet, drawingPages, drawingPrintHtml, escapeDrawingText as E, drawingNumber } from './drawing-renderer.js';
 
 const copy=value=>structuredClone(value);
-export function openDrawingWorkshop({shapes,document:stored,settings,materialName,onChange=()=>{},onSaveProject}={}) {
+export function openDrawingWorkshop({shapes,document:stored,settings,materialName,onChange=()=>{},onSaveProject,onSaveAsProject,onOpenProject}={}) {
   let root=document.getElementById('drawing-modal');
   if(root)root.remove();
   root=document.createElement('div');root.id='drawing-modal';root.className='modal-backdrop open drawing-modal';root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-label','Arbeidstegning');
   document.body.append(root);
-  let doc=normalizeDrawingDocument(stored,shapes,settings,materialName),selectedId=doc.items[0]?.id||null,view='flat',measure=false,pendingPoint=null,drag=null,viewBox=null,pageIndex=0,selectedAnnotation=null,selectedView='flat',selectedDimension=null;
+  let doc=normalizeDrawingDocument(stored,shapes,settings,materialName),selectedId=doc.items[0]?.id||null,view='flat',measure=false,pendingPoint=null,drag=null,viewBox=null,pageIndex=0,selectedAnnotation=null,selectedView='flat',selectedDimension=null,placingNote=false,inlineEditor=null,lastNoteClick=null;
   const undo=[],redo=[];
   const field=(id,label,type='text')=>`<label class="drawing-field">${label}<input id="dw-${id}" class="input-control" type="${type}"/></label>`;
   const materials=blank=>`<option value="">${blank}</option>`+DRAWING_MATERIALS.map(m=>`<option value="${m.id}">${m.name} · ${m.thickness} mm</option>`).join('');
   root.innerHTML=`<section class="modal-window drawing-window">
-    <header class="drawing-header"><div><h2>Arbeidstegning</h2><span>Dokumentasjon og sammenstilling i millimeter</span></div><div class="drawing-actions"><button id="dw-undo" class="btn" title="Angre i arbeidstegningen (⌘Z)">↶</button><button id="dw-redo" class="btn" title="Gjør om i arbeidstegningen (⇧⌘Z)">↷</button><button id="dw-save" class="btn">Lagre prosjekt</button><button id="dw-close" class="btn" aria-label="Lukk arbeidstegning">Lukk</button></div></header>
+    <header class="drawing-header"><div><h2>Arbeidstegning</h2><span>Dokumentasjon og sammenstilling i millimeter</span></div><div class="drawing-actions"><button id="dw-undo" class="btn" title="Angre i arbeidstegningen (⌘Z)">↶</button><button id="dw-redo" class="btn" title="Gjør om i arbeidstegningen (⇧⌘Z)">↷</button><button id="dw-open" class="btn">Åpne</button><button id="dw-save-as" class="btn">Lagre som …</button><button id="dw-save" class="btn">Lagre prosjekt</button><button id="dw-close" class="btn" aria-label="Lukk arbeidstegning">Lukk</button></div><p id="dw-file-status" class="project-file-status" role="status"></p></header>
     <div class="drawing-body"><aside class="drawing-settings">
       <details open><summary>Tegning og materiale</summary>
         ${field('title','Tittel')}${field('project','Prosjekt / oppgave')}
@@ -63,11 +63,11 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
       <p class="drawing-help">Flytting her endrer dokumentasjonen. Delplassering og materialvisning har egne X/Y-posisjoner og rotasjon. Z og orientering brukes i sammenstillingen. Materialvisningen illustrerer platetykkelse, men bøyer ikke flex automatisk.</p>
     </aside><main class="drawing-main">
       <nav class="drawing-toolbar" aria-label="Tegningsvisning"><div class="drawing-actions"><button data-drawing-view="flat" class="btn active">Delplassering</button><button data-drawing-view="iso" class="btn">Materialvisning</button><button data-drawing-view="sheet" class="btn">Ark / dokumentasjon</button></div><div class="drawing-actions"><button id="dw-measure" class="btn">＋ Målsett</button><button id="dw-fit" class="btn">Tilpass</button><label class="drawing-check"><input id="dw-snap" type="checkbox" checked/> Fest 1 mm</label></div></nav>
-      <div id="dw-page-bar" class="drawing-page-bar" hidden><label>Ark <select id="dw-page" class="select-control"></select></label><label>Zoom <select id="dw-paper-zoom" class="select-control" aria-label="Visningszoom for arket"><option value="1">Tilpass</option><option value="1.5">150 %</option><option value="2">200 %</option><option value="3">300 %</option></select></label></div>
+      <div class="drawing-document-tools"><button id="dw-onepager" class="btn" title="Samle mål, materialvisning og forklaringer på ett ark">Prosjektark · én side</button><button id="dw-place-note" class="btn" title="Klikk på arket for å plassere en tekstboks">＋ Tekstboks på arket</button></div><div id="dw-page-bar" class="drawing-page-bar" hidden><label>Ark <select id="dw-page" class="select-control"></select></label><label>Zoom <select id="dw-paper-zoom" class="select-control" aria-label="Visningszoom for arket"><option value="1">Tilpass</option><option value="1.5">150 %</option><option value="2">200 %</option><option value="3">300 %</option></select></label></div>
       <div id="dw-status" class="drawing-status" role="status"></div>
       <div id="dw-canvas" class="drawing-canvas" tabindex="0" aria-label="Arbeidstegning, dra deler eller klikk to punkter for å målsette"></div>
       <div id="dw-error" class="box-error" role="alert" hidden></div>
-      <footer class="drawing-footer"><span id="dw-info"></span><div class="drawing-actions"><button id="dw-export-svg" class="btn">Last ned ark som SVG</button><button id="dw-print" class="btn btn-primary">PDF / utskrift</button></div></footer>
+      <footer class="drawing-footer"><span id="dw-info"></span><div class="drawing-actions"><button id="dw-export-svg" class="btn">Last ned ark som SVG</button><label class="drawing-print-scope">Eksporter<select id="dw-print-scope" class="select-control"><option value="current">Dette arket</option><option value="all">Hele dokumentet</option></select></label><button id="dw-pdf" class="btn">PDF</button><button id="dw-print" class="btn btn-primary">Skriv ut</button></div></footer>
     </main></div></section>`;
   const $=id=>root.querySelector('#dw-'+id),host=$('canvas');
   for(const key of ['title','project','author','revision','date','notes','material','paper','thickness','finish','scale'])$(key).value=doc[key];
@@ -87,9 +87,10 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
     $('details').checked=doc.includeDetails!==false;$('auto-dimensions').checked=doc.autoDimensions;render();
   }
   function pages(){return drawingPages(doc,shapes,{details:$('details').checked});}
-  function sheet(index=pageIndex,editing=false){const list=pages();return renderDrawingSheet(doc,shapes,list[Math.min(index,list.length-1)],{pageNumber:Math.min(index,list.length-1)+1,totalPages:list.length,editing,selectedAnnotation,selectedView,frozenViews:drag?.type==='dimension'?drag.frozenViews:null});}
+  function sheet(index=pageIndex,editing=false){const list=pages();return renderDrawingSheet(doc,shapes,list[Math.min(index,list.length-1)],{pageNumber:doc.printScope==='current'?1:Math.min(index,list.length-1)+1,totalPages:doc.printScope==='current'?1:list.length,editing,selectedAnnotation,selectedView,frozenViews:drag?.type==='dimension'?drag.frozenViews:null});}
   function render(){
     const all=parts(),item=selected(),source=drawingSourceMap(shapes).get(item?.sourceId);
+    $('print-scope').value=doc.printScope;$('place-note').classList.toggle('active',placingNote);host.classList.toggle('placing-note',placingNote);
     $('undo').disabled=!undo.length;$('redo').disabled=!redo.length;
     $('page-editor').hidden=view!=='sheet';if(view==='sheet'&&$('page-editor').parentElement.firstElementChild!==$('page-editor'))$('page-editor').parentElement.prepend($('page-editor'));
     $('material-preset').value=doc.materialId||'';$('finish').closest('label').hidden=Boolean(doc.materialId);
@@ -108,7 +109,7 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
     $('page-bar').hidden=view!=='sheet';$('measure').disabled=view==='iso'||(view==='sheet'&&!sheetViewBox(doc,currentPage(),'flat')?.visible);$('measure').classList.toggle('active',measure);$('fit').disabled=view==='sheet';
     root.querySelectorAll('[data-drawing-view]').forEach(btn=>{btn.classList.toggle('active',btn.dataset.drawingView===view);btn.setAttribute('aria-pressed',String(btn.dataset.drawingView===view));});
     const missing=doc.items.filter(p=>p.visible!==false).length-all.length;
-    $('status').textContent=measure?(pendingPoint?'Klikk målpunkt nummer to. Esc avbryter.':'Klikk to punkter på delene. Punkter og hjørner fester seg automatisk.'):missing?`${missing} del(er) mangler eller er skjult på arbeidsflaten.`:view==='iso'?'Dra for å flytte i X/Y. Endre Z og orientering for å sette delene sammen.':view==='flat'?'Dra deler i måltegningen. Piltaster flytter 1 mm, Shift + pil flytter 10 mm.':'Dra visninger og notater på arket. Rediger siden i panelet. SVG og PDF tar med oppsettet.';
+    $('status').textContent=placingNote?'Klikk på arket for å plassere en tekstboks. Esc avbryter.':measure?(pendingPoint?'Klikk målpunkt nummer to. Esc avbryter.':'Klikk to punkter på delene. Punkter og hjørner fester seg automatisk.'):missing?`${missing} del(er) mangler eller er skjult på arbeidsflaten.`:view==='iso'?'Dra for å flytte i X/Y. Endre Z og orientering for å sette delene sammen.':view==='flat'?'Dra deler i måltegningen. Piltaster flytter 1 mm, Shift + pil flytter 10 mm.':'Dra visninger og notater på arket. Rediger siden i panelet. SVG og PDF tar med oppsettet.';
     error('');
     try{
       if(view==='sheet'){
@@ -126,9 +127,9 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
         }
         host.innerHTML=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}" aria-label="${view==='iso'?'Materialvisning':'Delplassering'}"><g font-family="Arial, sans-serif">${content}</g></svg>`;
       }
-      const overflow=host.querySelector('[data-text-overflow]');$('export-svg').disabled=Boolean(overflow);$('print').disabled=Boolean(overflow);if(overflow)error('Et notat får ikke plass. Flytt det opp, øk tekstbredden eller del teksten over flere notater.');
-    }catch(e){error(e.message);host.replaceChildren();$('export-svg').disabled=true;$('print').disabled=true;}
-    const b=drawingBounds(all);$('info').textContent=`${all.length} deler · ${drawingNumber(b.width)} × ${drawingNumber(b.height)} mm · ${pages().length} ark`;
+      const overflow=host.querySelector('[data-text-overflow]');$('export-svg').disabled=Boolean(overflow);$('print').disabled=Boolean(overflow);$('pdf').disabled=Boolean(overflow);if(overflow)error('Et notat får ikke plass. Flytt det opp, øk tekstbredden eller del teksten over flere notater.');
+    }catch(e){error(e.message);host.replaceChildren();$('export-svg').disabled=true;$('print').disabled=true;$('pdf').disabled=true;}
+    const b=drawingBounds(all);$('info').textContent=`${all.length} deler · ${drawingNumber(b.width)} × ${drawingNumber(b.height)} mm · ${doc.printScope==='current'?'1 ark til utskrift':pages().length+' ark til utskrift'}`;
   }
   for(const key of ['title','project','author','revision','date','notes','material','paper','thickness','finish','scale']){
     $(key).addEventListener('change',()=>{
@@ -167,8 +168,29 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
   $('split').addEventListener('click',()=>{try{if(selected())change(()=>{splitDrawingGroup(doc,selected(),shapes);selectedId=doc.items[0]?.id})}catch(e){error(e.message)}});
   $('undo').addEventListener('click',()=>editHistory('undo'));$('redo').addEventListener('click',()=>editHistory('redo'));
   const close=()=>{document.activeElement?.blur();root.classList.remove('open');document.getElementById('btn-work-drawing')?.focus();};
+  $('open').addEventListener('click',()=>{document.activeElement?.blur();onOpenProject?.()});
+  $('save-as').addEventListener('click',()=>{document.activeElement?.blur();notify();onSaveAsProject?.()});
   $('close').addEventListener('click',close);$('save').addEventListener('click',()=>{document.activeElement?.blur();notify();onSaveProject?.()});
-  root.querySelectorAll('[data-drawing-view]').forEach(btn=>btn.addEventListener('click',()=>{view=btn.dataset.drawingView;viewBox=null;measure=false;pendingPoint=null;render()}));
+  root.querySelectorAll('[data-drawing-view]').forEach(btn=>btn.addEventListener('click',()=>{view=btn.dataset.drawingView;placingNote=false;viewBox=null;measure=false;pendingPoint=null;render()}));
+  $('onepager').addEventListener('click',()=>{change(()=>{const summary=ensureOnePager(doc);view='sheet';pageIndex=0;selectedAnnotation=summary.id;measure=false;placingNote=false;});});
+  $('place-note').addEventListener('click',()=>{view='sheet';measure=false;pendingPoint=null;placingNote=!placingNote;render();host.focus();});
+  $('print-scope').addEventListener('change',()=>change(()=>doc.printScope=$('print-scope').value));
+  function editNoteInline(a){
+    if(!a)return;
+    const rect=[...host.querySelectorAll('[data-annotation-id]')].find(el=>el.dataset.annotationId===a.id)?.querySelector('rect');
+    if(!rect)return;
+    const bounds=rect.getBoundingClientRect(),canvas=host.getBoundingClientRect();
+    const editor=document.createElement('textarea');editor.className='drawing-inline-note';editor.setAttribute('aria-label','Tekstboks på arket');editor.maxLength=3000;editor.value=a.text;
+    editor.style.left=Math.max(host.scrollLeft,Math.min(host.scrollLeft+host.clientWidth-160,bounds.left-canvas.left+host.scrollLeft))+'px';
+    editor.style.top=Math.max(host.scrollTop,Math.min(host.scrollTop+host.clientHeight-90,bounds.top-canvas.top+host.scrollTop))+'px';
+    editor.style.width=Math.min(host.clientWidth-12,Math.max(160,bounds.width))+'px';editor.style.height=Math.max(80,Math.min(host.clientHeight-12,bounds.height+40))+'px';
+    inlineEditor=editor;host.append(editor);
+    const finish=commit=>{if(inlineEditor!==editor)return;inlineEditor=null;const value=editor.value;editor.remove();if(commit&&value!==a.text)change(()=>a.text=value);else render();};
+    editor.addEventListener('blur',()=>finish(true));editor.addEventListener('pointerdown',e=>e.stopPropagation());
+    editor.addEventListener('keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();finish(false);}else if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();e.stopPropagation();finish(true);}});
+    editor.focus();editor.select();
+  }
+  host.addEventListener('dblclick',e=>{const el=e.target.closest('[data-annotation-id]');if(el){selectedAnnotation=el.dataset.annotationId;drag=null;render();editNoteInline(note());e.preventDefault();}});
   $('paper-zoom').addEventListener('change',()=>host.style.setProperty('--drawing-sheet-zoom',$('paper-zoom').value));
   $('fit').addEventListener('click',()=>{viewBox=null;render()});
   $('measure').addEventListener('click',()=>{measure=!measure;pendingPoint=null;$('measure-panel').open=true;render()});
@@ -212,6 +234,7 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
   };
   host.addEventListener('pointerdown',e=>{
     if(e.button!==0)return;let p=point(e);if(!p)return;host.focus();
+    if(placingNote&&view==='sheet'){change(()=>{const a=clampAnnotation(doc,{id:uid('note'),page:drawingPageKey(currentPage()),kind:'note',text:'',x:p.x,y:p.y,width:65,fontSize:3});doc.annotations.push(a);selectedAnnotation=a.id;placingNote=false;});editNoteInline(note());e.preventDefault();return;}
     const measured=e.target.closest('[data-dimension-id]');
     if(!measure&&measured){
       selectedDimension=measured.dataset.dimensionId;$('measure-panel').open=true;
@@ -223,7 +246,7 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
     if(view==='sheet'){
       const annotation=e.target.closest('[data-annotation-id]'),region=e.target.closest('[data-sheet-view]');
       if(!measure){
-        if(annotation){selectedAnnotation=annotation.dataset.annotationId;const a=note();drag={type:'note',id:a.id,x:a.x,y:a.y,start:p,before:JSON.stringify(doc)};}
+        if(annotation){selectedAnnotation=annotation.dataset.annotationId;const a=note();const now=performance.now();if(lastNoteClick?.id===a.id&&now-lastNoteClick.time<450){lastNoteClick=null;drag=null;render();editNoteInline(a);e.preventDefault();return;}lastNoteClick={id:a.id,time:now};drag={type:'note',id:a.id,x:a.x,y:a.y,start:p,before:JSON.stringify(doc)};}
         else if(region){selectedAnnotation=null;selectedView=region.dataset.sheetView;const b=sheetViewBox(doc,currentPage(),selectedView);drag={type:'view',mode:selectedView,start:p,box:b,before:JSON.stringify(doc)};}
         else return;
         host.setPointerCapture?.(e.pointerId);render();e.preventDefault();return;
@@ -244,7 +267,7 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
     host.setPointerCapture?.(e.pointerId);render();e.preventDefault();
   });
   host.addEventListener('pointermove',e=>{
-    if(!drag)return;const p=point(e);if(!p)return;
+    if(!drag)return;lastNoteClick=null;const p=point(e);if(!p)return;
     if(drag.type){
       if(drag.type==='note'){const a=note();a.x=drag.x+p.x-drag.start.x;a.y=drag.y+p.y-drag.start.y;clampAnnotation(doc,a);}
       else if(drag.type==='view')setSheetViewBox(doc,currentPage(),drag.mode,{...drag.box,x:drag.box.x+p.x-drag.start.x,y:drag.box.y+p.y-drag.start.y});
@@ -266,7 +289,7 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
     const step=$('snap').checked&&!e.altKey?1:.01;const item=doc.items.find(p=>p.id===drag.id);
     item[placementKey('x')]=Math.round((drag.x+dx)/step)*step;item[placementKey('y')]=Math.round((drag.y+dy)/step)*step;drag.moved=item[placementKey('x')]!==drag.x||item[placementKey('y')]!==drag.y;render();
   });
-  host.addEventListener('pointerup',()=>{if(drag?.moved){undo.push(drag.before);redo.length=0;notify();}drag=null;render()});
+  host.addEventListener('pointerup',()=>{if(!drag)return;if(drag?.moved){undo.push(drag.before);redo.length=0;notify();}drag=null;render()});
   host.addEventListener('pointercancel',()=>{if(drag)doc=JSON.parse(drag.before);drag=null;render()});
   root.addEventListener('keydown',e=>{
     const input=e.target.closest('input,textarea,select');
@@ -276,8 +299,10 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
       if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }
-    else if(e.key==='Escape'){e.preventDefault();if(measure){measure=false;pendingPoint=null;render()}else close();}
-    else if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){e.preventDefault();document.activeElement?.blur();notify();onSaveProject?.();}
+    else if(e.key==='Escape'){e.preventDefault();if(placingNote){placingNote=false;render()}else if(measure){measure=false;pendingPoint=null;render()}else close();}
+    else if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){e.preventDefault();document.activeElement?.blur();notify();(e.shiftKey?onSaveAsProject:onSaveProject)?.();}
+    else if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='o'){e.preventDefault();document.activeElement?.blur();onOpenProject?.();}
+    else if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='p'){e.preventDefault();printDocument('print');}
     else if(!input&&(e.metaKey||e.ctrlKey)&&['z','y'].includes(e.key.toLowerCase())){e.preventDefault();editHistory(e.shiftKey||e.key.toLowerCase()==='y'?'redo':'undo');}
     else if(!input&&view!=='sheet'&&selected()&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();const step=e.shiftKey ? 10 : e.altKey ? .1 : 1;change(()=>{selected()[placementKey('x')]+=(e.key==='ArrowRight'?step:e.key==='ArrowLeft'?-step:0);selected()[placementKey('y')]+=(e.key==='ArrowDown'?step:e.key==='ArrowUp'?-step:0);});}
     e.stopPropagation();
@@ -285,14 +310,17 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
   function download(content,name,type){const url=URL.createObjectURL(new Blob([content],{type}));const link=document.createElement('a');link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
   const filename=()=>doc.title.replace(/[^\p{L}\p{N}_-]+/gu,'-').slice(0,80)||'arbeidstegning';
   $('export-svg').addEventListener('click',()=>{try{download(sheet(),`${filename()}-ark-${pageIndex+1}.svg`,'image/svg+xml;charset=utf-8')}catch(e){error(e.message)}});
-  $('print').addEventListener('click',()=>{
+  function printDocument(intent='print'){
+    document.activeElement?.blur();
     try{
-      const list=pages(),html=drawingPrintHtml(doc,list.map((p,i)=>renderDrawingSheet(doc,shapes,p,{pageNumber:i+1,totalPages:list.length})));
+      const list=doc.printScope==='current'?[currentPage()]:pages(),html=drawingPrintHtml(doc,list.map((p,i)=>renderDrawingSheet(doc,shapes,p,{pageNumber:i+1,totalPages:list.length})));
       const frame=document.createElement('iframe');frame.className='drawing-print-frame';frame.title='Arbeidstegning for PDF / utskrift';
       frame.onload=async()=>{await frame.contentDocument.fonts?.ready;const sources=[...frame.contentDocument.querySelectorAll('svg image')].map(i=>i.getAttribute('href'));await Promise.all(sources.map(src=>new Promise(resolve=>{const image=new Image();image.onload=image.onerror=resolve;image.src=src;})));frame.contentWindow.focus();frame.contentWindow.print();};
       frame.srcdoc=html;document.querySelectorAll('.drawing-print-frame').forEach(el=>el.remove());document.body.append(frame);
-      $('status').textContent='Velg «Lagre som PDF» i utskriftsvinduet. Bruk 100 % / faktisk størrelse, og slå av nettleserens topp- og bunntekst.';
+      $('status').textContent=(intent==='pdf'?'Velg «Lagre som PDF» i utskriftsvinduet. ':'Velg skriver i utskriftsvinduet. ')+list.length+' ark. Bruk 100 % / faktisk størrelse, uten nettleserens topp- og bunntekst.';
     }catch(e){error(e.message)}
-  });
+  }
+  $('print').addEventListener('click',()=>printDocument());$('pdf').addEventListener('click',()=>printDocument('pdf'));
+  if(doc.onePager)view='sheet';
   notify();render();$('close').focus();return {getDocument:()=>copy(doc),close};
 }

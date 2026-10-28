@@ -32,7 +32,7 @@ export function createDrawingDocument(shapes,settings={},materialName='') {
   const preset=settings.presetKey||'';
   return {version:1,title:'Arbeidstegning',project:'',author:'',revision:'A',date:new Date().toLocaleDateString('sv-SE'),notes:'',paper:'A4',scale:'auto',material:materialName||'Materiale',thickness:Number(settings.thicknessMm)||0,
     finish:preset.includes('mdf')?'mdf':preset.includes('acrylic')?'acrylic':preset.includes('alu')?'metal':'wood',autoDimensions:true,includeDetails:true,
-    annotations:[],customPages:[],sheetLayouts:{},
+    annotations:[],customPages:[],sheetLayouts:{},onePager:false,printScope:'all',
     items:shapes.filter(s=>!s.hidden&&drawingLeaves([s]).length).map(newDrawingItem),dimensions:[]};
 }
 // Read legacy/partial metadata defensively; never mutate a source workspace.
@@ -47,6 +47,7 @@ export function normalizeDrawingDocument(raw,shapes,settings={},materialName='')
   doc.materialId=materialById(doc.materialId)?.id||null;
   doc.annotations=(Array.isArray(doc.annotations)?doc.annotations:[]).filter(n=>n&&typeof n.id==='string'&&typeof n.page==='string').map(n=>({...n,text:String(n.text||'').slice(0,3000),kind:n.kind==='callout'?'callout':'note'}));
   doc.customPages=(Array.isArray(doc.customPages)?doc.customPages:[]).filter(p=>p&&typeof p.id==='string').map(p=>({id:p.id,title:String(p.title||'Dokumentasjon').slice(0,100)}));
+  doc.onePager=doc.onePager===true;doc.printScope=doc.printScope==='current'?'current':'all';
   doc.sheetLayouts=doc.sheetLayouts&&typeof doc.sheetLayouts==='object'?doc.sheetLayouts:{};
   const seen=new Set();
   doc.items=(Array.isArray(doc.items)?doc.items:[]).filter(p=>p&&typeof p.id==='string'&&typeof p.sourceId==='string'&&!seen.has(p.id)&&seen.add(p.id)).map(p=>{

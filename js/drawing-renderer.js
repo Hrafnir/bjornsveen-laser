@@ -165,7 +165,7 @@ function wrapped(text,maxChars=60,maxLines=3){
 }
 export function drawingPages(doc,shapes,{details=doc.includeDetails!==false}={}) {
   const parts=drawingParts(doc,shapes);
-  const pages=[{kind:'overview',title:'Oversikt'}];
+  const pages=[...(doc.onePager?[{kind:'onepager',title:'Prosjektark'}]:[]),{kind:'overview',title:'Oversikt'}];
   for(let i=0;i<parts.length;i+=20)pages.push({kind:'list',start:i,title:`Deleliste ${Math.floor(i/20)+1}`});
   const noteLines=documentNoteLines(doc);const perPage=Math.floor(((PAPER_SIZES[doc.paper]||PAPER_SIZES.A4)[1]-78)/4.5);
   if(doc.notes?.length>180||doc.notes?.includes('\n'))for(let start=0;start<noteLines.length;start+=perPage)pages.push({kind:'notes',start,count:perPage,title:'Prosjektnotater '+(Math.floor(start/perPage)+1)});
@@ -193,7 +193,7 @@ export function renderDrawingSheet(doc,shapes,page={kind:'overview',title:'Overs
     const f=frozenViews?.[mode]||fitView(list,box,mode,requested,doc),textSize=2.8/f.scale,strokeWidth=.22/f.scale;
     let content=renderDrawingGeometry(list,{view:mode,finish:doc.finish,materialId:doc.materialId,strokeWidth,labels:mode==='flat',textSize});
     if(mode==='flat'){
-      if(doc.autoDimensions)content+=renderAutoDimensions(list,{textSize,strokeWidth,overall:page.kind!=='detail'});
+      if(doc.autoDimensions)content+=renderAutoDimensions(list,{textSize,strokeWidth,overall:!['detail','onepager'].includes(page.kind)});
       content+=renderManualDimensions(doc,list,{textSize,strokeWidth});
     }
     body+=`<g data-sheet-view="${mode}">${label(box.x+box.width/2,box.y+3,mode==='flat'?'Måltegning':'Materialvisning',3,'text-anchor="middle" font-weight="700"')}<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" fill="transparent" ${editing?`stroke="${selectedView===mode?'#0284c7':'#c3ced8'}" stroke-width=".3" stroke-dasharray="2 1"`:'stroke="none"'}/><g data-view-transform="${mode}" transform="translate(${n(f.tx)} ${n(f.ty)}) scale(${n(f.scale)})">${content}</g></g>`;
@@ -235,7 +235,7 @@ export function renderDrawingSheet(doc,shapes,page={kind:'overview',title:'Overs
   }
   body+=renderSheetAnnotations(doc,page,{editing,selectedAnnotation});
   const scale=scales[0]||'—';
-  const note=(doc.notes?.length>180||doc.notes?.includes('\n')?'Se egne sider med prosjektnotater.':doc.notes)||'Mål følger tegnet geometri, inkludert eventuell kerfkompensasjon. Materialvisning er en illustrasjon.';
+  const note=page.kind==='onepager'?'Mål i mm. Materialvisningen viser platetykkelse og sammenstilling.':(doc.notes?.length>180||doc.notes?.includes('\n')?'Se egne sider med prosjektnotater.':doc.notes)||'Mål følger tegnet geometri, inkludert eventuell kerfkompensasjon. Materialvisning er en illustrasjon.';
   body+=wrapped(note,Math.floor(W/2),2).map((v,i)=>label(12,footY-6+i*3.5,v,2.5,'fill="#46586a"')).join('');
   const missing=doc.items.filter(p=>p.visible!==false).length-parts.length;
   if(missing)body+=label(12,18,`${missing} del(er) mangler eller er skjult på arbeidsflaten.`,3,'fill="#b45309"');
@@ -263,7 +263,7 @@ export function renderSheetAnnotations(doc,page,{editing=false,selectedAnnotatio
  return (doc.annotations||[]).filter(a=>a.page===key).map(raw=>{
   const a=clampAnnotation(doc,{...raw}),size=a.fontSize,pad=2;
   const maxChars=Math.max(8,Math.floor((a.width-pad*2)/(size*.58))),rows=[];
-  for(const paragraph of a.text.split('\n')){
+  for(const paragraph of (a.text|| (editing?'Dobbeltklikk for å skrive …':'')).split('\n')){
     let row='';for(const word of paragraph.split(/\s+/)){for(let start=0;start<word.length;start+=maxChars){const token=word.slice(start,start+maxChars);if((row+' '+token).trim().length>maxChars&&row){rows.push(row);row=''}row+=(row?' ':'')+token;}}rows.push(row);
   }
   const maxRows=Math.max(1,Math.floor((h-42-a.y-pad*2)/(size*1.35))),shown=rows.slice(0,maxRows),overflow=rows.length>maxRows;

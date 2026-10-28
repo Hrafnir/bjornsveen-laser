@@ -1,8 +1,10 @@
+import { uid } from './geometry.js';
 import { PAPER_SIZES } from './drawing-model.js';
-export const drawingPageKey=page=>page.kind==='detail'?'detail:'+page.itemId:page.kind==='list'?'list:'+(page.start||0):page.kind==='custom'?'custom:'+page.id:'overview';
+export const drawingPageKey=page=>page.kind==='onepager'?'onepager':page.kind==='detail'?'detail:'+page.itemId:page.kind==='list'?'list:'+(page.start||0):page.kind==='custom'?'custom:'+page.id:'overview';
 export function defaultSheetViews(doc,page) {
  const [w,h]=PAPER_SIZES[doc.paper]||PAPER_SIZES.A4,foot=h-38;
  if(page.kind==='list'||page.kind==='notes')return {};
+ if(page.kind==='onepager')return {flat:{x:16,y:28,width:(w-40)*.58,height:h-118},iso:{x:w*.62,y:28,width:w*.33,height:h-118}};
  const flat=page.kind==='detail'?{x:18,y:34,width:(w-36)*.67,height:foot-49}:{x:18,y:35,width:(w-40)/2,height:foot-53};
  const iso=page.kind==='detail'?{x:w*.71,y:35,width:w*.24,height:(foot-40)*.55}:{x:w/2+10,y:35,width:(w-40)/2,height:foot-53};
  return {flat,iso};
@@ -32,4 +34,12 @@ export function clampAnnotation(doc,note) {
  note.targetX=Math.max(10,Math.min(w-10,Number(note.targetX)||w/2));
  note.targetY=Math.max(22,Math.min(h-40,Number(note.targetY)||h/2));
  return note;
+}
+
+// The summary is a normal editable annotation; reopening the template never resets it.
+export function ensureOnePager(doc) {
+ doc.onePager=true;doc.printScope='current';
+ let summary=doc.annotations.find(a=>a.page==='onepager'&&a.role==='project-summary');
+ if(!summary){const [w,h]=PAPER_SIZES[doc.paper]||PAPER_SIZES.A4;summary={id:uid('note'),page:'onepager',role:'project-summary',kind:'note',text:doc.notes||'Forklaring: Beskriv prosjektet, bruken og hvordan delene settes sammen.',x:16,y:h-76,width:w-32,fontSize:3};doc.annotations.push(summary);}
+ return summary;
 }
