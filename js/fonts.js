@@ -1,9 +1,11 @@
+import { cleanFontContours, stencilFontContours } from './font-contours.js';
+import { pigpenText, pigpenGlyph } from './pigpen.js';
 import { parse } from '../vendor/opentype.module.js';
 import { FONT_FILES } from './font-files.js';
 // ============================================================================
 // Bjørnsveen LaserStudio – Laser Font, Rich Typography & Text-on-Path Engine
 // Includes:
-// 1. 30+ Categorized Fonts (Laser Stencil, Single-Line Score, Sans, Serif, Script, Gaming/Theme)
+// 1. Categorized Fonts (Laser Stencil, Single-Line Score, Sans, Serif, Script, Gaming/Theme)
 // 2. Local TTF outlines via OpenType.js, independent of installed fonts
 // 3. Text-on-Path Engine: Follow ANY shape outline (Circle, Heart, Sign, Curved Line) or Arc/Ring
 // ============================================================================
@@ -14,8 +16,7 @@ import {
   clamp,
   computePolygonsBBox,
   polygonsToSvgPath,
-  parseSvgPathToPolygons,
-  booleanMultiPolygons
+  parseSvgPathToPolygons
 } from './geometry.js';
 
 // Single-stroke glyph definitions in a [0..1] x [0..1] grid (y=0 top, y=1 bottom)
@@ -73,366 +74,343 @@ const SINGLE_LINE_GLYPHS = {
 };
 
 export const FONT_CATALOG = [
-  // 1. Laser-Spesial (Sjablong & Enkelstreg)
   {
-    key: 'stencil',
-    category: '⚡ Laser-spesial (Sjablong & Hurtig-score)',
-    label: '✂️ Laser Sjablong – Kraftig (Faller ikke ut ved kutt!)',
-    family: '"Black Ops One", Impact, "Arial Black", sans-serif',
-    weight: '900',
-    stencil: true
+    "key": "stencil",
+    "category": "⚡ Laser og sjablong",
+    "label": "Black Ops One · sjablong",
+    "family": "\"Black Ops One\"",
+    "weight": "400",
+    "stencil": true
   },
   {
-    key: 'stencil-serif',
-    category: '⚡ Laser-spesial (Sjablong & Hurtig-score)',
-    label: '✂️ Laser Sjablong – Militær / Klassisk',
-    family: '"Stardos Stencil", Rockwell, Georgia, serif',
-    weight: '900',
-    stencil: true
+    "key": "stencil-serif",
+    "category": "⚡ Laser og sjablong",
+    "label": "Stardos Stencil · Bold · sjablong",
+    "family": "\"Stardos Stencil\"",
+    "weight": "700",
+    "stencil": true
   },
   {
-    key: 'stencil-round',
-    category: '⚡ Laser-spesial (Sjablong & Hurtig-score)',
-    label: '✂️ Laser Sjablong – Avrundet',
-    family: '"Fredoka", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif',
-    weight: '800',
-    stencil: true
+    "key": "stencil-round",
+    "category": "⚡ Laser og sjablong",
+    "label": "Fredoka · Bold · sjablong",
+    "family": "\"Fredoka\"",
+    "weight": "700",
+    "stencil": true,
+    "syntheticStencil": true
   },
   {
-    key: 'singleline',
-    category: '⚡ Laser-spesial (Sjablong & Hurtig-score)',
-    label: '⚡ Laser Enkelstreg (10x raskere Score-linje!)',
-    family: 'monospace',
-    weight: '400',
-    singleLine: true
-  },
-
-  // 2. Moderne & Skilt (Sans-Serif)
-  {
-    key: 'sans-bold',
-    category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Moderne Kraftig (Montserrat / Arial Black)',
-    family: '"Montserrat", "Arial Black", "Helvetica Neue", sans-serif',
-    weight: '900'
+    "key": "singleline",
+    "category": "⚡ Laser og sjablong",
+    "label": "Enkelstrek · score",
+    "family": "monospace",
+    "weight": "400",
+    "singleLine": true
   },
   {
-    key: 'impact',
-    category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Plakat & Overskrift (Anton / Impact)',
-    family: '"Anton", Impact, "Arial Narrow", sans-serif',
-    weight: '900'
+    "key": "pigpen",
+    "category": "Symboler og koder",
+    "label": "Pigpen · hemmelig skrift",
+    "family": "sans-serif",
+    "weight": "400",
+    "pigpen": true
   },
   {
-    key: 'bebas',
-    category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Høy & Smal Skiltfont (Bebas Neue / Oswald)',
-    family: '"Bebas Neue", "Oswald", Impact, sans-serif',
-    weight: '800'
+    "key": "sans-bold",
+    "category": "Moderne og skilt",
+    "label": "Montserrat · Black",
+    "family": "\"Montserrat\"",
+    "weight": "900"
   },
   {
-    key: 'futura',
-    category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Geometrisk Design (Montserrat, lokal)',
-    family: 'Futura, "Century Gothic", "Montserrat", sans-serif',
-    weight: '800'
-  },
-  {
-    key: 'avenir',
-    category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Nordisk Ren (Montserrat, lokal)',
-    family: '"Avenir Next", Avenir, "Helvetica Neue", sans-serif',
-    weight: '800'
-  },
-  {
-    key: 'rounded',
-    category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Myk & Avrundet (Fredoka / Arial Rounded)',
-    family: '"Fredoka", "Arial Rounded MT Bold", "Trebuchet MS", sans-serif',
-    weight: '700'
-  },
-  {
-    key: 'righteous',
-    category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Moderne Dekor / Funky (Righteous / Bauhaus)',
-    family: '"Righteous", Futura, "Arial Rounded MT Bold", sans-serif',
-    weight: '700'
-  },
-  {
-    key: 'gill',
-    category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Klassisk Skilt (Montserrat, lokal)',
-    family: '"Gill Sans", "Trebuchet MS", sans-serif',
-    weight: '700'
-  },
-  {
-    key: 'optima',
-    category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Slank & Elegant (Cinzel, lokal)',
-    family: 'Optima, Candara, "Segoe UI", sans-serif',
-    weight: '700'
-  },
-  {
-    key: 'verdana',
-    category: '🪧 Moderne & Skilt (Sans-Serif)',
-    label: 'Bred & Ekstra Tydelig (Montserrat, lokal)',
-    family: 'Verdana, Tahoma, Geneva, sans-serif',
-    weight: '800'
-  },
-
-  // 3. Klassisk, Tradisjon & Hytteskilt (Serif & Slab)
-  {
-    key: 'serif',
-    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Klassisk Dørskilt (Playfair Display, lokal)',
-    family: 'Georgia, "Times New Roman", serif',
-    weight: '800'
-  },
-  {
-    key: 'cinzel',
-    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Romersk / Herskapelig (Cinzel / Trajan)',
-    family: '"Cinzel", "Trajan Pro", Copperplate, Georgia, serif',
-    weight: '800'
-  },
-  {
-    key: 'copperplate',
-    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Støpt Metallskilt (Cinzel, lokal)',
-    family: 'Copperplate, "Cinzel", Georgia, serif',
-    weight: '800'
-  },
-  {
-    key: 'playfair',
-    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Kontrast & Luksus (Playfair / Didot / Bodoni)',
-    family: '"Playfair Display", "Abril Fatface", Didot, "Bodoni MT", serif',
-    weight: '800'
-  },
-  {
-    key: 'abril',
-    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Kraftig Fest-Serif (Abril Fatface / Ultra)',
-    family: '"Abril Fatface", "Playfair Display", Georgia, serif',
-    weight: '900'
-  },
-  {
-    key: 'baskerville',
-    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Tradisjonell Boktrykk (Playfair Display, lokal)',
-    family: 'Baskerville, Palatino, "Palatino Linotype", serif',
-    weight: '700'
-  },
-  {
-    key: 'rockwell',
-    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Kraftig Verksted / Slab (Alfa Slab / Rockwell)',
-    family: '"Alfa Slab One", Rockwell, "Courier New", serif',
-    weight: '900'
-  },
-  {
-    key: 'western',
-    category: '🏛️ Klassisk, Hytteskilt & Tradisjon (Serif)',
-    label: 'Western / Saloon / Villmark (Rye / Playbill)',
-    family: '"Rye", Playbill, Rockwell, Copperplate, serif',
-    weight: '700'
-  },
-
-  // 4. Kursiv, Håndskrift & Kalligrafi (Script)
-  {
-    key: 'script',
-    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Elegant Kalligrafi (Great Vibes / Snell Roundhand)',
-    family: '"Great Vibes", "Snell Roundhand", "Zapfino", cursive',
-    weight: '700'
-  },
-  {
-    key: 'pacifico',
-    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Tykke Penselstrøk – God til utskjæring! (Pacifico / SignPainter)',
-    family: '"Pacifico", "SignPainter", "Brush Script MT", cursive',
-    weight: '700'
-  },
-  {
-    key: 'lobster',
-    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Retro Kafé-Script (Lobster / Brush Script)',
-    family: '"Lobster", "SignPainter", "Brush Script MT", cursive',
-    weight: '700'
-  },
-  {
-    key: 'dancing',
-    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Levende Kursiv (Dancing Script / Satisfy)',
-    family: '"Dancing Script", "Satisfy", "Apple Chancery", cursive',
-    weight: '700'
-  },
-  {
-    key: 'chancery',
-    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Eventyr & Snirkler (Great Vibes, lokal)',
-    family: '"Apple Chancery", "URW Chancery L", Georgia, cursive',
-    weight: '700 italic'
-  },
-  {
-    key: 'caveat',
-    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Naturlig Håndskrift (Caveat / Bradley Hand)',
-    family: '"Caveat", "Bradley Hand", "Comic Sans MS", cursive',
-    weight: '700'
-  },
-  {
-    key: 'marker',
-    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Sprittusj / Street Art (Permanent Marker / Marker Felt)',
-    family: '"Permanent Marker", "Marker Felt", "Chalkboard SE", cursive',
-    weight: '700'
-  },
-  {
-    key: 'chalk',
-    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Tavlekritt / Barnerom (Fredoka, lokal)',
-    family: '"Chalkboard SE", "Comic Sans MS", "Fredoka", cursive',
-    weight: '700'
-  },
-  {
-    key: 'amatic',
-    category: '✍️ Kursiv, Håndskrift & Kalligrafi',
-    label: 'Håndtegnet Smal (Amatic SC / Herculanum)',
-    family: '"Amatic SC", Herculanum, "Marker Felt", sans-serif',
-    weight: '700'
-  },
-
-  // 5. Gaming, Sci-Fi, Viking & Tema
-  {
-    key: 'orbitron',
-    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
-    label: 'Sci-Fi / Cyber / Robot (Orbitron / Eurostile)',
-    family: '"Orbitron", Eurostile, "Bank Gothic", Futura, sans-serif',
-    weight: '900'
-  },
-  {
-    key: 'bangers',
-    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
-    label: 'Tegneserie / Action / Gamer (Bangers / Impact)',
-    family: '"Bangers", Impact, "Arial Black", cursive',
-    weight: '700'
-  },
-  {
-    key: 'pixel',
-    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
-    label: 'Retro Arcade / Minecraft-stil (Press Start 2P)',
-    family: '"Press Start 2P", "Courier New", Menlo, monospace',
-    weight: '700'
-  },
-  {
-    key: 'medieval',
-    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
-    label: 'Viking / Middelalder / Rollespill (Cinzel, lokal)',
-    family: 'Luminari, Trattatello, Herculanum, "Cinzel", fantasy',
-    weight: '700'
-  },
-  {
-    key: 'typewriter',
-    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
-    label: 'Skrivemaskin / Detektiv (Special Elite / American Typewriter)',
-    family: '"Special Elite", "American Typewriter", "Courier New", monospace',
-    weight: '700'
-  },
-  {
-    key: 'mono',
-    category: '🎮 Gaming, Sci-Fi, Viking & Tema',
-    label: 'Teknisk Maskinskrift (Special Elite, lokal)',
-    family: '"Courier New", Menlo, Monaco, monospace',
-    weight: '800'
-  }
-];
-
-FONT_CATALOG.push(...[
-  {
-    "key": "sairastencilone",
-    "category": "🆕 Flere skrifttyper",
-    "label": "Saira Stencil One",
-    "family": "\"Saira Stencil One\"",
+    "key": "impact",
+    "category": "Moderne og skilt",
+    "label": "Anton",
+    "family": "\"Anton\"",
     "weight": "400"
   },
   {
+    "key": "bebas",
+    "category": "Moderne og skilt",
+    "label": "Bebas Neue",
+    "family": "\"Bebas Neue\"",
+    "weight": "400"
+  },
+  {
+    "key": "futura",
+    "category": "Moderne og skilt",
+    "label": "Montserrat · Bold",
+    "family": "\"Montserrat\"",
+    "weight": "700"
+  },
+  {
+    "key": "rounded",
+    "category": "Moderne og skilt",
+    "label": "Fredoka · Bold",
+    "family": "\"Fredoka\"",
+    "weight": "700"
+  },
+  {
+    "key": "righteous",
+    "category": "Moderne og skilt",
+    "label": "Righteous",
+    "family": "\"Righteous\"",
+    "weight": "400"
+  },
+  {
+    "key": "cinzel",
+    "category": "Klassisk og serif",
+    "label": "Cinzel · Bold",
+    "family": "\"Cinzel\"",
+    "weight": "700"
+  },
+  {
+    "key": "playfair",
+    "category": "Klassisk og serif",
+    "label": "Playfair Display · Bold",
+    "family": "\"Playfair Display\"",
+    "weight": "700"
+  },
+  {
+    "key": "abril",
+    "category": "Klassisk og serif",
+    "label": "Abril Fatface",
+    "family": "\"Abril Fatface\"",
+    "weight": "400"
+  },
+  {
+    "key": "rockwell",
+    "category": "Klassisk og serif",
+    "label": "Alfa Slab One",
+    "family": "\"Alfa Slab One\"",
+    "weight": "400"
+  },
+  {
+    "key": "western",
+    "category": "Klassisk og serif",
+    "label": "Rye",
+    "family": "\"Rye\"",
+    "weight": "400"
+  },
+  {
+    "key": "script",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Great Vibes",
+    "family": "\"Great Vibes\"",
+    "weight": "400"
+  },
+  {
+    "key": "pacifico",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Pacifico",
+    "family": "\"Pacifico\"",
+    "weight": "400"
+  },
+  {
+    "key": "lobster",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Lobster",
+    "family": "\"Lobster\"",
+    "weight": "400"
+  },
+  {
+    "key": "dancing",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Dancing Script · Bold",
+    "family": "\"Dancing Script\"",
+    "weight": "700"
+  },
+  {
+    "key": "caveat",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Caveat · Bold",
+    "family": "\"Caveat\"",
+    "weight": "700"
+  },
+  {
+    "key": "marker",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Permanent Marker",
+    "family": "\"Permanent Marker\"",
+    "weight": "400"
+  },
+  {
+    "key": "amatic",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Amatic SC · Bold",
+    "family": "\"Amatic SC\"",
+    "weight": "700"
+  },
+  {
+    "key": "bangers",
+    "category": "Teknisk og tema",
+    "label": "Bangers",
+    "family": "\"Bangers\"",
+    "weight": "400"
+  },
+  {
+    "key": "pixel",
+    "category": "Teknisk og tema",
+    "label": "Press Start 2P",
+    "family": "\"Press Start 2P\"",
+    "weight": "400"
+  },
+  {
+    "key": "typewriter",
+    "category": "Teknisk og tema",
+    "label": "Special Elite",
+    "family": "\"Special Elite\"",
+    "weight": "400"
+  },
+  {
+    "key": "sairastencilone",
+    "category": "⚡ Laser og sjablong",
+    "label": "Saira Stencil One",
+    "family": "\"Saira Stencil One\"",
+    "weight": "400",
+    "stencil": true
+  },
+  {
     "key": "cormorantgaramond",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Klassisk og serif",
     "label": "Cormorant Garamond",
     "family": "\"Cormorant Garamond\"",
     "weight": "400"
   },
   {
     "key": "ebgaramond",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Klassisk og serif",
     "label": "EB Garamond",
     "family": "\"EB Garamond\"",
     "weight": "400"
   },
   {
     "key": "inconsolata",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Teknisk og tema",
     "label": "Inconsolata",
     "family": "\"Inconsolata\"",
     "weight": "400"
   },
   {
     "key": "josefinsans",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Moderne og skilt",
     "label": "Josefin Sans",
     "family": "\"Josefin Sans\"",
     "weight": "400"
   },
   {
     "key": "lato",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Moderne og skilt",
     "label": "Lato",
     "family": "\"Lato\"",
     "weight": "400"
   },
   {
     "key": "merriweather",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Klassisk og serif",
     "label": "Merriweather",
     "family": "\"Merriweather\"",
     "weight": "400"
   },
   {
     "key": "nunito",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Moderne og skilt",
     "label": "Nunito",
     "family": "\"Nunito\"",
     "weight": "400"
   },
   {
     "key": "raleway",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Moderne og skilt",
     "label": "Raleway",
     "family": "\"Raleway\"",
     "weight": "400"
   },
   {
     "key": "robotoslab",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Klassisk og serif",
     "label": "Roboto Slab",
     "family": "\"Roboto Slab\"",
     "weight": "400"
   },
   {
     "key": "sacramento",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Håndskrift og kalligrafi",
     "label": "Sacramento",
     "family": "\"Sacramento\"",
     "weight": "400"
   },
   {
     "key": "unifrakturmaguntia",
-    "category": "🆕 Flere skrifttyper",
+    "category": "Teknisk og tema",
     "label": "UnifrakturMaguntia",
     "family": "\"UnifrakturMaguntia\"",
     "weight": "400"
+  },
+  {
+    "key": "allura",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Allura",
+    "family": "\"Allura\"",
+    "weight": "400"
+  },
+  {
+    "key": "courgette",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Courgette",
+    "family": "\"Courgette\"",
+    "weight": "400"
+  },
+  {
+    "key": "dmserifdisplay",
+    "category": "Klassisk og serif",
+    "label": "DM Serif Display",
+    "family": "\"DM Serif Display\"",
+    "weight": "400"
+  },
+  {
+    "key": "marcellus",
+    "category": "Klassisk og serif",
+    "label": "Marcellus",
+    "family": "\"Marcellus\"",
+    "weight": "400"
+  },
+  {
+    "key": "prata",
+    "category": "Klassisk og serif",
+    "label": "Prata",
+    "family": "\"Prata\"",
+    "weight": "400"
+  },
+  {
+    "key": "kaushanscript",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Kaushan Script",
+    "family": "\"Kaushan Script\"",
+    "weight": "400"
+  },
+  {
+    "key": "italianno",
+    "category": "Håndskrift og kalligrafi",
+    "label": "Italianno",
+    "family": "\"Italianno\"",
+    "weight": "400"
+  },
+  {
+    "key": "boogaloo",
+    "category": "Teknisk og tema",
+    "label": "Boogaloo",
+    "family": "\"Boogaloo\"",
+    "weight": "400"
+  },
+  {
+    "key": "audiowide",
+    "category": "Teknisk og tema",
+    "label": "Audiowide",
+    "family": "\"Audiowide\"",
+    "weight": "400"
   }
-]);
+];
 
 const FONT_MAP = Object.fromEntries(FONT_CATALOG.map(f => [f.key, f]));
 
@@ -486,7 +464,10 @@ export function generateTextPolygons({
 
   // 1. Build flat high-precision loops first
   let rawLoops;
-  if (fontDef && fontDef.singleLine) {
+  if(fontDef.pigpen){
+    const entries=Array.from(pigpenText(cleanText)).map(ch=>ch===' '?[]:pigpenGlyph(ch)??outlineTextToPolygons(ch,'sans-bold',capHeight,0).map(loop=>mapGlyphLoop(loop,p=>({x:p.x/capHeight,y:p.y/capHeight}))));
+    rawLoops=direction.startsWith('stacked-')?stackGlyphs(entries,capHeight,letterGap,direction==='stacked-up'):entries.flatMap((loops,i)=>loops.map(loop=>{const result=mapGlyphLoop(loop,p=>({x:p.x*capHeight+i*(capHeight*1.15+letterGap),y:p.y*capHeight}));result.glyphIndex=i;return result}));
+  } else if (fontDef && fontDef.singleLine) {
     rawLoops = buildSingleLinePolygons(cleanText, capHeight, letterGap, direction);
   } else {
     rawLoops = outlineTextToPolygons(cleanText, fontKey, capHeight, letterGap, direction);
@@ -558,10 +539,6 @@ function buildSingleLinePolygons(text, heightMm, spacingMm, direction = 'horizon
   return loops;
 }
 
-/**
- * Smooths a 2D scalar field with `passes` iterations of a 3x3 separable [1, 2, 1]/4 tent filter.
- * Eliminates pixel-grid staircasing on curves and diagonals before Marching Squares contouring!
- */
 const loadedFonts = new Map();
 export function registerFontFile(file, bytes) { loadedFonts.set(file, parse(bytes)); }
 export async function initializeFonts() {
@@ -618,12 +595,8 @@ function outlineTextToPolygons(text, fontKey, heightMm, spacingMm, direction = '
   const entries = [];
   for (let i = 0; i < glyphs.length; i++) {
     const glyph = glyphs[i];
-    let paths = parseSvgPathToPolygons(glyph.getPath(stacked ? 0 : cursor, 0, emSize).toPathData(5), 0.06);
-    if (def.stencil && paths.length) {
-      const box = computePolygonsBBox(paths), bridge = Math.max(0.15, heightMm * 0.105);
-      const x = box.x + box.width / 2, y = box.y - 1, bottom = box.y + box.height + 1;
-      paths = booleanMultiPolygons(paths, [[{x:x-bridge/2,y},{x:x+bridge/2,y},{x:x+bridge/2,y:bottom},{x:x-bridge/2,y:bottom}]], 'subtract');
-    }
+    let paths = cleanFontContours(parseSvgPathToPolygons(glyph.getPath(stacked ? 0 : cursor, 0, emSize).toPathData(5), 0.025));
+    if (def.syntheticStencil && paths.length) paths=stencilFontContours(paths,Math.max(.15,heightMm*.07));
     paths.forEach(loop => { loop.glyphIndex = i; });
     entries.push(paths);
     cursor += (glyph.advanceWidth || font.unitsPerEm/2) * emSize/font.unitsPerEm;
@@ -855,7 +828,7 @@ export function createTextShape({
   pathFlip = false,
   laserMode = 'engrave'
 } = {}) {
-  const loops = generateTextPolygons({
+  const loops = cleanFontContours(generateTextPolygons({
     text,
     fontKey,
     fontSizeMm,
@@ -867,7 +840,7 @@ export function createTextShape({
     pathOffsetPct,
     pathNormalOffsetMm,
     pathFlip
-  });
+  }));
 
   const rawBBox = computePolygonsBBox(loops);
   const hasCustomPath = Array.isArray(customPath) && customPath.length >= 2;

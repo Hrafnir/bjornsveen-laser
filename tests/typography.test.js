@@ -67,11 +67,14 @@ test('direction, font, spacing and vector bounds roundtrip through saved project
  }
  const old=createTextShape(base);delete old.textMeta.writingDirection;updateTextShape(old,{spacingMm:4});assert.equal(old.textMeta.writingDirection,'horizontal');
 });
-test('all 12 added font families have native Norwegian glyphs, license files and distinct binaries',()=>{
- const added=FONT_CATALOG.filter(f=>f.category.startsWith('🆕'));assert.equal(added.length,12);
- const hashes=new Set();
- for(const def of added){const file=FONT_FILES[def.key],b=readFileSync(new URL('../fonts/'+file,import.meta.url));const font=parse(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength));
+test('all outline font choices have Norwegian glyphs, licenses and unique file/style combinations',()=>{
+ const seen=new Set();
+ for(const def of FONT_CATALOG.filter(f=>!f.singleLine&&!f.pigpen)){
+  const file=FONT_FILES[def.key],b=readFileSync(new URL('../fonts/'+file,import.meta.url)),font=parse(b.buffer.slice(b.byteOffset,b.byteOffset+b.byteLength));
   for(const char of 'ÆØÅæøå')assert.ok(font.charToGlyphIndex(char)>0,`${def.label}: ${char}`);
-  hashes.add(b.toString('base64'));const license=readFileSync(new URL('../fonts/'+def.key+(def.key==='robotoslab'?'-LICENSE.txt':'-OFL.txt'),import.meta.url),'utf8');assert.ok(license.length>1000);
- }assert.equal(hashes.size,12);
+  const signature=file+Boolean(def.syntheticStencil);assert.ok(!seen.has(signature),def.label+' is a duplicate');seen.add(signature);
+  const stem=file.split('-')[0],licenseName=['robotoslab','specialelite','permanentmarker'].includes(stem)?'-LICENSE.txt':'-OFL.txt';assert.ok(readFileSync(new URL('../fonts/'+stem+licenseName,import.meta.url),'utf8').length>1000);
+ }
+ assert.ok(FONT_CATALOG.some(f=>f.key==='pigpen'));
+ for(const key of ['allura','courgette','dmserifdisplay','marcellus','prata','kaushanscript','italianno','boogaloo','audiowide'])assert.ok(FONT_CATALOG.some(f=>f.key===key));
 });

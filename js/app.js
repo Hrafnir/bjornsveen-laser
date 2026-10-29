@@ -1666,7 +1666,9 @@ function updateTextFontPreview() {
   const key = document.getElementById('text-font-select').value;
   const preview = document.getElementById('text-font-preview');
   if (!preview || preview.dataset.font === key) return;
-  const sample = createTextShape({text:'Aa Æøå', fontKey:key, fontSizeMm:10, spacingMm:0, x:0, y:0});
+  const def=FONT_CATALOG.find(f=>f.key===key);
+  document.getElementById('text-font-note').textContent=def?.pigpen?'Pigpen: A–Z. Æ → AE, Ø → O, Å → A. Tall og tegn vises som vanlig tekst.':def?.singleLine?'Åpne enkeltstreker for score.':def?.stencil?'Sjablong: åpningene holder de innvendige delene fast.':'Overlappende bokstavkonturer slås sammen automatisk.';
+  const sample = createTextShape({text:def?.pigpen?'PIGPEN':'Aa Æøå', fontKey:key, fontSizeMm:10, spacingMm:0, x:0, y:0});
   preview.setAttribute('viewBox', `${sample.x-1} ${sample.y-1} ${sample.width+2} ${sample.height+2}`);
   const path = document.createElementNS('http://www.w3.org/2000/svg','path');
   path.setAttribute('d',sample.d);

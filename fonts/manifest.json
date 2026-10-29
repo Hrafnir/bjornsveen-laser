@@ -323,5 +323,77 @@
     "source": "https://fonts.gstatic.com/s/unifrakturmaguntia/v22/WWXPlieVYwiGNomYU-ciRLRvEmK7oaVemGZJ.ttf",
     "licenseSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/unifrakturmaguntia/OFL.txt",
     "sha256": "0319ddffa6d73dba4a7dd1b8b2b1437a28045d77ac6bbac51305cb948f538f77"
+  },
+  {
+    "family": "Allura",
+    "weight": 400,
+    "style": "normal",
+    "file": "allura-400-normal.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/allura/Allura-Regular.ttf",
+    "sha256": "9c142b2e515832c0dfc4ff8b8ea18f40314943bf937b72e2b23c4661bac14cc6"
+  },
+  {
+    "family": "Courgette",
+    "weight": 400,
+    "style": "normal",
+    "file": "courgette-400-normal.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/courgette/Courgette-Regular.ttf",
+    "sha256": "099739d22e66ee2b80656bba63847f9ed419ad7e3969ba2c1d3c437c0d08f3e3"
+  },
+  {
+    "family": "DM Serif Display",
+    "weight": 400,
+    "style": "normal",
+    "file": "dmserifdisplay-400-normal.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/dmserifdisplay/DMSerifDisplay-Regular.ttf",
+    "sha256": "8cc3643535edf039aa5d95440a8542735e9197e4f4b8d9303e980fefbf5ab616"
+  },
+  {
+    "family": "Marcellus",
+    "weight": 400,
+    "style": "normal",
+    "file": "marcellus-400-normal.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/marcellus/Marcellus-Regular.ttf",
+    "sha256": "1cf0cd10b17d35e852729962cc1ffaffed94514895972458345e2df34abb2f81"
+  },
+  {
+    "family": "Prata",
+    "weight": 400,
+    "style": "normal",
+    "file": "prata-400-normal.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/prata/Prata-Regular.ttf",
+    "sha256": "3b2b880737be3bda5f03554297b758516876157c88f9e3b3bae8fa1fc96a2c2c"
+  },
+  {
+    "family": "Kaushan Script",
+    "weight": 400,
+    "style": "normal",
+    "file": "kaushanscript-400-normal.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/kaushanscript/KaushanScript-Regular.ttf",
+    "sha256": "6d8d379d9bba98178bee476d68114c8f83812c18005ecccf679e70f60e03d8f6"
+  },
+  {
+    "family": "Italianno",
+    "weight": 400,
+    "style": "normal",
+    "file": "italianno-400-normal.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/italianno/Italianno-Regular.ttf",
+    "sha256": "f6ae96dea0da46c73370eb0575848ab0eda190315bdfda3f5b252bba3dc9173c"
+  },
+  {
+    "family": "Boogaloo",
+    "weight": 400,
+    "style": "normal",
+    "file": "boogaloo-400-normal.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/boogaloo/Boogaloo-Regular.ttf",
+    "sha256": "c38febf770bec2b8e30ea6bc1ddb39c9b0ce0e8625d94ceeafbe3af1c7096d9d"
+  },
+  {
+    "family": "Audiowide",
+    "weight": 400,
+    "style": "normal",
+    "file": "audiowide-400-normal.ttf",
+    "source": "https://raw.githubusercontent.com/google/fonts/main/ofl/audiowide/Audiowide-Regular.ttf",
+    "sha256": "c7c0f2b0f6fad8c623e31772ce79f94a4edb9321ffce9fce978ea892d20ae730"
   }
 ]

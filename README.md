@@ -79,7 +79,7 @@ Kjør `npm test` med Node.js 24 eller nyere for regresjonstestene. Appen trenger
 - **Maskin:** «Maskin for xTool-eksport» bestemmer maskinen. Valg av en maskinflate øverst setter også målmaskinen. En plate eller materialprofil endrer ikke dette valget. Kontroller at materialparametrene passer valgt maskin; profilene er utgangspunkter og er ikke fysisk kalibrert av denne testpakken.
 - **Foto:** Originalbildet beholdes. Redigering bruker en forhåndsvisning på inntil 750 piksler, mens eksport beregner oppløsning fra fysisk størrelse og valgt DPI. Eksport oppskalerer ikke kilden og begrenses til 8192 piksler per side / 16 megapiksler for å begrense minnebruk. «Følg fotomodus» bruker den globale modusen; et eksplisitt bildefilter overstyrer den. Gamle bilder som allerede er redusert til 750 piksler må importeres på nytt for å få tilbake detaljene.
 - **SVG:** Import støtter vanlige former og baner, nestede gruppetransformasjoner, fargearv, viewBox og absolutte enheter (mm/cm/in/pt/pc/px). Uten enheter brukes SVG-standarden 96 px per tomme. Tekst, CSS-regler, `<use>`, masker, klipping, filtre, nestede SVG-arbeidsflater, prosentmål og skjevstilte bitmapbilder må bakes inn i kildeprogrammet. Ustøttet innhold gir en melding, og ugyldig XML avvises. Duplikatkontrollen sammenligner hele baner med 0,001 mm koordinatavrunding; den finner ikke alle delvis overlappende kutt.
-- **Tekst:** Google-fontene følger med lokalt med lisenser. Tekstkonturer hentes fra TTF-filene med OpenType.js og samples til polygoner, uten rastersporing. Tidligere systemfontvalg bruker navngitte lokale alternativer i fontvelgeren. Eksisterende lagrede tekstbaner beholdes til teksten redigeres. Endring av slik tekst kan derfor gi et annet utseende enn den opprinnelige systemfonten.
+- **Tekst:** Fontene følger med lokalt med lisenser. Konturene hentes fra TTF-filene med OpenType.js. Overlappende komponenter ryddes med non-zero-fylling og forenes til kutteklare ytter- og innerkonturer; ekte bokstavhull bevares.
 - **Puslespill:** Nye puslespill har tre separate kuttelag: vannrette linjer → loddrette linjer → ytterkontur. XCS-eksport gir lagene fast rekkefølge og aktiverer behandling etter lag. Gravering og score ligger foran kuttene. SVG beholder tre farger/grupper, men behandlingsrekkefølgen må settes i laserprogrammet ved SVG-import. Lag eldre puslespill på nytt i generatoren for å få de tre kuttelagene. Ved rotasjon beholdes rekkefølgen fra generatoren.
 - **XCS:** Koordinater og parameterobjekter er regresjonstestet. Åpning i en konkret xTool Studio-versjon og fysisk kjøring på P3/F2 gjenstår som separat akseptansetest. Kontroller mål, bilde, hull, behandling og parametere før produksjon.
 
@@ -158,7 +158,7 @@ Linjen og rektangelet beholdes som separate, redigerbare objekter med et felles 
 
 ### Tekstretning, bokstavavstand og flere fonter
 
-Tekstpanelet har **49 fontvalg**, inkludert 12 nye fontfamilier: Saira Stencil One, Cormorant Garamond, EB Garamond, Inconsolata, Josefin Sans, Lato, Merriweather, Nunito, Raleway, Roboto Slab, Sacramento og UnifrakturMaguntia. De nye familiene er testet med ÆØÅ/æøå. Søkefeltet filtrerer fontlisten; valgt font beholdes i listen. Forhåndsvisningen bruker samme vektorkonturer som teksten på platen. Fontfiler og lisenser følger prosjektet lokalt.
+Tekstpanelet har **47 fontvalg** med reelle fontnavn og kategorier. Duplikate navn for samme fontfil er fjernet. Alle vanlige konturfonter er testet med ÆØÅ/æøå. Søkefeltet filtrerer listen, og forhåndsvisningen bruker de samme vektorkonturene som teksten på platen. Fontfiler og lisenser følger prosjektet lokalt.
 
 **Skriftretning** tilbyr vannrett tekst, tekst rotert for å leses oppover eller nedover, og stående bokstaver stablet oppover eller nedover. Innstillingen brukes både på valgt tekst og neste tekst du setter inn. Retningene følger med ved kopiering, lagring og XCS/SVG-eksport.
 
@@ -301,3 +301,16 @@ Arbeidstegningen henter automatisk nye deler når den åpnes, også etter prosje
 Deler som fjernes med **Fjern fra tegningen**, forblir utelatt ved gjenåpning. **Hent alle deler** tar dem med igjen; **Fra kutteoppsettet** tilbakestiller delplasseringene og målsettingen. Slettede eller skjulte kildefigurer beholder referansene sine og varsles som manglende, slik at de kan komme tilbake ved Angre på arbeidsflaten.
 
 `tests/drawing-sync.html` gjenskaper tom tegning, senere innsetting, endrede mål, bevaring av eget oppsett, utelatte deler, eldre dokumenter, gjenåpning, prosjektbytte fra arbeidstegningen og SVG-eksport. Kjør på en separat lokal testport. `tests/drawing.test.js` dekker i tillegg grupper, duplikater og lagring av utelatte kilder.
+
+
+### Rene fontkonturer og Pigpen
+
+Overlappende deler inne i bokstaver forenes før visning. Etter bokstavavstand, tekstretning og eventuell buet plassering forenes også overlapping mellom bokstaver. Dette fjerner kunstige hull i gravering og indre dobbeltkutt i håndskrift. Ekte hull i eksempelvis B, O og Ø bevares. Åpne enkeltstreker brukes fortsatt direkte til score.
+
+Sjablongfontene Black Ops One, Stardos Stencil og Saira Stencil One beholder sine egne åpninger. Fredoka-sjablongen får broer gjennom bokstavhullene; bokstaver uten hull deles ikke i to.
+
+Nye familier: **Allura, Courgette, DM Serif Display, Marcellus, Prata, Kaushan Script, Italianno, Boogaloo og Audiowide**. Filene er hentet fra [Google Fonts](https://github.com/google/fonts/tree/main/ofl), med lisens ved hver font og kildeadresse/SHA-256 i `fonts/manifest.json`. Orbitron er tatt ut av fontlisten fordi den medfølgende filen mangler Ø/ø. Alle tilgjengelige TTF-fonter har nå norske bokstaver. Det er ikke laget migrering for gamle tekstobjekter.
+
+**Pigpen · hemmelig skrift** finnes under **Symboler og koder**. Symbolene er egne vektorer for standardnøkkelen med 9 + 9 + 4 + 4 bokstaver: ABC/DEF/GHI, deretter prikket JKL/MNO/PQR; S øverst, T til venstre, U til høyre og V nederst i krysset; deretter prikket WXYZ. Nøkkeltypen er beskrevet i [Science Olympiads Codebusters-oversikt, side 80](https://www.soinc.org/sites/default/files/uploaded_files/CodeBusters_Overview25.pdf). Æ skrives AE, Ø blir O, Å blir A; aksenter fjernes. Tall og tegn vises som vanlig tekst. Bokstavavstand, retning, buet tekst og vektoreksport fungerer også med Pigpen.
+
+`tests/font-contours.test.js` kontrollerer fontenes opprinnelige fylling mot de ryddede konturene, indre kuttkanter, håndskrift, bokstavhull, sjablongbroer og Pigpen. `tests/font-quality.html` viser før/etter, nye fonter og Pigpen-nøkkelen, og tester tekstverktøyet og SVG/XS-eksport i nettleseren. Bruk en separat lokal testport.
