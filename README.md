@@ -292,3 +292,12 @@ Nettleserstatus og prosjektfilstatus vises hver for seg. Ved prosjektbytte med e
 Bruk `.laserprosjekt` som flyttbart, redigerbart dokument og sikkerhetskopi. Nettleserbiblioteket følger ikke med til en annen maskin, nettleser eller nettadresse og forsvinner hvis nettstedsdata slettes.
 
 `tests/project-library.html` dekker migrering, prosjektbytte, kopiering, arkivering, filtilknytning, lagring før bytte, feil under lagring, store bilder og smale skjermer. Kjør nettlesertestene på en egen lokal testport, én testside per origin om gangen. Testene bruker isolerte testfiler i nettleserens private lagring.
+
+
+### Oppdatering av arbeidstegningen
+
+Arbeidstegningen henter automatisk nye deler når den åpnes, også etter prosjektbytte. Tidligere lagrede, tomme arbeidstegninger fylles med prosjektets figurer ved åpning. Geometri og mål følger de gjeldende kildefigurene, mens egne notater, målreferanser, materialvalg og plasseringer i dokumentasjonen bevares. Nye medlemmer i grupper tas med uten å duplisere deler som allerede er dokumentert individuelt.
+
+Deler som fjernes med **Fjern fra tegningen**, forblir utelatt ved gjenåpning. **Hent alle deler** tar dem med igjen; **Fra kutteoppsettet** tilbakestiller delplasseringene og målsettingen. Slettede eller skjulte kildefigurer beholder referansene sine og varsles som manglende, slik at de kan komme tilbake ved Angre på arbeidsflaten.
+
+`tests/drawing-sync.html` gjenskaper tom tegning, senere innsetting, endrede mål, bevaring av eget oppsett, utelatte deler, eldre dokumenter, gjenåpning, prosjektbytte fra arbeidstegningen og SVG-eksport. Kjør på en separat lokal testport. `tests/drawing.test.js` dekker i tillegg grupper, duplikater og lagring av utelatte kilder.

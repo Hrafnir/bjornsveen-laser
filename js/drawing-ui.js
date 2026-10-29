@@ -3,7 +3,7 @@ import { DRAWING_MATERIALS, materialById, drawingMaterial } from './drawing-mate
 import { drawingPageKey, sheetViewBox, setSheetViewBox, clampAnnotation, ensureOnePager } from './drawing-page-layout.js';
 import { packPartBounds } from './part-layout.js';
 import { uid, evalMathExpr } from './geometry.js';
-import { normalizeDrawingDocument, drawingParts, drawingSourceMap, newDrawingItem, syncDrawingSources, splitDrawingGroup, partSnapPoints, dimensionAnchor, dimensionValue, createDrawingDocument, flatPoint } from './drawing-model.js';
+import { normalizeDrawingDocument, drawingParts, drawingSourceMap, newDrawingItem, syncDrawingSources, removeDrawingItem, splitDrawingGroup, partSnapPoints, dimensionAnchor, dimensionValue, createDrawingDocument, flatPoint } from './drawing-model.js';
 import { drawingBounds, drawingAnnotatedBounds, renderDrawingGeometry, renderAutoDimensions, renderManualDimensions, renderDrawingSheet, drawingPages, drawingPrintHtml, escapeDrawingText as E, drawingNumber } from './drawing-renderer.js';
 
 const copy=value=>structuredClone(value);
@@ -12,7 +12,7 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
   if(root)root.remove();
   root=document.createElement('div');root.id='drawing-modal';root.className='modal-backdrop open drawing-modal';root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-label','Arbeidstegning');
   document.body.append(root);
-  let doc=normalizeDrawingDocument(stored,shapes,settings,materialName),selectedId=doc.items[0]?.id||null,view='flat',measure=false,pendingPoint=null,drag=null,viewBox=null,pageIndex=0,selectedAnnotation=null,selectedView='flat',selectedDimension=null,placingNote=false,inlineEditor=null,lastNoteClick=null;
+  let doc=syncDrawingSources(normalizeDrawingDocument(stored,shapes,settings,materialName),shapes),selectedId=drawingParts(doc,shapes)[0]?.item.id||doc.items[0]?.id||null,view='flat',measure=false,pendingPoint=null,drag=null,viewBox=null,pageIndex=0,selectedAnnotation=null,selectedView='flat',selectedDimension=null,placingNote=false,inlineEditor=null,lastNoteClick=null;
   const undo=[],redo=[];
   const field=(id,label,type='text')=>`<label class="drawing-field">${label}<input id="dw-${id}" class="input-control" type="${type}"/></label>`;
   const materials=blank=>`<option value="">${blank}</option>`+DRAWING_MATERIALS.map(m=>`<option value="${m.id}">${m.name} · ${m.thickness} mm</option>`).join('');
@@ -28,7 +28,7 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
         <button id="dw-use-material" class="btn">Bruk valgt laser-materiale</button>
         <label class="drawing-field">Merknader<textarea id="dw-notes" class="input-control" rows="3"></textarea></label>
       </details>
-      <details open><summary>Deler i tegningen</summary><div class="drawing-grid"><button id="dw-sync" class="btn">Hent nye deler</button><button id="dw-reset" class="btn">Fra kutteoppsettet</button></div><button id="dw-spread" class="btn">Spre delene for målsetting</button><div id="dw-parts" class="drawing-part-list" aria-label="Deler i arbeidstegningen"></div></details>
+      <details open><summary>Deler i tegningen</summary><div class="drawing-grid"><button id="dw-sync" class="btn">Hent alle deler</button><button id="dw-reset" class="btn">Fra kutteoppsettet</button></div><p class="drawing-help">Nye deler hentes automatisk. «Hent alle deler» tar også med deler du har fjernet fra tegningen.</p><button id="dw-spread" class="btn">Spre delene for målsetting</button><div id="dw-parts" class="drawing-part-list" aria-label="Deler i arbeidstegningen"></div></details>
       <details open><summary>Valgt del</summary><p id="dw-placement-label" class="drawing-help"></p>${field('name','Delnavn')}
         <div class="drawing-grid">${field('x','X (mm)','number')}${field('y','Y (mm)','number')}${field('z','Høyde Z (mm)','number')}${field('rotation','Rotasjon (°)','number')}</div>
         <label class="drawing-field">Orientering i materialvisning<select id="dw-plane" class="select-control"><option value="xy">Liggende (XY)</option><option value="xz">Stående (XZ)</option><option value="yz">Stående (YZ)</option></select></label>
@@ -111,7 +111,7 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
     $('page-bar').hidden=view!=='sheet';$('measure').disabled=view==='iso'||(view==='sheet'&&!sheetViewBox(doc,currentPage(),'flat')?.visible);$('measure').classList.toggle('active',measure);$('fit').disabled=view==='sheet';
     root.querySelectorAll('[data-drawing-view]').forEach(btn=>{btn.classList.toggle('active',btn.dataset.drawingView===view);btn.setAttribute('aria-pressed',String(btn.dataset.drawingView===view));});
     const missing=doc.items.filter(p=>p.visible!==false).length-all.length;
-    $('status').textContent=placingNote?'Klikk på arket for å plassere en tekstboks. Esc avbryter.':measure?(pendingPoint?'Klikk målpunkt nummer to. Esc avbryter.':'Klikk to punkter på delene. Punkter og hjørner fester seg automatisk.'):missing?`${missing} del(er) mangler eller er skjult på arbeidsflaten.`:view==='iso'?'Dra for å flytte i X/Y. Endre Z og orientering for å sette delene sammen.':view==='flat'?'Dra deler i måltegningen. Piltaster flytter 1 mm, Shift + pil flytter 10 mm.':'Dra visninger og notater på arket. Rediger siden i panelet. SVG og PDF tar med oppsettet.';
+    $('status').textContent=placingNote?'Klikk på arket for å plassere en tekstboks. Esc avbryter.':measure?(pendingPoint?'Klikk målpunkt nummer to. Esc avbryter.':'Klikk to punkter på delene. Punkter og hjørner fester seg automatisk.'):missing?`${missing} del(er) mangler eller er skjult på arbeidsflaten.`:!all.length?'Ingen deler å vise. Legg til figurer på arbeidsflaten, eller hent alle deler hvis de er fjernet fra tegningen.':view==='iso'?'Dra for å flytte i X/Y. Endre Z og orientering for å sette delene sammen.':view==='flat'?'Dra deler i måltegningen. Piltaster flytter 1 mm, Shift + pil flytter 10 mm.':'Dra visninger og notater på arket. Rediger siden i panelet. SVG og PDF tar med oppsettet.';
     error('');
     try{
       if(view==='sheet'){
@@ -156,8 +156,8 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
   $('parts').addEventListener('click',e=>{const btn=e.target.closest('[data-select-part]');if(btn){selectedId=btn.dataset.selectPart;render()}});
   $('parts').addEventListener('change',e=>{const id=e.target.dataset.visible;if(id)change(()=>doc.items.find(p=>p.id===id).visible=e.target.checked,{fit:true})});
   $('dimensions').addEventListener('click',e=>{const pick=e.target.closest('[data-select-dimension]');if(pick){selectedDimension=pick.dataset.selectDimension;render();return;}const btn=e.target.closest('[data-remove-dimension]');if(btn)change(()=>doc.dimensions=doc.dimensions.filter(d=>d.id!==btn.dataset.removeDimension))});
-  $('sync').addEventListener('click',()=>change(()=>syncDrawingSources(doc,shapes),{fit:true}));
-  $('reset').addEventListener('click',()=>change(()=>{doc.items=shapes.filter(s=>!s.hidden&&drawingParts({items:[newDrawingItem(s)],thickness:doc.thickness},[s]).length).map(newDrawingItem);doc.dimensions=[];selectedId=doc.items[0]?.id;},{fit:true}));
+  $('sync').addEventListener('click',()=>change(()=>{syncDrawingSources(doc,shapes,{includeExcluded:true});selectedId=drawingParts(doc,shapes)[0]?.item.id||null;},{fit:true}));
+  $('reset').addEventListener('click',()=>change(()=>{doc.items=shapes.filter(s=>!s.hidden&&drawingParts({items:[newDrawingItem(s)],thickness:doc.thickness},[s]).length).map(newDrawingItem);doc.dimensions=[];doc.excludedSourceIds=[];selectedId=doc.items[0]?.id;},{fit:true}));
   $('spread').addEventListener('click',()=>change(()=>{
     const list=parts(),bounds=list.map(p=>drawingBounds([p])),gap=Math.max(30,Math.max(1,...bounds.map(b=>Math.max(b.width,b.height)))*.2);
     const positions=packPartBounds(bounds,gap);
@@ -166,7 +166,7 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
   $('rotate').addEventListener('click',()=>{if(selected())change(()=>selected()[placementKey('rotation')]=(selected()[placementKey('rotation')]+90)%360)});
   $('stack').addEventListener('click',()=>{if(selected())change(()=>selected().z+=selected().thickness??doc.thickness)});
   $('duplicate').addEventListener('click',()=>{if(selected())change(()=>{const p={...copy(selected()),id:uid('drawing-part'),x:selected().x+10,y:selected().y+10,assemblyX:selected().assemblyX+10,assemblyY:selected().assemblyY+10};doc.items.push(p);selectedId=p.id})});
-  $('remove').addEventListener('click',()=>{if(selected())change(()=>{doc.items=doc.items.filter(p=>p.id!==selectedId);doc.dimensions=doc.dimensions.filter(d=>d.a.itemId!==selectedId&&d.b.itemId!==selectedId);selectedId=doc.items[0]?.id})});
+  $('remove').addEventListener('click',()=>{if(selected())change(()=>{removeDrawingItem(doc,selectedId);selectedId=doc.items[0]?.id})});
   $('split').addEventListener('click',()=>{try{if(selected())change(()=>{splitDrawingGroup(doc,selected(),shapes);selectedId=doc.items[0]?.id})}catch(e){error(e.message)}});
   $('undo').addEventListener('click',()=>editHistory('undo'));$('redo').addEventListener('click',()=>editHistory('redo'));
   const close=()=>{document.activeElement?.blur();root.classList.remove('open');document.getElementById('btn-work-drawing')?.focus();};

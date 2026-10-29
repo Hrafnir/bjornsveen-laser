@@ -33,7 +33,7 @@ export function createDrawingDocument(shapes,settings={},materialName='') {
   return {version:1,title:'Arbeidstegning',project:'',author:'',revision:'A',date:new Date().toLocaleDateString('sv-SE'),notes:'',paper:'A4',scale:'auto',material:materialName||'Materiale',thickness:Number(settings.thicknessMm)||0,
     finish:preset.includes('mdf')?'mdf':preset.includes('acrylic')?'acrylic':preset.includes('alu')?'metal':'wood',autoDimensions:true,includeDetails:true,
     annotations:[],customPages:[],sheetLayouts:{},onePager:false,printScope:'all',
-    items:shapes.filter(s=>!s.hidden&&drawingLeaves([s]).length).map(newDrawingItem),dimensions:[]};
+    items:shapes.filter(s=>!s.hidden&&drawingLeaves([s]).length).map(newDrawingItem),excludedSourceIds:[],dimensions:[]};
 }
 // Read legacy/partial metadata defensively; never mutate a source workspace.
 export function normalizeDrawingDocument(raw,shapes,settings={},materialName='') {
@@ -49,6 +49,7 @@ export function normalizeDrawingDocument(raw,shapes,settings={},materialName='')
   doc.customPages=(Array.isArray(doc.customPages)?doc.customPages:[]).filter(p=>p&&typeof p.id==='string').map(p=>({id:p.id,title:String(p.title||'Dokumentasjon').slice(0,100)}));
   doc.onePager=doc.onePager===true;doc.printScope=doc.printScope==='current'?'current':'all';
   doc.sheetLayouts=doc.sheetLayouts&&typeof doc.sheetLayouts==='object'?doc.sheetLayouts:{};
+  doc.excludedSourceIds=[...new Set((Array.isArray(doc.excludedSourceIds)?doc.excludedSourceIds:[]).filter(id=>typeof id==='string'))];
   const seen=new Set();
   doc.items=(Array.isArray(doc.items)?doc.items:[]).filter(p=>p&&typeof p.id==='string'&&typeof p.sourceId==='string'&&!seen.has(p.id)&&seen.add(p.id)).map(p=>{
     const q={...p};for(const k of ['x','y','z','rotation'])q[k]=Number.isFinite(Number(p[k]))?Math.max(-100000,Math.min(100000,Number(p[k]))):0;
@@ -100,11 +101,26 @@ export function partSnapPoints(part) {
   points.push({x:0,y:0},{x:b.width,y:0},{x:b.width,y:b.height},{x:0,y:b.height},{x:b.width/2,y:b.height/2});
   return points.map(p=>flatPoint(part,p));
 }
-export function syncDrawingSources(doc,shapes) {
-  const ids=new Set(doc.items.map(i=>i.sourceId));
+// Add new sources without resetting documentation layout or resurrecting intentional omissions.
+export function syncDrawingSources(doc,shapes,{includeExcluded=false}={}) {
+  if(includeExcluded)doc.excludedSourceIds=[];
+  const ids=new Set([...doc.items.map(i=>i.sourceId),...(doc.excludedSourceIds||[])]);
   const hasUsedChild=s=>s.type==='group'&&(s.children||[]).some(c=>ids.has(c.id)||hasUsedChild(c));
-  for(const shape of shapes)if(!ids.has(shape.id)&&!hasUsedChild(shape)&&!shape.hidden&&drawingLeaves([shape]).length)doc.items.push(newDrawingItem(shape));
+  function visit(shape){
+    if(ids.has(shape.id)||shape.hidden||!drawingLeaves([shape]).length)return;
+    // A group may contain individually documented parts. Only add uncovered children,
+    // otherwise the group would duplicate them or hide its newly added members.
+    if(hasUsedChild(shape)){for(const child of shape.children||[])visit(child);return;}
+    doc.items.push(newDrawingItem(shape));ids.add(shape.id);
+  }
+  for(const shape of shapes)visit(shape);
   return doc;
+}
+export function removeDrawingItem(doc,id) {
+  const item=doc.items.find(p=>p.id===id);if(!item)return;
+  doc.items=doc.items.filter(p=>p.id!==id);
+  doc.dimensions=doc.dimensions.filter(d=>d.a.itemId!==id&&d.b.itemId!==id);
+  if(!doc.items.some(p=>p.sourceId===item.sourceId))doc.excludedSourceIds=[...new Set([...(doc.excludedSourceIds||[]),item.sourceId])];
 }
 export function splitDrawingGroup(doc,item,shapes) {
   const source=drawingSourceMap(shapes).get(item.sourceId);if(source?.type!=='group')return false;

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDrawingDocument, normalizeDrawingDocument, drawingParts, flatPoint, unflatPoint, point3d, isoPoint, dimensionAnchor, dimensionValue, syncDrawingSources, splitDrawingGroup } from '../js/drawing-model.js';
+import { createDrawingDocument, normalizeDrawingDocument, drawingParts, flatPoint, unflatPoint, point3d, isoPoint, dimensionAnchor, dimensionValue, syncDrawingSources, removeDrawingItem, splitDrawingGroup } from '../js/drawing-model.js';
 import { drawingPages, renderDrawingSheet, renderDrawingGeometry, drawingPrintHtml, drawingBounds, drawingAnnotatedBounds } from '../js/drawing-renderer.js';
 import { createPathShapeFromPolygons, computePolygonsBBox } from '../js/geometry.js';
 import { workspacePayload } from '../js/storage.js';
@@ -91,4 +91,24 @@ test('image puzzle material uses its silhouette and embeds rotated bitmap data',
  const image={...rect('image',10,20,100,80),type:'image',laserMode:'engrave',rotation:90,flipX:true,dataUrl:'data:image/png;base64,AA==',imageMeta:{puzzleClip:[[{x:.2,y:.2},{x:.8,y:.2},{x:.5,y:.8}]]}};
  const doc=createDrawingDocument([image],settings),parts=drawingParts(doc,[image]);near(parts[0].bounds.width,48);near(parts[0].bounds.height,60);
  const svg=renderDrawingGeometry(parts,{view:'iso'});assert.match(svg,/<image/);assert.match(svg,/data:image\/png;base64,AA==/);assert.match(svg,/transform="matrix/);
+});
+
+test('empty and stale drawings gain new sources without changing notes, dimensions or placements',()=>{
+ const a=rect('a'),doc=createDrawingDocument([]);doc.notes='Monter med lim';syncDrawingSources(doc,[a]);assert.equal(drawingParts(doc,[a]).length,1);
+ const item=doc.items[0];item.x=400;item.assemblyX=800;doc.dimensions.push({id:'w',kind:'horizontal',a:{itemId:item.id,u:0,v:0},b:{itemId:item.id,u:1,v:0},offset:15});
+ const changed={...a,width:140},b=rect('b');syncDrawingSources(doc,[changed,b]);syncDrawingSources(doc,[changed,b]);assert.equal(doc.items.length,2);assert.equal(item.x,400);assert.equal(item.assemblyX,800);assert.equal(doc.notes,'Monter med lim');assert.equal(dimensionValue(doc.dimensions[0],drawingParts(doc,[changed,b])),140);
+ syncDrawingSources(doc,[b]);assert.equal(doc.items[0].id,item.id,'retain missing source for undo');assert.equal(drawingParts(doc,[b]).length,1);
+});
+test('new nested group members synchronize once without duplicating already documented members',()=>{
+ const a=rect('a'),b=rect('b'),group={id:'group',type:'group',children:[a,{id:'nested',type:'group',children:[b]}]},doc=createDrawingDocument([a]);
+ syncDrawingSources(doc,[group]);syncDrawingSources(doc,[group]);assert.deepEqual(doc.items.map(i=>i.sourceId),['a','nested']);assert.equal(drawingParts(doc,[group]).flatMap(p=>p.leaves).length,2);
+ const grouped=createDrawingDocument([group]);group.children.push(rect('c'));syncDrawingSources(grouped,[group]);assert.equal(grouped.items.length,1);assert.equal(drawingParts(grouped,[group])[0].leaves.length,3);
+});
+test('intentional omissions and hidden parts survive synchronization and serialization',()=>{
+ const a=rect('a'),b=rect('b'),doc=createDrawingDocument([a,b]);doc.items[1].visible=false;removeDrawingItem(doc,doc.items[0].id);
+ const restored=normalizeDrawingDocument(JSON.parse(JSON.stringify(doc)),[a,b]);syncDrawingSources(restored,[a,b]);assert.equal(restored.items.length,1);assert.equal(restored.items[0].visible,false);assert.equal(drawingParts(restored,[a,b]).length,0);
+ syncDrawingSources(restored,[{id:'group',type:'group',children:[a,b]}]);assert.equal(restored.items.length,1,'group must not bring excluded child back');syncDrawingSources(restored,[a,b],{includeExcluded:true});assert.equal(restored.items.length,2);
+});
+test('removing a duplicate does not exclude its surviving source instance',()=>{
+ const a=rect('a'),doc=createDrawingDocument([a]);doc.items.push({...doc.items[0],id:'copy'});removeDrawingItem(doc,'copy');assert.deepEqual(doc.excludedSourceIds,[]);syncDrawingSources(doc,[a]);assert.equal(doc.items.length,1);
 });
