@@ -1,7 +1,8 @@
+import { projectMenuContent, askProjectName, confirmProjectSwitch, openProjectLibrary, chooseDocumentOutput } from './project-ui.js';
 import { buildXsProject, importXsProject } from './xs-project.js';
 import { processingPlan } from './processing-order.js';
 import { mountProcessingOrder } from './processing-order-ui.js';
-import { createLocalProject, createProjectHandleStore, PROJECT_EXTENSION, serializeProjectDocument } from './project-document.js';
+import { createLocalProject, createProjectHandleStore, PROJECT_EXTENSION, serializeProjectDocument, parseProjectDocument } from './project-document.js';
 import { openDrawingWorkshop } from './drawing-ui.js';
 import { renderPuzzleWorkshop } from './puzzle-ui.js';
 import { canEngraveBetweenContours, createBetweenEngraving } from './compound-fill.js';
@@ -16,7 +17,7 @@ import { createVectorOffset } from './vector-offset.js';
 import { findLineEndpoint, constrainLinePoint, createConnectedPath, joinOpenPaths } from './line-tools.js';
 import { renderFlexGeneratorUI } from './flex-ui.js';
 import { BOX_TYPES, buildBoxModel, boxModelToShapes, groupBoxParts, renderBoxAssemblySvg } from './box-generator.js';
-import { flushWorkspaceSave, hasUnprotectedChanges } from './storage.js';
+import { flushWorkspaceSave, hasUnprotectedChanges, listProjects, getProject, archiveProject, workspacePayload } from './storage.js';
 // ============================================================================
 // Bjørnsveen LaserStudio – Main Application Controller
 // ============================================================================
@@ -146,41 +147,52 @@ const state = {
   traceImageElement: null
 };
 
-let localProject=null;
+let localProject=null, drawingController=null, projectTransition=false;
 let refreshProcessingOrder=()=>{};
 function saveWorkspaceToLocal(value){persistWorkspaceToLocal(value);localProject?.refresh();}
 function showProjectFileStatus(info){
-  const text=info.busy?'Behandler prosjektfil …':info.name?`${info.name} · ${info.dirty?'Ulagrede endringer':info.connected?'Lagret i lokal fil':'Filkopi'}${info.message.startsWith('Ikke lagret:')?' · '+info.message:''}`:'Nettleserlagring · velg Lagre prosjektfil for et lokalt dokument';
-  const saveButton=document.getElementById('btn-save-project');if(saveButton)saveButton.textContent=info.dirty?'💾 Lagre *':'💾 Lagre';
+  const text=info.busy?'Behandler prosjektfil …':info.name?`${info.connected?'Lokal fil':'Filkopi'}: ${info.name} · ${info.dirty?'Ulagrede endringer i fil':info.connected?'Lagret':'Kopi åpnet / lastet ned'}${info.message.startsWith('Ikke lagret:')?' · '+info.message:''}`:'Ingen lokal fil tilknyttet';
+  document.getElementById('project-current-name').textContent=state.projectName||'Mitt prosjekt';
   for(const id of ['project-file-status','dw-file-status']){const el=document.getElementById(id);if(el){el.textContent=text;el.title=info.message;}}
   for(const id of ['btn-save-project','btn-save-project-as','btn-open-project-file','dw-save','dw-save-as','dw-open']){const el=document.getElementById(id);if(el)el.disabled=info.busy;}
 }
 function openDrawingWindow(){
   if(!finishDrawing())return;
-  openDrawingWorkshop({shapes:state.shapes,document:state.workDrawing,settings:state.laserSettings,
+  drawingController=openDrawingWorkshop({shapes:state.shapes,document:state.workDrawing,settings:state.laserSettings,
     materialName:LASER_MATERIAL_PRESETS[state.laserSettings.presetKey]?.name||'Egendefinert materiale',
     onChange:drawing=>{state.workDrawing=drawing;saveWorkspaceToLocal(state);},
-    onSaveProject:()=>saveLocalProject(),onSaveAsProject:()=>saveLocalProject(true),onOpenProject:()=>openLocalProject()});
-  localProject?.refresh();
+    onSaveProject:()=>saveLocalProject(),onSaveAsProject:()=>saveLocalProject(true),onOpenProject:()=>openLocalProject(),onProjectAction:runProjectAction});
+  localProject?.refresh();return drawingController;
 }
 async function saveLocalProject(as=false){
-  if(!finishDrawing())return;
-  try{await localProject.save({as});}catch(e){showToast(e.message);}
+  if(!finishDrawing())return false;
+  try{const saved=await localProject.save({as});saveWorkspaceToLocal(state);await flushWorkspaceSave();return saved;}catch(e){showToast(e.message);return false;}
+}
+async function prepareProjectSwitch({save=()=>localProject.save()}={}){
+  if(!finishDrawing())return false;
+  if(localProject.status().dirty&&!await confirmProjectSwitch({name:state.projectName,onSave:save}))return false;
+  saveWorkspaceToLocal(state);
+  if(!await flushWorkspaceSave()){if(localProject.status().name&&!localProject.status().dirty)return true;return confirmProjectSwitch({name:state.projectName,onSave:save,storageFailed:true});}
+  return true;
 }
 async function openLocalProject(){
   if(!finishDrawing())return;
   try{if(localProject.canOpenDirect())await localProject.open();else document.getElementById('project-document-input').click();}catch(e){showToast(e.message);}
 }
-function initLocalProject(){
-  localProject=createLocalProject({getWorkspace:()=>state,
-    pickOpen:typeof window.showOpenFilePicker==='function'?opts=>window.showOpenFilePicker(opts):null,
-    pickSave:typeof window.showSaveFilePicker==='function'?opts=>window.showSaveFilePicker(opts):null,
-    download:(text,name)=>downloadTextFile(text,name,'application/json;charset=utf-8'),
-    handleStore:createProjectHandleStore(),onStatus:showProjectFileStatus,
-    canReplace:()=>!localProject.status().dirty||window.confirm('Du har endringer som ikke er lagret i prosjektfilen. Åpne en annen fil likevel?'),
-    applyWorkspace:data=>{
+async function readProjectFile(file){
+  const name=file.name.toLowerCase();let workspace;
+  if(name.endsWith('.xs'))workspace=await importXsProject(await file.arrayBuffer());
+  else if(name.endsWith(PROJECT_EXTENSION))workspace=parseProjectDocument(await file.text());
+  else{const text=await file.text();workspace=importXcsStringToWorkspace(text);if(!workspace){const data=JSON.parse(text);if(Array.isArray(data.shapes))workspace=data;}}
+  if(!workspace)throw Error('Dette er ikke en støttet prosjektfil. Bruk «Sett inn» for bilder og SVG.');
+  return parseProjectDocument(serializeProjectDocument(workspace));
+}
+function applyProjectWorkspace(data,{name='',existing=false}={}){
+  state.projectId=existing?data.projectId:crypto.randomUUID();
+  state.projectName=data.projectName||name.replace(/\.(laserprosjekt|xs|xcs|json)$/i,'')||data.workDrawing?.title||'Mitt prosjekt';
       const reopen=document.getElementById('drawing-modal')?.classList.contains('open');
-      document.getElementById('drawing-modal')?.remove();pushUndoSnapshot(true);
+      document.getElementById('drawing-modal')?.remove();drawingController=null;state.undoStack=[];state.redoStack=[];state.penPoints=[];state.lineDraft=null;state.interaction=null;state.pathPick={anchors:[],segments:[]};
+      state.penCursor=null;state.penSourceId=null;state.lineHoverSnap=null;state.linePress=null;state.objectSnapFeedback=null;state.measureLine=null;state.pickingPathForTextId=null;updateUndoRedoButtons();
       state.shapes=data.shapes;state.workDrawing=data.workDrawing||null;state.selectedIds.clear();state.editingGroupId=null;
       state.machineKey=data.machineKey==='custom'||MACHINE_PROFILES[data.machineKey]?data.machineKey:'sheet-600x400';state.targetMachine=data.targetMachine==='xtool-f2'?'xtool-f2':'xtool-p3';
       state.bedWidth=data.bedWidth||600;state.bedHeight=data.bedHeight||400;state.laserSettings={...getDefaultLaserSettings(),...data.laserSettings};
@@ -189,8 +201,46 @@ function initLocalProject(){
       document.getElementById('bed-width-input').value=state.bedWidth;document.getElementById('bed-height-input').value=state.bedHeight;
       document.getElementById('snap-select').value=state.snapMm;document.getElementById('object-snap-toggle').checked=state.objectSnap;
       syncLaserSettingsUI();updateBedDimensionsUI();fitBedToViewport();renderAll();if(reopen)openDrawingWindow();
-    }});
+}
+function initLocalProject(){
+  localProject=createLocalProject({getWorkspace:()=>state,
+    pickOpen:typeof window.showOpenFilePicker==='function'?opts=>window.showOpenFilePicker(opts):null,
+    pickSave:typeof window.showSaveFilePicker==='function'?opts=>window.showSaveFilePicker(opts):null,
+    download:(text,name)=>downloadTextFile(text,name,'application/json;charset=utf-8'),
+    handleStore:createProjectHandleStore(),onStatus:showProjectFileStatus,canReplace:prepareProjectSwitch,decodeFile:readProjectFile,
+    applyWorkspace:applyProjectWorkspace});
   return localProject.restore();
+}
+async function switchLibraryProject(id){
+  if(projectTransition||localProject.status().busy)return false;
+  if(id===state.projectId)return true;
+  projectTransition=true;
+  try{const data=await getProject(id);if(!data||data.archived)throw Error('Prosjektet finnes ikke i biblioteket.');const valid=parseProjectDocument(serializeProjectDocument(data));if(!await prepareProjectSwitch())return false;localProject.detach();applyProjectWorkspace(valid,{existing:true});await localProject.restore(id);await flushWorkspaceSave();return true;}finally{projectTransition=false;}
+}
+async function makeProject(copyId=null){
+  if(projectTransition||localProject.status().busy)return false;projectTransition=true;
+  try{
+    if(!finishDrawing())return false;
+    let data=copyId===state.projectId?workspacePayload(state):copyId?await getProject(copyId):{...workspacePayload(state),shapes:[],workDrawing:null};
+    if(!data)throw Error('Prosjektet finnes ikke.');
+    const name=await askProjectName(copyId?'Lag en prosjektkopi':'Nytt prosjekt',copyId?(data.projectName||'Prosjekt')+' – kopi':'Nytt prosjekt');if(!name)return false;
+    if(!await prepareProjectSwitch())return false;
+    localProject.detach();applyProjectWorkspace({...data,projectName:name});await flushWorkspaceSave();return true;
+  }finally{projectTransition=false;}
+}
+async function runProjectAction(action){
+  try{
+    if(action==='new')return await makeProject();
+    if(action==='copy')return await makeProject(state.projectId);
+    if(action==='rename'){const name=await askProjectName('Gi prosjektet nytt navn',state.projectName);if(name){state.projectName=name;saveWorkspaceToLocal(state);await flushWorkspaceSave()}return;}
+    if(action==='library'){if(!finishDrawing())return;saveWorkspaceToLocal(state);if(!await flushWorkspaceSave())throw Error('Kunne ikke lagre gjeldende prosjekt.');return await openProjectLibrary({list:listProjects,getActiveId:()=>state.projectId,onOpen:switchLibraryProject,onCopy:makeProject,onNew:()=>makeProject(),onArchive:archiveProject});}
+    if(action==='document')return chooseDocumentOutput((intent,scope)=>{const controller=document.getElementById('drawing-modal')?.classList.contains('open')?drawingController:openDrawingWindow();controller?.output(intent,scope);});
+    if(action==='open')return openLocalProject();
+    if(action==='save')return saveLocalProject();
+    if(action==='saveAs')return saveLocalProject(true);
+    if(action==='laser'||action==='svg'){drawingController?.close();return openExportModal(action==='svg'?'svg':'xs');}
+    if(action==='insert'){drawingController?.close();document.getElementById('file-import-input').click();}
+  }catch(e){showToast(e.message);}
 }
 
 // ============================================================================
@@ -210,6 +260,7 @@ const hintBannerEl = document.getElementById('workspace-hint');
 // ============================================================================
 
 async function initApp() {
+  document.querySelector('#file-menu .header-menu-content').innerHTML=projectMenuContent();
   initLayout();
   window.addEventListener('workspace-storage', e => {
     const el = document.getElementById('save-status');
@@ -252,6 +303,7 @@ async function initApp() {
     state.shapes = starterShapes;
   }
 
+  state.projectId=saved?.projectId||crypto.randomUUID();state.projectName=saved?.projectName||saved?.workDrawing?.title||'Mitt første prosjekt';
   document.getElementById('target-machine-select').value = state.targetMachine;
   document.getElementById('bed-width-input').value = state.bedWidth;
   document.getElementById('bed-height-input').value = state.bedHeight;
@@ -2949,78 +3001,7 @@ function bindHeaderEvents() {
     if (!file) return;
     const name = file.name.toLowerCase();
 
-    if (name.endsWith('.xs')) {
-      void (async () => {
-        try {
-          const data = await importXsProject(await file.arrayBuffer());
-          await localProject.openFile({
-            name: file.name.replace(/\.xs$/i, PROJECT_EXTENSION),
-            text: async () => serializeProjectDocument(data)
-          });
-        } catch (error) { showToast(error.message); }
-      })();
-      fileInput.value = '';
-      return;
-    }
-    if(name.endsWith(PROJECT_EXTENSION)){void localProject.openFile(file).catch(error=>showToast(error.message));fileInput.value='';return;}
-    if (name.endsWith('.xcs') || name.endsWith('.json')) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        try {
-          const text = String(reader.result);
-          const xcsImported = importXcsStringToWorkspace(text);
-          if (xcsImported && Array.isArray(xcsImported.shapes)) {
-            pushUndoSnapshot(true);
-            localProject?.detach();
-            state.shapes = xcsImported.shapes;
-            state.workDrawing = xcsImported.workDrawing || null;
-            state.selectedIds.clear();
-            state.editingGroupId = null;
-            if (xcsImported.targetMachine) state.targetMachine = xcsImported.targetMachine;
-            document.getElementById('target-machine-select').value = state.targetMachine;
-            if (xcsImported.machineKey) {
-              state.machineKey = xcsImported.machineKey;
-              document.getElementById('machine-select').value = state.machineKey;
-            }
-            if (xcsImported.bedWidth) state.bedWidth = xcsImported.bedWidth;
-            if (xcsImported.bedHeight) state.bedHeight = xcsImported.bedHeight;
-            document.getElementById('bed-width-input').value = state.bedWidth;
-            document.getElementById('bed-height-input').value = state.bedHeight;
-            if (xcsImported.laserSettings) {
-              state.laserSettings = { ...getDefaultLaserSettings(), ...xcsImported.laserSettings };
-              syncLaserSettingsUI();
-            }
-            updateBedDimensionsUI();
-            fitBedToViewport();
-            renderAll();
-            showToast(`📦 Åpnet xTool / LaserStudio prosjekt: ${file.name} (${xcsImported.shapes.length} objekter)`);
-            return;
-          }
-          const data = JSON.parse(text);
-          if (Array.isArray(data.shapes)) {
-            pushUndoSnapshot(true);
-            localProject?.detach();
-            state.shapes = data.shapes;
-            state.workDrawing = data.workDrawing || null;
-            if (data.bedWidth) state.bedWidth = data.bedWidth;
-            if (data.bedHeight) state.bedHeight = data.bedHeight;
-            if (data.laserSettings) {
-              state.laserSettings = { ...getDefaultLaserSettings(), ...data.laserSettings };
-              syncLaserSettingsUI();
-            }
-            updateBedDimensionsUI();
-            fitBedToViewport();
-            renderAll();
-            showToast(`📂 Åpnet prosjekt: ${file.name}`);
-          } else {
-            showToast('⚠️ Fant ingen objekter i prosjektfilen');
-          }
-        } catch (err) {
-          showToast('⚠️ Kunne ikke lese prosjektfilen');
-        }
-      };
-      reader.readAsText(file);
-    } else if (name.endsWith('.svg')) {
+    if (name.endsWith('.svg')) {
       const reader = new FileReader();
       reader.onload = () => {
         let imported;
@@ -3059,6 +3040,7 @@ function bindHeaderEvents() {
   });
 
   document.getElementById('btn-work-drawing').addEventListener('click',openDrawingWindow);
+  document.getElementById('file-menu').addEventListener('click',e=>{const action=e.target.closest('[data-project-action]')?.dataset.projectAction;if(['new','library','rename','copy','document'].includes(action))void runProjectAction(action);});
   document.getElementById('btn-save-project').addEventListener('click',()=>saveLocalProject());
   document.getElementById('btn-save-project-as').addEventListener('click',()=>saveLocalProject(true));
   document.getElementById('btn-open-project-file').addEventListener('click',openLocalProject);
@@ -5279,7 +5261,7 @@ function openExportModal(preferredFormat = 'xs') {
 
       <div class="prop-grid" style="margin-top:2px;">
         <div class="prop-field full-width">
-          <label for="export-format-select">xTool-format</label><select id="export-format-select" class="select-control"><option value="xs">.XS – xTool Studio (anbefalt)</option><option value="xcs">.XCS – eldre Creative Space</option></select><label>Prosjektnavn / Filnavn ved nedlasting</label>
+          <details class="export-advanced"><summary>Avanserte filvalg</summary><label for="export-format-select">xTool-format</label><select id="export-format-select" class="select-control"><option value="xs">.XS – xTool Studio (anbefalt)</option><option value="xcs">.XCS – eldre Creative Space</option></select></details><label>Prosjektnavn / Filnavn ved nedlasting</label>
           <input type="text" id="export-filename-input" class="input-control" value="bjornsveen-laser-design" />
         </div>
         <div class="prop-field full-width">
@@ -5300,6 +5282,7 @@ function openExportModal(preferredFormat = 'xs') {
     </div>
   `;
 
+  document.getElementById('export-filename-input').value=state.projectName||'bjornsveen-laser-design';
   const getBaseFilename = () => {
     const raw = (document.getElementById('export-filename-input').value || 'bjornsveen-laser-design').trim();
     return raw.replace(/\.(svg|xs|xcs|json)$/i, '');

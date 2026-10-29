@@ -23,7 +23,7 @@ test('one pager retains editable notes and dimensions without removing detail sh
 });
 test('invalid input cannot replace the active workspace or file',async()=>{
  const h=fileHandle(),f=fixture({pickSave:async()=>h});await f.manager.save();const before=projectSnapshot(f.state);
- for(const text of ['{',JSON.stringify({format:'wrong'}),serializeProjectDocument({...f.state,shapes:[f.state.shapes[0],f.state.shapes[0]]})])await assert.rejects(f.manager.openFile({name:'bad',text:async()=>text}));
+ for(const text of ['{',JSON.stringify({format:'wrong'}),serializeProjectDocument({...f.state,shapes:[f.state.shapes[0],f.state.shapes[0]]}),serializeProjectDocument({...f.state,projectName:{bad:true}})])await assert.rejects(f.manager.openFile({name:'bad',text:async()=>text}));
  assert.equal(projectSnapshot(f.state),before);assert.equal(f.manager.status().name,h.name);assert.equal(f.manager.status().busy,false);
 });
 test('save writes repeatedly to same file and marks only committed snapshots as saved',async()=>{
@@ -57,4 +57,13 @@ test('a pending open serializes other file operations',async()=>{
 });
 test('Save As falls back to a new downloaded copy when a restored handle has no picker',async()=>{
  const h=fileHandle('original.laserprosjekt',serializeProjectDocument(initial()));let record={handle:h,name:h.name,diskText:h.text,savedSnapshot:projectSnapshot(initial())};const f=fixture({handleStore:{read:async()=>record,clear:async()=>record=null}});await f.manager.restore();f.state.workDrawing.title='New copy';await f.manager.save({as:true});assert.equal(f.downloads.length,1);assert.equal(h.writes,0);assert.equal(f.manager.status().connected,false);assert.equal(record,null);
+});
+test('save during the guarded open writes the outgoing file before installing the new workspace',async()=>{
+ const a=fileHandle('a.laserprosjekt'),b=fileHandle('b.laserprosjekt',serializeProjectDocument(initial()));let picked=a,guard=false;
+ const f=fixture({pickSave:async()=>a,pickOpen:async()=>[picked],canReplace:async({save}={})=>guard?await save():true});await f.manager.save();f.state.workDrawing.title='Before switching';picked=b;guard=true;
+ assert.equal(await f.manager.open(),true);assert.equal(parseProjectDocument(a.text).workDrawing.title,'Before switching');assert.equal(f.manager.status().name,'b.laserprosjekt');
+});
+test('restored file bindings cannot leak from one named project into another',async()=>{
+ const h=fileHandle('other.laserprosjekt'),f=fixture({handleStore:{read:async()=>({handle:h,name:h.name,diskText:'',savedSnapshot:'',projectId:'other'})}});
+ f.state.projectId='current';await f.manager.restore();assert.equal(f.manager.status().connected,false);assert.equal(f.manager.status().name,'');
 });

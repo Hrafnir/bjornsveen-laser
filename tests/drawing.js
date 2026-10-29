@@ -16,13 +16,14 @@ const edit=(id,v)=>{$(id).value=v;$(id).dispatchEvent(new w.Event('change',{bubb
 const key=(key,extra={})=>{d.activeElement?.blur();w.dispatchEvent(new w.KeyboardEvent('keydown',{key,bubbles:true,...extra}))};
 const clipboard=(action,text)=>{d.activeElement?.blur();const data=new w.DataTransfer();if(text)data.setData('text/plain',text);d.dispatchEvent(new w.ClipboardEvent(action,{clipboardData:data,bubbles:true,cancelable:true}));return data.getData('text/plain')};
 const stored=async()=>{await pause(330);return (await createWorkspaceStorage().loadWorkspaceFromLocal()).workDrawing};
+const output=(kind,scope='all')=>{d.querySelector('#dw-project-menu [data-project-action="document"]').click();edit('project-output-kind',kind);edit('project-output-scope',scope);d.querySelector('.project-dialog [data-output]').click()};
 const view=v=>d.querySelector(`[data-drawing-view="${v}"]`).click();
 const localKey=(key,extra={})=>$('dw-canvas').dispatchEvent(new w.KeyboardEvent('keydown',{key,bubbles:true,...extra}));
 const clickPoint=(x,y)=>{const svg=$('dw-canvas').querySelector('svg'),pt=svg.createSVGPoint();pt.x=x;pt.y=y;const c=pt.matrixTransform(svg.getScreenCTM());$('dw-canvas').dispatchEvent(new w.PointerEvent('pointerdown',{clientX:c.x,clientY:c.y,button:0,bubbles:true}));};
 const rect=(id,name,x,y,width,height)=>({id,name,type:'rect',x,y,width,height,rotation:0,laserMode:'cut'});
 const base=rect('base','Bunnplate',20,20,100,60),wall=rect('wall','Bakvegg',125,20,100,40),side=rect('side','Sidevegg',230,20,60,40);
 key('Escape');d.querySelector('[data-tool="select"]').click();key('a',{metaKey:true});key('Delete');clipboard('paste',encodeClipboard([base,wall,side]));key('a',{metaKey:true});
-const fixtureFile=new w.DataTransfer();fixtureFile.items.add(new w.File([JSON.stringify({shapes:JSON.parse(clipboard('copy')).shapes,workDrawing:null})],'fresh-drawing.json',{type:'application/json'}));$('file-import-input').files=fixtureFile.files;$('file-import-input').dispatchEvent(new w.Event('change',{bubbles:true}));await pause(300);key('a',{metaKey:true});
+const fixtureFile=new w.DataTransfer();fixtureFile.items.add(new w.File([JSON.stringify({shapes:JSON.parse(clipboard('copy')).shapes,workDrawing:null})],'fresh-drawing.json',{type:'application/json'}));$('project-document-input').files=fixtureFile.files;$('project-document-input').dispatchEvent(new w.Event('change',{bubbles:true}));await pause(100);d.querySelector('.project-dialog [data-keep]')?.click();await pause(300);key('a',{metaKey:true});
 const before=clipboard('copy');edit('laser-preset-select','mdf-3mm');
 let saved,initialX;
 await test('Global drawing button seeds all visible sources and selected material',async()=>{
@@ -35,8 +36,8 @@ await test('Placements, upright planes and thickness move the preview without ch
 });
 await test('Drawing undo/redo, shortcuts and focus stay inside the modal',()=>{
  const x=Number($('dw-x').value);$('dw-canvas').focus();localKey('ArrowRight',{shiftKey:true});near(Number($('dw-x').value),x+10);localKey('z',{metaKey:true});near(Number($('dw-x').value),x);localKey('z',{metaKey:true,shiftKey:true});near(Number($('dw-x').value),x+10);
- $('dw-undo').focus();$('dw-undo').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));assert(d.activeElement===$('dw-print'),'focus escaped backward');
- $('dw-print').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));assert(d.activeElement===$('dw-undo'),'focus escaped forward');
+ $('dw-undo').focus();$('dw-undo').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));assert(d.activeElement===$('dw-canvas'),'focus escaped backward');
+ $('dw-canvas').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Tab',bubbles:true,cancelable:true}));assert(d.activeElement===$('dw-undo'),'focus escaped forward');
 });
 await test('Two snapped corners produce an editable, persistent 100 mm dimension',async()=>{
  edit('dw-plane','xy');edit('dw-rotation','0');edit('dw-x','40');edit('dw-y','40');$('dw-fit').click();$('dw-measure').click();clickPoint(40,40);clickPoint(140,40);assert($('dw-dimensions').textContent.includes('100 mm'),$('dw-error').textContent);localKey('Escape');saved=await stored();assert(saved.dimensions.length===1);edit('dw-x','50');assert($('dw-dimensions').textContent.includes('100 mm'));$('dw-undo').click();
@@ -61,21 +62,21 @@ let xcs;
 await test('Save Project includes documentation; SVG download is a paper sheet',async()=>{
  const original=w.HTMLAnchorElement.prototype.click;let downloads=[];
  w.HTMLAnchorElement.prototype.click=function(){downloads.push({name:this.download,body:w.fetch(this.href).then(r=>r.text())})};
- try{$('dw-save').click();await pause(500);const file=downloads.find(f=>f.name.endsWith('.laserprosjekt'));assert(file,'no project download');const project=parseProjectDocument(await file.body);xcs=buildXcsProjectString(project.shapes,project);assert(project.workDrawing.title==='Lampe – arbeidstegning');assert(project.shapes.length===3);$('dw-export-svg').click();const svg=downloads.find(f=>f.name.endsWith('.svg'));assert(svg);assert((await svg.body).includes('width="297mm"'));}finally{w.HTMLAnchorElement.prototype.click=original;}
+ try{$('dw-save').click();await pause(500);const file=downloads.find(f=>f.name.endsWith('.laserprosjekt'));assert(file,'no project download');const project=parseProjectDocument(await file.body);xcs=buildXcsProjectString(project.shapes,project);assert(project.workDrawing.title==='Lampe – arbeidstegning');assert(project.shapes.length===3);output('svg','current');const svg=downloads.find(f=>f.name.endsWith('.svg'));assert(svg);assert((await svg.body).includes('width="297mm"'));}finally{w.HTMLAnchorElement.prototype.click=original;}
 });
 await test('PDF action builds all pages in an isolated print document, with no actual printing in tests',async()=>{
  let printed=false;const append=d.body.append.bind(d.body);
  d.body.append=(...els)=>{for(const el of els)if(el.classList?.contains('drawing-print-frame')){const handler=el.onload;el.onload=async()=>{el.contentWindow.print=()=>{printed=true};await handler()}}return append(...els)};
- try{$('dw-print').click();for(let i=0;i<100&&!printed;i++)await pause(20);assert(printed,'print not invoked');const print=d.querySelector('.drawing-print-frame').contentDocument;assert(print.querySelectorAll('.sheet').length===5);assert(print.querySelector('style').textContent.includes('size:297mm 210mm'));assert(print.body.scrollWidth>=1100);assert(print.querySelectorAll('svg').length===5);}finally{d.body.append=append;}
+ try{output('pdf');for(let i=0;i<100&&!printed;i++)await pause(20);assert(printed,'print not invoked');const print=d.querySelector('.drawing-print-frame').contentDocument;assert(print.querySelectorAll('.sheet').length===5);assert(print.querySelector('style').textContent.includes('size:297mm 210mm'));assert(print.body.scrollWidth>=1100);assert(print.querySelectorAll('svg').length===5);}finally{d.body.append=append;}
 });
 await test('Controls and page fit narrow viewports without horizontal overflow',async()=>{
- for(const width of [1280,820,390,320]){frame.style.width=width+'px';await pause(50);for(const el of $('drawing-modal').querySelectorAll('button,input,select,textarea,summary')){if(el.closest('[hidden]')||(!el.matches('summary')&&el.closest('details:not([open])'))||!el.getClientRects().length)continue;const b=el.getBoundingClientRect();assert(b.left>=-1&&b.right<=width+1,`${el.id} outside ${width}px: ${b.left},${b.right}`);}assert(d.documentElement.scrollWidth<=width+1,'page overflow');const b=$('dw-canvas').getBoundingClientRect();assert(b.width>200&&b.height>=100,'canvas unusable');const footer=d.querySelector('.drawing-footer').getBoundingClientRect();assert(footer.bottom<=w.innerHeight+1,`footer below viewport ${width}: ${footer.bottom}`);}
+ for(const width of [1280,820,390,320]){frame.style.width=width+'px';await pause(50);for(const el of $('drawing-modal').querySelectorAll('button,input,select,textarea,summary')){if(el.closest('[hidden]')||[...function*(node){for(let p=node.parentElement;p;p=p.parentElement)yield p}(el)].some(p=>p.tagName==='DETAILS'&&!p.open&&!p.querySelector(':scope > summary')?.contains(el))||!el.getClientRects().length)continue;const b=el.getBoundingClientRect();assert(b.left>=-1&&b.right<=width+1,`${el.id} outside ${width}px: ${b.left},${b.right}`);}assert(d.documentElement.scrollWidth<=width+1,'page overflow');const b=$('dw-canvas').getBoundingClientRect();assert(b.width>200&&b.height>=100,'canvas unusable');const footer=d.querySelector('.drawing-footer').getBoundingClientRect();assert(footer.bottom<=w.innerHeight+1,`footer below viewport ${width}: ${footer.bottom}`);}
  frame.style.width='1280px';
 });
-await test('Opening a project restores its drawing; canvas undo/redo restores both documents',async()=>{
- const previous=await stored(),incoming=JSON.parse(xcs);incoming.bjornsveenProject.workDrawing.title='Åpnet prosjekt';$('dw-close').click();
- const files=new w.DataTransfer();files.items.add(new w.File([JSON.stringify(incoming)],'drawing-fixture.xcs',{type:'application/json'}));$('file-import-input').files=files.files;$('file-import-input').dispatchEvent(new w.Event('change',{bubbles:true}));await pause(300);
- $('btn-work-drawing').click();assert($('dw-title').value==='Åpnet prosjekt');$('dw-close').click();$('btn-undo').click();$('btn-work-drawing').click();assert($('dw-title').value===previous.title);$('dw-close').click();$('btn-redo').click();$('btn-work-drawing').click();assert($('dw-title').value==='Åpnet prosjekt');$('dw-close').click();$('btn-undo').click();$('btn-work-drawing').click();
+await test('Opening a project restores its drawing and starts independent undo history',async()=>{
+ const incoming=JSON.parse(xcs);incoming.bjornsveenProject.workDrawing.title='Åpnet prosjekt';$('dw-close').click();
+ const files=new w.DataTransfer();files.items.add(new w.File([JSON.stringify(incoming)],'drawing-fixture.xcs',{type:'application/json'}));$('project-document-input').files=files.files;$('project-document-input').dispatchEvent(new w.Event('change',{bubbles:true}));await pause(100);d.querySelector('.project-dialog [data-keep]')?.click();await pause(300);
+ assert($('btn-undo').disabled&&$('btn-redo').disabled,'project switch retained another project’s history');$('btn-work-drawing').click();assert($('dw-title').value==='Åpnet prosjekt');$('dw-close').click();$('btn-undo').click();$('btn-work-drawing').click();assert($('dw-title').value==='Åpnet prosjekt');
 });
 await test('Deleted source parts warn instead of silently reusing stale geometry; undo restores them',()=>{
  $('dw-close').click();key('a',{metaKey:true});key('Delete');$('btn-work-drawing').click();assert($('dw-status').textContent.includes('mangler'));assert(!$('dw-canvas').querySelector('[data-drawing-item]'));$('dw-close').click();$('btn-undo').click();$('btn-work-drawing').click();assert(!$('dw-status').textContent.includes('mangler'));assert($('dw-canvas').querySelector('[data-drawing-item]'));

@@ -9,7 +9,7 @@ const assert=(value,message)=>{if(!value)throw Error(message)};
 async function test(name,fn){const li=document.createElement('li');document.querySelector('#results').append(li);try{await fn();li.textContent='PASS: '+name;li.className='pass';passed++}catch(e){li.textContent='FAIL: '+name+' — '+e.message;li.className='fail';failed++}}
 const size=async(width,height=760)=>{frame.style.width=width+'px';frame.style.height=height+'px';await pause(100)};
 const within=(el,width=w.innerWidth)=>{const r=el.getBoundingClientRect();assert(r.width>0,`${el.id||el.className} is not visible`);assert(r.left>=-1 && r.right<=width+1,`${el.id||el.className} outside viewport (${r.left},${r.right}; width ${width})`)};
-const visible=el=>el.getClientRects().length && (!el.closest('details:not([open])') || el.matches('summary')) && !el.closest('[hidden]');
+const visible=el=>{if(!el.getClientRects().length||el.closest('[hidden]'))return false;for(let p=el.parentElement;p;p=p.parentElement)if(p.tagName==='DETAILS'&&!p.open&&!p.querySelector(':scope > summary')?.contains(el))return false;return true;};
 const horizontalControls=root=>{for(const el of root.querySelectorAll('button,input,select,summary'))if(visible(el))within(el)};
 for(const width of [1440,1280,1024,820,640,390,320]) await test(`All controls stay inside a ${width}px viewport, including menus and custom bed`,async()=>{
  await size(width);horizontalControls(d.querySelector('.app-header'));

@@ -11,7 +11,7 @@ async function boot(){await new Promise(r=>{frame.onload=r;frame.src='../index.h
 await boot();
 const shapes=['cut','score','engrave'].map((laserMode,i)=>({id:laserMode,name:laserMode,type:'rect',laserMode,x:10+i*40,y:10,width:30,height:30}));
 await test('Native XS import restores editable artwork through the actual file input',async()=>{
- const transfer=new w.DataTransfer();transfer.items.add(new w.File([buildXsProject(shapes)],'test.xs'));$('file-import-input').files=transfer.files;$('file-import-input').dispatchEvent(new w.Event('change'));
+ const transfer=new w.DataTransfer();transfer.items.add(new w.File([buildXsProject(shapes)],'test.xs'));$('project-document-input').files=transfer.files;$('project-document-input').dispatchEvent(new w.Event('change'));
  await wait(()=>$('project-file-status').textContent.includes('test.laserprosjekt'));assert(d.querySelectorAll('#shapes-layer > [data-id]').length===3,'three imported shapes');
 });
 const order=()=>[...d.querySelectorAll('[data-order-id][data-step="-1"]')].map(el=>el.dataset.orderId);
@@ -38,6 +38,6 @@ w.HTMLAnchorElement.prototype.click=originalClick;
 await test('Advanced order and export controls fit a 320px window',async()=>{
  frame.style.width='320px';await pause(100);$('tab-laser').click();$('advanced-laser').open=true;
  const within=el=>{const r=el.getBoundingClientRect();assert(r.left>=-1&&r.right<=w.innerWidth+1,el.textContent+' outside viewport')};for(const b of $('laser-processing-order').querySelectorAll('button'))within(b);
- $('btn-export-xcs').click();within($('export-format-select'));$('export-modal').classList.remove('open');
+ $('btn-export-xcs').click();$('export-format-select').closest('details').open=true;within($('export-format-select'));$('export-modal').classList.remove('open');
 });
 frame.style.width='1280px';document.getElementById('summary').textContent=`${passed} bestått, ${failed} feilet`;

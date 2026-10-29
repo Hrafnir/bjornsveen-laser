@@ -9,6 +9,7 @@ export function parseProjectDocument(text){
  let data;try{data=JSON.parse(text)}catch{throw Error('Prosjektfilen inneholder ikke gyldig JSON.');}
  if(data?.format!==PROJECT_FORMAT||data.version!==1||!Array.isArray(data.workspace?.shapes))throw Error('Dette er ikke et støttet LaserStudio-prosjektdokument.');
  const workspace=workspacePayload(data.workspace),ids=new Set();let count=0;
+ for(const k of ['projectName','projectId'])if(workspace[k]!=null&&typeof workspace[k]!=='string')throw Error('Prosjektfilen har ugyldig prosjektnavn eller identifikator.');
  function validate(s,depth=0){
   if(!s||!TYPES.has(s.type)||typeof s.id!=='string'||ids.has(s.id)||depth>40||++count>50000)throw Error('Prosjektfilen har ugyldige eller dupliserte objekter.');
   ids.add(s.id);
@@ -20,27 +21,28 @@ export function parseProjectDocument(text){
  if(workspace.workDrawing)workspace.workDrawing=normalizeDrawingDocument(workspace.workDrawing,workspace.shapes,workspace.laserSettings||{});
  return workspace;
 }
-export const projectFilename=state=>(state.workDrawing?.title||'Mitt prosjekt').replace(/[^\p{L}\p{N}_-]+/gu,'-').slice(0,80)+PROJECT_EXTENSION;
+export const projectFilename=state=>(state.projectName||state.workDrawing?.title||'Mitt prosjekt').replace(/[^\p{L}\p{N}_-]+/gu,'-').slice(0,80)+PROJECT_EXTENSION;
 
 // File handles live separately from the portable JSON and workspace undo history.
 export function createProjectHandleStore(databaseName='laserstudio-project-file'){
  async function access(mode,fn){return new Promise((resolve,reject)=>{const request=indexedDB.open(databaseName,1);request.onupgradeneeded=()=>request.result.createObjectStore('session');request.onerror=()=>reject(request.error);request.onblocked=()=>reject(Error('Lukk andre faner og prøv igjen.'));request.onsuccess=()=>{const db=request.result,tx=db.transaction('session',mode);let value;try{const r=fn(tx.objectStore('session'));r.onsuccess=()=>value=r.result;}catch(e){db.close();reject(e);return;}tx.oncomplete=()=>{db.close();resolve(value)};tx.onabort=tx.onerror=()=>{db.close();reject(tx.error)};};});}
- return {read:()=>access('readonly',s=>s.get('active')),write:value=>access('readwrite',s=>s.put(value,'active')),clear:()=>access('readwrite',s=>s.delete('active'))};
+ return {read:()=>access('readonly',s=>s.get('active')),readProject:id=>access('readonly',s=>s.get('project:'+id)),write:value=>access('readwrite',s=>{if(value.projectId)s.put(value,'project:'+value.projectId);return s.put(value,'active')}),clear:()=>access('readwrite',s=>s.delete('active'))};
 }
-export function createLocalProject({getWorkspace,applyWorkspace,pickOpen,pickSave,download,handleStore=null,onStatus=()=>{},canReplace=()=>true}={}){
+export function createLocalProject({getWorkspace,applyWorkspace,pickOpen,pickSave,download,handleStore=null,onStatus=()=>{},canReplace=()=>true,decodeFile=null}={}){
  let handle=null,name='',diskText=null,savedSnapshot=null,busy=false,message='',storeQueue=Promise.resolve();
  const queueStore=fn=>{storeQueue=storeQueue.catch(()=>{}).then(fn).catch(()=>{});return storeQueue};
  function status(){return {name,connected:Boolean(handle),dirty:savedSnapshot!=null&&projectSnapshot(getWorkspace())!==savedSnapshot,busy,message,directSupported:Boolean(pickSave)};}
  function refresh(){onStatus(status());}
- function remember(){if(handleStore&&handle){const value={handle,name,diskText,savedSnapshot};return queueStore(()=>handleStore.write(value));}}
- async function restore(){if(!handleStore)return;try{const session=await handleStore.read();if(session?.handle&&typeof session.diskText==='string'&&typeof session.savedSnapshot==='string'){({handle,name,diskText,savedSnapshot}=session);message='Lokal prosjektfil gjenopprettet. Lagre skriver tilbake til samme fil.';refresh();}}catch{/* Local recovery still works if the browser cannot retain handles. */}}
+ function remember(){if(handleStore&&handle){const value={handle,name,diskText,savedSnapshot,projectId:getWorkspace().projectId};return queueStore(()=>handleStore.write(value));}}
+ async function restore(projectId){if(!handleStore)return;try{await storeQueue;const session=projectId&&handleStore.readProject?await handleStore.readProject(projectId):await handleStore.read();if(session?.projectId&&session.projectId!==getWorkspace().projectId)return;if(session?.handle&&typeof session.diskText==='string'&&typeof session.savedSnapshot==='string'){({handle,name,diskText,savedSnapshot}=session);message='Lokal prosjektfil gjenopprettet. Lagre skriver tilbake til samme fil.';refresh();if(projectId)await remember();}}catch{/* Local recovery still works if the browser cannot retain handles. */}}
  function detach(){handle=null;name='';diskText=null;savedSnapshot=null;message='';if(handleStore)queueStore(()=>handleStore.clear());refresh();}
  async function readFile(file,fileHandle){
-  const text=await file.text(),workspace=parseProjectDocument(text);
-  if(!await canReplace())return false;
+  const text=decodeFile&&!file.name.toLowerCase().endsWith(PROJECT_EXTENSION)?'':await file.text(),workspace=decodeFile?await decodeFile(file):parseProjectDocument(text);
+  if(decodeFile&&!file.name.toLowerCase().endsWith(PROJECT_EXTENSION))fileHandle=null;
+  const allowed=await canReplace({save:()=>save({duringOpen:true})});busy=true;if(!allowed)return false;
   // Validate everything before replacing either the workspace or active handle.
-  await applyWorkspace(workspace);
-  handle=fileHandle;name=file.name;diskText=text;savedSnapshot=projectSnapshot(getWorkspace());
+  await applyWorkspace(workspace,{name:file.name});
+  handle=fileHandle;name=decodeFile&&!file.name.toLowerCase().endsWith(PROJECT_EXTENSION)?file.name.replace(/\.[^.]+$/,'')+PROJECT_EXTENSION:file.name;diskText=text;savedSnapshot=projectSnapshot(getWorkspace());
   message=handle?'Arbeider i lokal prosjektfil. Cmd/Ctrl+S lagrer i samme fil.':pickSave?'Åpnet en filkopi. Velg Lagre for å knytte prosjektet til en lokal fil.':'Åpnet en filkopi. Lagre laster ned en oppdatert kopi i denne nettleseren.';
   if(handle)await remember();else if(handleStore)await queueStore(()=>handleStore.clear());
   return true;
@@ -53,13 +55,13 @@ export function createLocalProject({getWorkspace,applyWorkspace,pickOpen,pickSav
   if(!pickOpen||busy)return false;busy=true;refresh();
   // Pickers must be invoked immediately from the user's click.
   try{
-   const handles=await pickOpen({multiple:false,types:[{description:'LaserStudio-prosjektdokument',accept:{'application/json':[PROJECT_EXTENSION]}}]});
+   const handles=await pickOpen({multiple:false,types:[{description:'LaserStudio-prosjektdokument',accept:{'application/json':decodeFile?[PROJECT_EXTENSION,'.xcs','.json']:[PROJECT_EXTENSION],...(decodeFile?{'application/zip':['.xs']}:{})}}]});
    if(!handles?.[0])return false;return await readFile(await handles[0].getFile(),handles[0]);
   }catch(e){if(e.name==='AbortError')return false;throw e;}
   finally{busy=false;refresh()}
  }
- async function save({as=false}={}){
-  if(busy)return false;busy=true;refresh();let writable;
+ async function save({as=false,duringOpen=false}={}){
+  if(busy&&!duringOpen)return false;busy=true;refresh();let writable;
   try{
    let target=as?null:handle;
    if((as||!target)&&pickSave){

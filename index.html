@@ -9,7 +9,7 @@
 </head>
 <body>
   <div id="import-warnings" role="alert" hidden style="position:fixed;top:60px;left:80px;right:380px;z-index:60;background:#422006;color:#fef3c7;padding:12px" onclick="this.hidden=true"></div>
-  <div id="save-status" role="status" aria-live="polite" style="position:fixed;bottom:2px;right:8px;z-index:50;font-size:11px;background:#0f172a;padding:3px 8px;border-radius:4px">Åpner lokal lagring …</div>
+
   <!-- ================= TOP HEADER ================= -->
   <header class="app-header">
     <div class="brand-group">
@@ -64,17 +64,12 @@
       </details>
     </div>
     <div class="header-actions">
-      <input type="file" id="file-import-input" accept=".xs,.laserprosjekt,.xcs,.svg,.json,image/*" hidden />
-      <input type="file" id="project-document-input" accept=".laserprosjekt,application/json" hidden/>
-      <details id="file-menu" class="header-menu">
-        <summary class="btn">Fil <span aria-hidden="true">▾</span></summary>
-        <div class="header-menu-content"><button id="btn-open-project-file" class="btn">Åpne prosjektfil …</button><button id="btn-save-project-as" class="btn">Lagre prosjektfil som …</button><p id="project-file-status" class="project-file-status" role="status"></p><button id="btn-import" class="btn" title="Importer .XS- eller .XCS-prosjekt, SVG-fil, Foto/Bilde eller .JSON">📂 Åpne / Bilde</button>
-<button id="btn-export-xcs" class="btn btn-primary" title="Last ned xTool Studio prosjektfil (.xs) med vektorer, bitmap-bilder og laserinnstillinger!">📦 Eksport .XS</button>
-<button id="btn-export-svg" class="btn btn-laser-export" title="Last ned ferdig 1:1 millimeter SVG-fil (inkl. innebygde bitmap-bilder)">⬇ Eksport .SVG</button></div>
-      </details>
-      <button id="btn-work-drawing" class="btn" title="Arbeidstegning med mål, materialvisning og PDF-dokumentasjon">Tegning</button>
-      <button id="btn-save-project" class="btn" title="Lagre redigerbart prosjektdokument (.laserprosjekt). Cmd/Ctrl+S lagrer i samme lokale fil.">💾 Lagre</button>
-      <button id="btn-preflight" class="btn btn-success" title="Sjekk tegningen, velg materiale/laserinnstillinger og eksporter">✅ Lasersjekk</button>
+      <input type="file" id="file-import-input" accept=".svg,image/*" hidden />
+      <input type="file" id="project-document-input" accept=".laserprosjekt,.xs,.xcs,.json" hidden/>
+      <div class="project-identity"><strong id="project-current-name">Mitt prosjekt</strong><span id="save-status" role="status" aria-live="polite">Åpner lokal lagring …</span><span id="project-file-status" class="project-file-status" role="status"></span></div>
+      <details id="file-menu" class="header-menu project-menu"><summary class="btn btn-primary">Prosjekt <span aria-hidden="true">▾</span></summary><div class="header-menu-content"></div></details>
+      <button id="btn-work-drawing" class="btn" title="Arbeidstegning med mål og dokumentasjon">Tegning</button>
+      <button id="btn-preflight" hidden>Lasersjekk</button>
       <button id="btn-toggle-panel" class="btn" aria-controls="inspector-panel" aria-expanded="true">Panel</button>
     </div>
   </header>

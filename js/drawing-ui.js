@@ -1,3 +1,4 @@
+import { projectMenuContent, projectControlVisible } from './project-ui.js';
 import { DRAWING_MATERIALS, materialById, drawingMaterial } from './drawing-materials.js';
 import { drawingPageKey, sheetViewBox, setSheetViewBox, clampAnnotation, ensureOnePager } from './drawing-page-layout.js';
 import { packPartBounds } from './part-layout.js';
@@ -6,7 +7,7 @@ import { normalizeDrawingDocument, drawingParts, drawingSourceMap, newDrawingIte
 import { drawingBounds, drawingAnnotatedBounds, renderDrawingGeometry, renderAutoDimensions, renderManualDimensions, renderDrawingSheet, drawingPages, drawingPrintHtml, escapeDrawingText as E, drawingNumber } from './drawing-renderer.js';
 
 const copy=value=>structuredClone(value);
-export function openDrawingWorkshop({shapes,document:stored,settings,materialName,onChange=()=>{},onSaveProject,onSaveAsProject,onOpenProject}={}) {
+export function openDrawingWorkshop({shapes,document:stored,settings,materialName,onChange=()=>{},onSaveProject,onSaveAsProject,onOpenProject,onProjectAction=()=>{}}={}) {
   let root=document.getElementById('drawing-modal');
   if(root)root.remove();
   root=document.createElement('div');root.id='drawing-modal';root.className='modal-backdrop open drawing-modal';root.setAttribute('role','dialog');root.setAttribute('aria-modal','true');root.setAttribute('aria-label','Arbeidstegning');
@@ -16,7 +17,7 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
   const field=(id,label,type='text')=>`<label class="drawing-field">${label}<input id="dw-${id}" class="input-control" type="${type}"/></label>`;
   const materials=blank=>`<option value="">${blank}</option>`+DRAWING_MATERIALS.map(m=>`<option value="${m.id}">${m.name} · ${m.thickness} mm</option>`).join('');
   root.innerHTML=`<section class="modal-window drawing-window">
-    <header class="drawing-header"><div><h2>Arbeidstegning</h2><span>Dokumentasjon og sammenstilling i millimeter</span></div><div class="drawing-actions"><button id="dw-undo" class="btn" title="Angre i arbeidstegningen (⌘Z)">↶</button><button id="dw-redo" class="btn" title="Gjør om i arbeidstegningen (⇧⌘Z)">↷</button><button id="dw-open" class="btn">Åpne</button><button id="dw-save-as" class="btn">Lagre som …</button><button id="dw-save" class="btn">Lagre prosjekt</button><button id="dw-close" class="btn" aria-label="Lukk arbeidstegning">Lukk</button></div><p id="dw-file-status" class="project-file-status" role="status"></p></header>
+    <header class="drawing-header"><div><h2>Arbeidstegning</h2><span>Dokumentasjon og sammenstilling i millimeter</span></div><div class="drawing-actions"><button id="dw-undo" class="btn" title="Angre i arbeidstegningen (⌘Z)">↶</button><button id="dw-redo" class="btn" title="Gjør om i arbeidstegningen (⇧⌘Z)">↷</button><details id="dw-project-menu" class="header-menu project-menu"><summary class="btn btn-primary">Prosjekt ▾</summary><div class="header-menu-content">${projectMenuContent(true)}</div></details><button id="dw-close" class="btn" aria-label="Lukk arbeidstegning">Lukk</button></div><p id="dw-file-status" class="project-file-status" role="status"></p></header>
     <div class="drawing-body"><aside class="drawing-settings">
       <details open><summary>Tegning og materiale</summary>
         ${field('title','Tittel')}${field('project','Prosjekt / oppgave')}
@@ -67,9 +68,10 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
       <div id="dw-status" class="drawing-status" role="status"></div>
       <div id="dw-canvas" class="drawing-canvas" tabindex="0" aria-label="Arbeidstegning, dra deler eller klikk to punkter for å målsette"></div>
       <div id="dw-error" class="box-error" role="alert" hidden></div>
-      <footer class="drawing-footer"><span id="dw-info"></span><div class="drawing-actions"><button id="dw-export-svg" class="btn">Last ned ark som SVG</button><label class="drawing-print-scope">Eksporter<select id="dw-print-scope" class="select-control"><option value="current">Dette arket</option><option value="all">Hele dokumentet</option></select></label><button id="dw-pdf" class="btn">PDF</button><button id="dw-print" class="btn btn-primary">Skriv ut</button></div></footer>
+      <footer class="drawing-footer"><span id="dw-info"></span><div class="drawing-actions" hidden><button id="dw-export-svg" class="btn">Last ned ark som SVG</button><label class="drawing-print-scope">Eksporter<select id="dw-print-scope" class="select-control"><option value="current">Dette arket</option><option value="all">Hele dokumentet</option></select></label><button id="dw-pdf" class="btn">PDF</button><button id="dw-print" class="btn btn-primary">Skriv ut</button></div></footer>
     </main></div></section>`;
   const $=id=>root.querySelector('#dw-'+id),host=$('canvas');
+  $('project-menu').addEventListener('click',e=>{const action=e.target.closest('[data-project-action]')?.dataset.projectAction;if(!action)return;$('project-menu').open=false;if(!['open','save','saveAs'].includes(action)){document.activeElement?.blur();notify();void onProjectAction(action)}});
   for(const key of ['title','project','author','revision','date','notes','material','paper','thickness','finish','scale'])$(key).value=doc[key];
   $('details').checked=doc.includeDetails!==false;$('auto-dimensions').checked=doc.autoDimensions;$('dimension-offset').value=-10;
   const parts=()=>drawingParts(doc,shapes),selected=()=>doc.items.find(p=>p.id===selectedId);
@@ -294,12 +296,12 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
   root.addEventListener('keydown',e=>{
     const input=e.target.closest('input,textarea,select');
     if(e.key==='Tab'){
-      const controls=[...root.querySelectorAll('button,input,select,textarea,summary,[tabindex="0"]')].filter(el=>!el.disabled&&el.getClientRects().length&&(!el.closest('details:not([open])')||el.matches('summary')));
+      const controls=[...root.querySelectorAll('button,input,select,textarea,summary,[tabindex="0"]')].filter(el=>!el.disabled&&projectControlVisible(el));
       const first=controls[0],last=controls.at(-1);
       if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}
       else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}
     }
-    else if(e.key==='Escape'){e.preventDefault();if(placingNote){placingNote=false;render()}else if(measure){measure=false;pendingPoint=null;render()}else close();}
+    else if(e.key==='Escape'){e.preventDefault();if($('project-menu').open){$('project-menu').open=false;$('project-menu').querySelector('summary').focus()}else if(placingNote){placingNote=false;render()}else if(measure){measure=false;pendingPoint=null;render()}else close();}
     else if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){e.preventDefault();document.activeElement?.blur();notify();(e.shiftKey?onSaveAsProject:onSaveProject)?.();}
     else if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='o'){e.preventDefault();document.activeElement?.blur();onOpenProject?.();}
     else if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='p'){e.preventDefault();printDocument('print');}
@@ -322,5 +324,5 @@ export function openDrawingWorkshop({shapes,document:stored,settings,materialNam
   }
   $('print').addEventListener('click',()=>printDocument());$('pdf').addEventListener('click',()=>printDocument('pdf'));
   if(doc.onePager)view='sheet';
-  notify();render();$('close').focus();return {getDocument:()=>copy(doc),close};
+  notify();render();$('close').focus();return {getDocument:()=>copy(doc),close,output:(intent,scope)=>{doc.printScope=scope;$('print-scope').value=scope;notify();if(intent==='svg')$('export-svg').click();else printDocument(intent)}};
 }

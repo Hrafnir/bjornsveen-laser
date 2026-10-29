@@ -64,7 +64,10 @@ export function createWorkspaceStorage({ databaseName = 'bjornsveen_laserstudio'
   function write(payload) {
     const commit = db => new Promise((resolve, reject) => {
       const tx = db.transaction('workspace', 'readwrite');
-      tx.objectStore('workspace').put(payload, 'current');
+      const store = tx.objectStore('workspace');
+      store.put(payload, 'current');
+      // Commit recovery and the named project together, including full image data.
+      if (payload.projectId) store.put({...payload, libraryProject:true, archived:false}, 'project:' + payload.projectId);
       tx.oncomplete = () => resolve();
       tx.onabort = tx.onerror = () => reject(tx.error);
     });
@@ -77,24 +80,24 @@ export function createWorkspaceStorage({ databaseName = 'bjornsveen_laserstudio'
     revision++;
     if (!restoreFailed) {
       try { localStorage.setItem(journalKey, makeJournal(state)); durableJournal = true; }
-      catch { durableJournal = false; status('Lagrer stort prosjekt … Vent på «Lagret lokalt» før du lukker.', false); }
+      catch { durableJournal = false; status('Lagrer stort prosjekt … Vent på «Lagret i nettleseren» før du lukker.', false); }
     }
     clearTimeout(timer);
     timer = setTimeout(() => { void flushWorkspaceSave(); }, 250);
   }
   async function flushWorkspaceSave() {
     clearTimeout(timer);
-    if (!pending || restoreFailed) { if (writing) await writing; return; }
+    if (!pending || restoreFailed) { if (writing) return await writing; return !restoreFailed; }
     const state = pending;
     const revisionAtWrite = revision;
     pending = null;
     let payload, signature;
     try { payload = workspacePayload(state); signature = JSON.stringify(payload); }
-    catch { status('Kunne ikke lagre prosjektet. Last ned en prosjektfil.', true); return; }
+    catch { status('Kunne ikke lagre prosjektet. Last ned en prosjektfil.', true); return false; }
     if (!writing && signature === lastSaved) {
       try { localStorage.removeItem(journalKey); } catch {}
       durableJournal = true;
-      return;
+      return true;
     }
     status('Lagrer …');
     // IndexedDB serializes these transactions. Queue the latest snapshot immediately,
@@ -106,12 +109,13 @@ export function createWorkspaceStorage({ databaseName = 'bjornsveen_laserstudio'
         lastSaved = signature; savedImages = collectImages(payload.shapes);
         if (revision === revisionAtWrite) durableJournal = true;
         try { if (localStorage.getItem(journalKey) === journalAtWrite) localStorage.removeItem(journalKey); } catch {}
-        if (revision === revisionAtWrite) status('Lagret lokalt');
+        if (revision === revisionAtWrite) status('Lagret i nettleseren');
+        return true;
       })
-      .catch(() => { status('Lokal lagring feilet. Last ned prosjektet med «Lagre».', true); })
+      .catch(() => { if(revision === revisionAtWrite) pending=state; status('Lokal lagring feilet. Last ned prosjektet med «Lagre».', true); return false; })
       .finally(() => { if (writing === operation) writing = null; });
     writing = operation;
-    await operation;
+    return await operation;
   }
   async function loadWorkspaceFromLocal() {
     try {
@@ -155,7 +159,32 @@ export function createWorkspaceStorage({ databaseName = 'bjornsveen_laserstudio'
     }
   }
 
-  return { saveWorkspaceToLocal, flushWorkspaceSave, loadWorkspaceFromLocal, hasUnprotectedChanges: () => !durableJournal || (restoreFailed && Boolean(pending)) };
+  async function listProjects() {
+    const db=await (openDatabase || database)();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction('workspace'),request=tx.objectStore('workspace').getAll();let records;
+      request.onsuccess=()=>{records=request.result.filter(r=>r.libraryProject)};
+      tx.oncomplete=()=>resolve(records.sort((a,b)=>String(b.savedAt).localeCompare(String(a.savedAt))));
+      tx.onerror=tx.onabort=()=>reject(tx.error);
+    });
+  }
+  async function getProject(id) {
+    const db=await (openDatabase || database)();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction('workspace'),request=tx.objectStore('workspace').get('project:'+id);let record;
+      request.onsuccess=()=>{record=request.result};tx.oncomplete=()=>resolve(record);tx.onerror=tx.onabort=()=>reject(tx.error);
+    });
+  }
+  async function archiveProject(id, archived=true) {
+    const db=await (openDatabase || database)();
+    return new Promise((resolve,reject)=>{
+      const tx=db.transaction('workspace','readwrite'),store=tx.objectStore('workspace'),request=store.get('project:'+id);
+      request.onsuccess=()=>{if(!request.result){tx.abort();return}store.put({...request.result,archived},'project:'+id)};
+      tx.oncomplete=resolve;tx.onerror=tx.onabort=()=>reject(tx.error||Error('Prosjektet finnes ikke.'));
+    });
+  }
+
+  return { listProjects, getProject, archiveProject, saveWorkspaceToLocal, flushWorkspaceSave, loadWorkspaceFromLocal, hasUnprotectedChanges: () => !durableJournal || (restoreFailed && Boolean(pending)) };
 }
 export function workspacePayload(state) {
   // Copy objects/arrays without re-encoding multi-megabyte immutable image strings.
@@ -166,9 +195,9 @@ export function workspacePayload(state) {
       .map(([key, item]) => [key, copy(item)]));
     return value;
   };
-  return copy({ version: 3, machineKey: state.machineKey, targetMachine: state.targetMachine,
+  return copy({ version: 3, projectId:state.projectId, projectName:state.projectName, machineKey: state.machineKey, targetMachine: state.targetMachine,
     bedWidth: state.bedWidth, bedHeight: state.bedHeight, snapMm: state.snapMm, objectSnap: state.objectSnap,
     laserSettings: state.laserSettings, shapes: state.shapes, workDrawing: state.workDrawing || null });
 }
 
-export const { saveWorkspaceToLocal, flushWorkspaceSave, loadWorkspaceFromLocal, hasUnprotectedChanges } = createWorkspaceStorage();
+export const { listProjects, getProject, archiveProject, saveWorkspaceToLocal, flushWorkspaceSave, loadWorkspaceFromLocal, hasUnprotectedChanges } = createWorkspaceStorage();
