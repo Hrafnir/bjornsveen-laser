@@ -631,6 +631,16 @@ function syncGroupBBox(group) {
   group.height = roundMm(bbox.height, 2);
 }
 
+function showSelectionProperties(focusText = false) {
+  const selected=getSelectedShapes();
+  if(selected.length!==1)return;
+  const shape=selected[0], id=shape.type==='text'?'text-content-input':shape.type==='image'?'bitmap-inspector-section':shape.type==='group'?'group-inspector-section':'dimensions-section';
+  revealInspectorControl(id);
+  const control=document.getElementById(id),section=control.closest('.panel-section'),page=document.getElementById('panel-object');
+  if(section)page.scrollTop+=section.getBoundingClientRect().top-page.getBoundingClientRect().top;
+  if(focusText&&shape.type==='text'){control.focus({preventScroll:true});control.select();}
+}
+
 function enterGroupEditMode(groupId, initialChildId = null) {
   const g = state.shapes.find(s => s.id === groupId && s.type === 'group');
   if (!g || !Array.isArray(g.children)) return;
@@ -642,6 +652,7 @@ function enterGroupEditMode(groupId, initialChildId = null) {
   }
   setActiveTool('select');
   renderAll();
+  showSelectionProperties();
   showToast(`📦 Redigerer inni "${g.name || 'Gruppe'}" – klikk på enkeltdeler for å endre dem!`);
 }
 
@@ -747,6 +758,7 @@ function renderShapesLayer() {
         if (editingGroup) {
           el.setAttribute('opacity', '0.32');
           el.style.pointerEvents = 'none';
+          el.querySelectorAll('*').forEach(child => { child.style.pointerEvents = 'none'; });
         }
         shapesLayerEl.appendChild(el);
       }
@@ -762,7 +774,8 @@ function createSvgElementForShape(s, sw) {
       if (c.hidden) continue;
       const childEl = createSvgElementForShape(c, sw);
       if (childEl) {
-        childEl.dataset.id = s.id; // Clicking child selects group when not in group-edit mode
+        childEl.dataset.id = s.id; // All descendants select the containing group.
+        childEl.querySelectorAll('[data-id]').forEach(el=>{el.dataset.id=s.id;});
         g.appendChild(childEl);
       }
     }
@@ -800,6 +813,7 @@ function createSvgElementForShape(s, sw) {
     imgEl.setAttribute('href', href);
     imgEl.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', href);
     imgEl.dataset.id = s.id;
+    imgEl.dataset.objectId = s.id;
     g.appendChild(imgEl);
     return g;
   }
@@ -807,6 +821,7 @@ function createSvgElementForShape(s, sw) {
   if (s.guideLabel && s.laserMode === 'guide') {
     const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     label.dataset.id = s.id;
+    label.dataset.objectId = s.id;
     label.textContent = s.textMeta?.text || s.name;
     label.setAttribute('x', String(s.x + s.width / 2));
     label.setAttribute('y', String(s.y + s.height / 2));
@@ -829,6 +844,7 @@ function createSvgElementForShape(s, sw) {
   const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   pathEl.setAttribute('d', d);
   pathEl.dataset.id = s.id;
+  pathEl.dataset.objectId = s.id;
   pathEl.style.cursor = state.activeTool === 'select' ? 'move' : 'crosshair';
 
   if (s.laserMode === 'engrave') {
@@ -837,7 +853,7 @@ function createSvgElementForShape(s, sw) {
     pathEl.setAttribute('stroke', 'none');
   } else if (s.laserMode === 'score') {
     pathEl.setAttribute('fill', 'none');
-    pathEl.setAttribute('pointer-events', 'all');
+    pathEl.setAttribute('pointer-events', 'stroke');
     pathEl.setAttribute('fill-rule', 'evenodd');
     pathEl.setAttribute('stroke', displayColor(s));
     pathEl.setAttribute('stroke-width', String(sw));
@@ -851,7 +867,7 @@ function createSvgElementForShape(s, sw) {
   } else {
     // 'cut' (#ff1e1e)
     pathEl.setAttribute('fill', 'none');
-    pathEl.setAttribute('pointer-events', 'all');
+    pathEl.setAttribute('pointer-events', 'stroke');
     pathEl.setAttribute('fill-rule', 'evenodd');
     pathEl.setAttribute('stroke', displayColor(s));
     pathEl.setAttribute('stroke-width', String(sw));
@@ -859,7 +875,17 @@ function createSvgElementForShape(s, sw) {
     pathEl.setAttribute('stroke-linejoin', 'round');
   }
 
-  return pathEl;
+  // Editor-only hit strokes make thin outlines selectable without covering their
+  // empty interiors. Export geometry comes from the model, not these hit targets.
+  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+  g.dataset.id=s.id;g.dataset.objectId=s.id;g.appendChild(pathEl);
+  if(s.laserMode!=='engrave'||s.type==='text'){
+    const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
+    hit.setAttribute('d',d);hit.setAttribute('fill','none');hit.setAttribute('stroke','transparent');
+    hit.setAttribute('stroke-width','8');hit.setAttribute('vector-effect','non-scaling-stroke');hit.setAttribute('pointer-events','stroke');
+    hit.dataset.id=s.id;hit.dataset.objectId=s.id;hit.dataset.editorHit='stroke';g.appendChild(hit);
+  }
+  return g;
 }
 
 function getSelectedShapes() {
@@ -1766,6 +1792,7 @@ function renderLayerList() {
         state.selectedIds.add(s.id);
       }
       renderAll();
+      if(!e.shiftKey&&s.type==='text')showSelectionProperties();
     });
 
     item.addEventListener('dblclick', () => {
@@ -1834,6 +1861,7 @@ function renderLayerList() {
             }
             renderAll();
           }
+          if(!e.shiftKey&&c.type==='text')showSelectionProperties();
         });
         listEl.appendChild(childRow);
       }
@@ -1910,6 +1938,14 @@ function bindCanvasEvents() {
   window.addEventListener('pointermove', onCanvasPointerMove);
   window.addEventListener('pointerup', onCanvasPointerUp);
 
+  // SVG nodes are rebuilt on selection. Handle the second mouse press on the
+  // stable viewport too, since browsers can lose dblclick on a replaced path.
+  viewportEl.addEventListener('mousedown', e => {
+    if (e.detail === 2 && state.activeTool === 'select' && editObjectAtPointer(e)) {
+      state.interaction = null;
+      e.preventDefault();
+    }
+  });
   viewportEl.addEventListener('dblclick', (e) => {
     const segment=e.target.closest('[data-path-segment]');
     if (state.activeTool==='nodes' && segment) {
@@ -1927,25 +1963,25 @@ function bindCanvasEvents() {
       finishPenPath(false);
       return;
     }
-    const targetShapeEl = e.target.closest('[data-id]');
-    if (targetShapeEl) {
-      const activeList = getActiveContainerList();
-      const s = activeList.find(sh => sh.id === targetShapeEl.dataset.id);
-      if (s && s.type === 'group') {
-        enterGroupEditMode(s.id);
-        return;
-      }
-      if (s && s.type === 'text') {
-        const input = document.getElementById('text-content-input');
-        revealInspectorControl('text-content-input');
-        input.focus();
-        input.select();
-        return;
-      }
-    } else if (state.editingGroupId) {
-      exitGroupEditMode();
-    }
+    if (!editObjectAtPointer(e) && state.editingGroupId) exitGroupEditMode();
   });
+}
+
+function editObjectAtPointer(e) {
+  const target = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-id]');
+  const shape = getActiveContainerList().find(s => s.id === target?.dataset.id);
+  if (shape?.type === 'group') {
+    enterGroupEditMode(shape.id, target.closest('[data-object-id]')?.dataset.objectId);
+    showSelectionProperties(true);
+    return true;
+  }
+  if (shape?.type === 'text') {
+    state.selectedIds = new Set([shape.id]);
+    renderAll();
+    showSelectionProperties(true);
+    return true;
+  }
+  return Boolean(shape);
 }
 
 // Path anchors and handles stay in source coordinates. Box transforms apply
@@ -2334,6 +2370,7 @@ function onCanvasPointerDown(e) {
     heart: 'Hjerte',
     line: 'Linje'
   };
+  const template=getSelectedShapes().find(s=>s.type===state.activeTool);
   const newShape = {
     id: uid(state.activeTool),
     type: state.activeTool,
@@ -2343,9 +2380,9 @@ function onCanvasPointerDown(e) {
     y: worldPt.y,
     width: 1,
     height: 1,
-    rx: 0,
-    sides: state.activeTool === 'polygon' ? 6 : 5,
-    innerRatio: 42,
+    rx: template?.rx||0,
+    sides: template?.sides||(state.activeTool === 'polygon' ? 6 : 5),
+    innerRatio: template?.innerRatio||42,
     rotation: 0
   };
   getActiveContainerList().push(newShape);
@@ -2616,13 +2653,15 @@ function onCanvasPointerUp(e) {
   state.interaction = null;
   viewportEl.classList.remove('panning-active');
 
+  if (act.type === 'move') showSelectionProperties();
+
   if (act.type === 'draw') {
     // If the user just clicked without dragging on a standard shape, give a sensible default size (40×25 mm)
     if (act.shape.width <= 1.5 && act.shape.height <= 1.5) {
       act.shape.width = 40;
       act.shape.height = act.shape.type === 'rect' ? 25 : 40;
     }
-    setActiveTool('select');
+    if(!document.getElementById('keep-shape-tool').checked)setActiveTool('select');
     saveWorkspaceToLocal(state);
     renderAll();
     return;
@@ -2828,7 +2867,7 @@ function setActiveTool(toolName) {
   };
 
   if (hints[toolName]) {
-    hintBannerEl.textContent = hints[toolName];
+    hintBannerEl.textContent = hints[toolName]+(['rect','ellipse','polygon','star','heart'].includes(toolName)&&document.getElementById('keep-shape-tool').checked?' · Tegn flere er på. Esc eller V avslutter.':'');
     hintBannerEl.classList.add('visible');
   } else {
     hintBannerEl.classList.remove('visible');
@@ -2836,9 +2875,11 @@ function setActiveTool(toolName) {
 
   renderAll();
   if (['nodes', 'pen'].includes(toolName)) revealInspectorControl('path-edit-section');
+  if(toolName==='text'){revealInspectorControl('text-content-input');document.getElementById('panel-object').scrollTop=0;}
 }
 
 function bindToolbarEvents() {
+  document.getElementById('keep-shape-tool').addEventListener('change',()=>{if(['rect','ellipse','polygon','star','heart'].includes(state.activeTool))setActiveTool(state.activeTool);});
   document.getElementById('btn-pen-finish').addEventListener('click',()=>finishPenPath(false));
   document.getElementById('btn-pen-close').addEventListener('click',()=>finishPenPath(true));
   document.getElementById('btn-pen-cancel').addEventListener('click',()=>{

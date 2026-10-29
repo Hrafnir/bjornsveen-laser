@@ -25,6 +25,10 @@ export function revealInspectorControl(id) {
 }
 
 export function initLayout() {
+  const repeat=document.getElementById('keep-shape-tool');
+  try { repeat.checked=localStorage.getItem('laserstudio.keepShapeTool')==='true'; } catch { /* Preference is optional. */ }
+  repeat.addEventListener('change',()=>{try {localStorage.setItem('laserstudio.keepShapeTool',String(repeat.checked));}catch{}});
+
   const panel = document.getElementById('inspector-panel');
   const toggle = document.getElementById('btn-toggle-panel');
   const narrow = matchMedia('(max-width: 900px)');

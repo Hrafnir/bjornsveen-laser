@@ -323,3 +323,12 @@ Nye bitmapbilder vises som standard i detaljert oppløsning, opp til 4096 piksle
 Automatisk puslespillkontur bruker analytiske Bézier-kurver for avrundede og ovale bildemasker. Den avrundede rammen har åtte ankerpunkter; ovalen fire. Dette unngår å spore pikseltrappene fra den tidligere 360-pikslers masken tilbake til kuttelinjer. Transparente motivsilhuetter spores fortsatt når ingen slik geometrisk maske er valgt. For å erstatte en allerede generert ujevn kontur: åpne **Endre puslespill**, velg **Automatisk** for å følge masken eller **Avrundede hjørner** for egen radius, og sett inn igjen. Egendefinerte, redigerte konturer beholdes når «Bruk valgt / redigert ytterkontur» er valgt.
 
 `tests/image-quality.test.js` kontrollerer oppløsningsgrenser, DPI og kurvepresisjon. `tests/image-quality.html` tester rasterbehandling, SVG/XS-eksport, bildeinspektør, automatisk puslespillkontur og bildeimport i en separat lokal testport. Den bruker et syntetisk detaljbilde; `?image=<lokal bildeadresse>` kan brukes med et 1672 × 941-testbilde for visuell sammenligning.
+
+
+### Objektvalg og sammenhengende tegning
+
+- Tekst, bilder og grupper viser sine relevante innstillinger øverst i **Objekt**. Valg på arbeidsflaten åpner riktig del av panelet. **T** åpner tekstinnstillingene med én gang, og valg av tekst i **Lag** går direkte til tekstredigeringen.
+- Tomme kutt- og scorekonturer velges langs kanten. De blokkerer ikke lenger teksten eller andre objekter innenfor rammen. Tynne streker har en større, usynlig treffflate som bare brukes i editoren og aldri eksporteres.
+- Dobbeltklikk tekst for å redigere innholdet. Dobbeltklikk tekst i en gruppe for å åpne gruppen med den aktuelle teksten valgt.
+- **Tegn flere** øverst i verktøylinjen beholder rektangel, sirkel, mangekant, stjerne eller hjerte aktivt etter tegning. Neste figur beholder blant annet hjørneradius og antall kanter/tagger. Slå av for automatisk retur til **Velg**, eller bruk **Esc/V**. Innstillingen huskes i denne nettleseren.
+- `tests/workflow.html` kontrollerer faktisk treff på SVG-flater, tekst bak kuttrammer, grupper, kontekstpaneler, gjentatt tegning, angre/gjør om og lagret preferanse. Kjør på en separat lokal testport, én testside per origin om gangen. `tests/layout.html` dekker menyer på 320–1440 px.

@@ -79,6 +79,10 @@
     <!-- LEFT TOOLBAR -->
     <aside class="left-toolbar">
       <div class="tool-section-label">Verktøy</div>
+      <label class="repeat-tool-control" title="Behold rektangel, sirkel, mangekant, stjerne og hjerte aktivt etter tegning. Esc eller V går til Valg.">
+        <input type="checkbox" id="keep-shape-tool" aria-label="Tegn flere – behold figurverktøyet" />
+        <span>Tegn flere</span>
+      </label>
 
       <button class="tool-btn active" data-tool="select" title="Velg, flytt, skaler og roter objekter (Snarvei: V)">
         <span class="shortcut-hint">V</span>
@@ -357,8 +361,237 @@
         </div>
       </section>
 
-      <!-- 1. PRECISION DIMENSIONS (MM) -->
-      <section class="panel-section">
+      <!-- Contextual object controls appear before general dimensions. -->
+      <section id="text-inspector-section" class="panel-section" style="display: none;">
+        <div class="panel-section-header">
+          <div class="panel-section-title">🔤 Tekst, Fonter &amp; Tekst langs form</div>
+          <span id="text-font-count" style="font-size: 10.5px; color: #38bdf8; font-weight: 600;"></span>
+        </div>
+        <div class="prop-grid">
+          <div class="prop-field full-width" id="text-refresh-wrap" style="display:none;">
+            <button id="btn-refresh-text" type="button" class="btn">↻ Oppdater tekstform</button>
+            <div class="text-control-help">Bruk den nye, formfaste teksten på dette objektet. Kan angres.</div>
+          </div>
+          <div class="prop-field full-width">
+            <label for="text-content-input">Tekstinnhold</label>
+            <input type="text" id="text-content-input" class="input-control" value="BJØRNSVEEN" placeholder="Skriv tekst her..." />
+          </div>
+          <div class="prop-field full-width">
+            <label for="text-font-search">Finn skrifttype</label>
+            <input type="search" id="text-font-search" class="input-control" placeholder="Søk etter navn eller stil …" />
+            <label for="text-font-select">Skrifttype</label>
+            <select id="text-font-select" class="select-control">
+              <option value="sans-bold" selected>Montserrat · Black</option>
+            </select>
+            <svg id="text-font-preview" role="img" aria-label="Forhåndsvisning av valgt skrifttype" style="width:100%;height:42px;margin-top:5px;" preserveAspectRatio="xMinYMid meet"></svg>
+            <p id="text-font-note" class="drawing-help"></p>
+          </div>
+          <div class="prop-field full-width">
+            <label for="text-direction-select">Skriftretning</label>
+            <select id="text-direction-select" class="select-control">
+              <option value="horizontal">→ Vannrett</option>
+              <option value="down">↓ Les nedover (rotert tekst)</option>
+              <option value="up">↑ Les oppover (rotert tekst)</option>
+              <option value="stacked-down">↓ Stående bokstaver under hverandre</option>
+              <option value="stacked-up">↑ Stående bokstaver oppover</option>
+            </select>
+            <div class="text-control-help">Retning gjelder rett tekst. Bue og «Følg form» plasserer bokstavene langs en bane.</div>
+          </div>
+          <div class="prop-field">
+            <label for="text-size-input">Bokstavhøyde</label>
+            <div class="input-with-unit">
+              <input type="text" inputmode="decimal" id="text-size-input" class="input-control math-input" value="18" />
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="prop-field">
+            <label for="text-spacing-input">Ekstra bokstavavstand</label>
+            <div class="input-with-unit">
+              <input type="text" inputmode="decimal" id="text-spacing-input" class="input-control math-input" value="1.2" />
+              <span class="unit">mm</span>
+            </div>
+          </div>
+          <div class="prop-field full-width">
+            <input type="range" id="text-spacing-slider" aria-label="Juster bokstavavstand" min="-5" max="50" step="0.1" value="1.2" />
+            <div class="action-grid-3">
+              <button class="btn" type="button" data-text-spacing="0">Normal</button>
+              <button class="btn" type="button" data-text-spacing="1">+1 mm</button>
+              <button class="btn" type="button" data-text-spacing="3">+3 mm</button>
+            </div>
+            <div class="text-control-help">0 = fontens normale avstand. Minus gir tettere tekst, pluss gir mer luft.</div>
+          </div>
+          <div class="prop-field full-width">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label for="text-curve-input">Buet tekst / Sirkelbue</label>
+              <span id="text-curve-val-label" style="font-size: 11px; color: #38bdf8; font-weight: 600;">0° (Rett)</span>
+            </div>
+            <input type="range" id="text-curve-input" min="-180" max="180" value="0" step="2" />
+            <div style="display: flex; gap: 4px; margin-top: 4px;">
+              <button type="button" class="btn" data-curve-preset="0" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">Rett (0°)</button>
+              <button type="button" class="btn" data-curve-preset="55" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">⌒ Bue opp</button>
+              <button type="button" class="btn" data-curve-preset="-55" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">⌣ Bue ned</button>
+              <button type="button" class="btn" data-curve-preset="180" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">⭕ Hel sirkel</button>
+            </div>
+          </div>
+
+          <!-- TEXT ALONG ANY SHAPE / CIRCLE / OUTLINE -->
+          <div class="prop-field full-width" style="margin-top: 4px; padding: 8px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+              <span style="font-size: 11.5px; font-weight: 700; color: #38bdf8;">🔄 Følg omriss / form (Sirkel, Hjerte, Linje)</span>
+              <span id="text-path-status" style="font-size: 10.5px; color: var(--text-muted);">Ikke festet</span>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button type="button" id="btn-bind-text-to-shape" class="btn btn-primary" style="flex: 1; font-size: 11.5px; padding: 5px 8px;" title="Klikk her og velg en sirkel, bue, hjerte eller form på platen som teksten skal følge!">
+                🔗 Fest tekst til form / sirkel...
+              </button>
+              <button type="button" id="btn-unbind-text-path" class="btn btn-danger" style="display: none; font-size: 11px; padding: 5px 8px;" title="Frigjør teksten fra formen">
+                ✕ Frigjør
+              </button>
+            </div>
+            <div id="text-path-controls" style="display: none; margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--border-color);">
+              <div class="prop-field" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between;">
+                  <label for="text-path-offset">Plassering langs omriss</label>
+                  <span id="text-path-offset-label" style="font-size: 10.5px; color: #38bdf8;">0%</span>
+                </div>
+                <input type="range" id="text-path-offset" min="-100" max="100" value="0" step="1" />
+              </div>
+              <div class="prop-field" style="margin-bottom: 6px;">
+                <div style="display: flex; justify-content: space-between;">
+                  <label for="text-path-normal-offset">Avstand fra strek/kant (mm)</label>
+                  <span id="text-path-normal-label" style="font-size: 10.5px; color: #38bdf8;">0 mm</span>
+                </div>
+                <input type="range" id="text-path-normal-offset" min="-25" max="25" value="0" step="0.5" />
+              </div>
+              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11.5px; color: var(--text-main);">
+                <input type="checkbox" id="text-path-flip" />
+                <span>🔄 Vend innside / motsatt retning</span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="bitmap-inspector-section" class="panel-section" style="display: none;">
+        <div class="panel-section-header">
+          <div class="panel-section-title">🖼️ Foto / Bitmap-gravering</div>
+          <span style="font-size: 10.5px; color: #38bdf8; font-weight: 600;">XCS &amp; SVG</span>
+        </div>
+        <div class="prop-grid">
+          <div class="prop-field full-width">
+            <label for="bmp-preview-select">Visning på arbeidsflaten</label>
+            <select id="bmp-preview-select" class="select-control">
+              <option value="detail">Detaljert – graveringsfilter</option>
+              <option value="original">Original – uten graveringsfilter</option>
+              <option value="fast">Rask – redusert oppløsning</option>
+            </select>
+            <p class="drawing-help">Kun visning. Eksport bruker originalbildet og graveringsinnstillingene. Detaljvisning bruker opptil 4096 px / 8 megapiksler.</p>
+            <p id="bmp-resolution-info" class="drawing-help" aria-live="polite"></p>
+          </div>
+          <div class="prop-field full-width">
+            <label for="bmp-filter-select">Graveringsmodus (xTool Bitmap-modus &amp; Filter)</label>
+            <select id="bmp-filter-select" class="select-control">
+              <option value="inherit">Følg fotomodus i laserinnstillinger</option>
+              <optgroup label="xTool Punktraster / Dithering (Best på tre, MDF, skifer &amp; glass)">
+                <option value="Jarvis" selected>🔹 Jarvis – Standard Punktraster (Anbefalt til tre/MDF)</option>
+                <option value="Stucki">🔹 Stucki – Ekstra skarpe kanter og detaljer</option>
+                <option value="Atkinson">🔹 Atkinson – Høy kontrast &amp; rene lyse partier (Portrett)</option>
+                <option value="Floyd">🔹 Floyd-Steinberg – Klassisk fint punktraster</option>
+                <option value="Sierra">🔹 Sierra – Myke og jevne toneoverganger</option>
+                <option value="Bayer">🔹 Bayer – Strukturert matrise-/kryssrutenett</option>
+              </optgroup>
+              <optgroup label="Gråtoner &amp; Spesialfiltre">
+                <option value="grayscale">🌑 Gråtoner (Grayscale – Dynamisk lasereffekt / Dybde)</option>
+                <option value="threshold">⬛ Sort / Hvitt Terskel (Logo, tekst &amp; stempel)</option>
+                <option value="sketch">✏️ Skisse / Kontur-strek (Linjetegning fra foto)</option>
+                <option value="original">🎨 Original (Uten gråtonefilter)</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="prop-field full-width">
+            <label for="bmp-mask-select">Klipp bilde i form (Maske)</label>
+            <select id="bmp-mask-select" class="select-control">
+              <option value="rect">▢ Rektangel (Fullt bilde)</option>
+              <option value="rounded">▢ Avrundet ramme</option>
+              <option value="circle">⭕ Sirkel / Medaljong</option>
+              <option value="heart">❤️ Hjerte</option>
+              <option value="star">⭐ Stjerne</option>
+            </select>
+          </div>
+          <div class="prop-field">
+            <div style="display: flex; justify-content: space-between;">
+              <label for="bmp-brightness">Lysstyrke</label>
+              <span id="bmp-brightness-lbl" style="font-size: 10.5px; color: #38bdf8;">0</span>
+            </div>
+            <input type="range" id="bmp-brightness" min="-80" max="80" value="0" step="2" />
+          </div>
+          <div class="prop-field">
+            <div style="display: flex; justify-content: space-between;">
+              <label for="bmp-contrast">Kontrast</label>
+              <span id="bmp-contrast-lbl" style="font-size: 10.5px; color: #38bdf8;">+10</span>
+            </div>
+            <input type="range" id="bmp-contrast" min="-80" max="80" value="10" step="2" />
+          </div>
+          <div class="prop-field full-width">
+            <div style="display: flex; justify-content: space-between;">
+              <label for="bmp-sharpness">Skarphet (Kantforsterkning for laser)</label>
+              <span id="bmp-sharpness-lbl" style="font-size: 10.5px; color: #38bdf8;">55</span>
+            </div>
+            <input type="range" id="bmp-sharpness" min="0" max="100" value="55" step="1" />
+          </div>
+          <div id="bmp-threshold-wrap" class="prop-field full-width" style="display: none;">
+            <div style="display: flex; justify-content: space-between;">
+              <label for="bmp-threshold">Lys-terskel (Sort/hvitt-balanse)</label>
+              <span id="bmp-threshold-lbl" style="font-size: 10.5px; color: #38bdf8;">135</span>
+            </div>
+            <input type="range" id="bmp-threshold" min="15" max="240" value="135" step="1" />
+          </div>
+          <div class="prop-field full-width" style="gap: 4px; margin-top: 2px;">
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11.5px; color: var(--text-main);">
+              <input type="checkbox" id="bmp-invert" />
+              <span>🔄 Inverter farger (For mørk skifer / eloksert aluminium)</span>
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11.5px; color: var(--text-main);">
+              <input type="checkbox" id="bmp-remove-bg" />
+              <span>🧹 Fjern hvit bakgrunn (Gjør hvitt gjennomsiktig)</span>
+            </label>
+          </div>
+          <div class="prop-field full-width" style="margin-top: 4px;">
+            <button type="button" id="btn-bmp-puzzle" class="btn btn-primary" style="width:100%;margin-bottom:6px">🧩 Lag puslespill av bildet</button>
+            <button type="button" id="btn-bmp-add-cutline" class="btn btn-primary" style="width: 100%;" title="Lager en rød kuttelinje rundt bildet (og grupperer dem gjerne sammen!)">
+              ⭕ + Lag rød kuttelinje rundt bildet
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section id="group-inspector-section" class="panel-section" style="display: none;">
+        <div class="panel-section-header">
+          <div class="panel-section-title">📦 Gruppe &amp; Endring av gruppe</div>
+          <span id="group-count-badge" style="font-size: 11px; color: #f59e0b; font-weight: 600;">0 deler</span>
+        </div>
+        <div class="prop-grid" style="margin-bottom: 8px;">
+          <div class="prop-field full-width">
+            <label for="group-name-input">Gruppenavn</label>
+            <input type="text" id="group-name-input" class="input-control" value="Gruppe" placeholder="Navn på gruppen..." />
+          </div>
+        </div>
+        <div class="action-grid-2" style="margin-bottom: 8px;">
+          <button id="btn-edit-group-inside" class="btn btn-primary" title="Åpne gruppen slik at du kan flytte, skalere eller endre enkelt-deler inni den uten å løse opp gruppen (Eller dobbeltklikk på gruppen)">
+            ✏️ Rediger inni gruppe
+          </button>
+          <button id="btn-ungroup-inspector" class="btn" title="Løs opp gruppen til frittstående objekter (⇧⌘G)">
+            📤 Løs opp gruppe
+          </button>
+        </div>
+        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">
+          Deler i gruppen (klikk på en del for å redigere den direkte):
+        </div>
+        <button id="btn-edit-puzzle" class="btn" hidden style="width:100%;margin-bottom:8px">🧩 Endre puslespill</button>
+        <div id="group-children-list" class="layer-list" style="max-height: 135px;"></div>
+      </section>
+
+      <section id="dimensions-section" class="panel-section">
         <div class="panel-section-header">
           <div class="panel-section-title" title="Du kan skrive regnestykker i alle felt, f.eks. 120 + 12mm eller 360/6">Dimensjoner og utseende</div>
           <span id="selection-badge" style="font-size: 11px; color: #38bdf8; font-weight: 600;">Ingen valgt</span>
@@ -515,238 +748,6 @@
             <div style="font-size: 10.5px; color: var(--text-muted); margin-top: 3px;">
               B: Klikk for hjørner, klikk og dra for kurver. Enter avslutter. Dra i de blå håndtakene for å bøye kurven. Alt + dra løsner ett håndtak; Alt + klikk på et anker bytter mellom hjørne og glatt punkt.
             </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 2. TEXT PROPERTIES (Shown when text tool active or text shape selected) -->
-      <section id="text-inspector-section" class="panel-section" style="display: none;">
-        <div class="panel-section-header">
-          <div class="panel-section-title">🔤 Tekst, Fonter &amp; Tekst langs form</div>
-          <span id="text-font-count" style="font-size: 10.5px; color: #38bdf8; font-weight: 600;"></span>
-        </div>
-        <div class="prop-grid">
-          <div class="prop-field full-width" id="text-refresh-wrap" style="display:none;">
-            <button id="btn-refresh-text" type="button" class="btn">↻ Oppdater tekstform</button>
-            <div class="text-control-help">Bruk den nye, formfaste teksten på dette objektet. Kan angres.</div>
-          </div>
-          <div class="prop-field full-width">
-            <label for="text-content-input">Tekstinnhold</label>
-            <input type="text" id="text-content-input" class="input-control" value="BJØRNSVEEN" placeholder="Skriv tekst her..." />
-          </div>
-          <div class="prop-field full-width">
-            <label for="text-font-search">Finn skrifttype</label>
-            <input type="search" id="text-font-search" class="input-control" placeholder="Søk etter navn eller stil …" />
-            <label for="text-font-select">Skrifttype</label>
-            <select id="text-font-select" class="select-control">
-              <option value="sans-bold" selected>Montserrat · Black</option>
-            </select>
-            <svg id="text-font-preview" role="img" aria-label="Forhåndsvisning av valgt skrifttype" style="width:100%;height:42px;margin-top:5px;" preserveAspectRatio="xMinYMid meet"></svg>
-            <p id="text-font-note" class="drawing-help"></p>
-          </div>
-          <div class="prop-field full-width">
-            <label for="text-direction-select">Skriftretning</label>
-            <select id="text-direction-select" class="select-control">
-              <option value="horizontal">→ Vannrett</option>
-              <option value="down">↓ Les nedover (rotert tekst)</option>
-              <option value="up">↑ Les oppover (rotert tekst)</option>
-              <option value="stacked-down">↓ Stående bokstaver under hverandre</option>
-              <option value="stacked-up">↑ Stående bokstaver oppover</option>
-            </select>
-            <div class="text-control-help">Retning gjelder rett tekst. Bue og «Følg form» plasserer bokstavene langs en bane.</div>
-          </div>
-          <div class="prop-field">
-            <label for="text-size-input">Bokstavhøyde</label>
-            <div class="input-with-unit">
-              <input type="text" inputmode="decimal" id="text-size-input" class="input-control math-input" value="18" />
-              <span class="unit">mm</span>
-            </div>
-          </div>
-          <div class="prop-field">
-            <label for="text-spacing-input">Ekstra bokstavavstand</label>
-            <div class="input-with-unit">
-              <input type="text" inputmode="decimal" id="text-spacing-input" class="input-control math-input" value="1.2" />
-              <span class="unit">mm</span>
-            </div>
-          </div>
-          <div class="prop-field full-width">
-            <input type="range" id="text-spacing-slider" aria-label="Juster bokstavavstand" min="-5" max="50" step="0.1" value="1.2" />
-            <div class="action-grid-3">
-              <button class="btn" type="button" data-text-spacing="0">Normal</button>
-              <button class="btn" type="button" data-text-spacing="1">+1 mm</button>
-              <button class="btn" type="button" data-text-spacing="3">+3 mm</button>
-            </div>
-            <div class="text-control-help">0 = fontens normale avstand. Minus gir tettere tekst, pluss gir mer luft.</div>
-          </div>
-          <div class="prop-field full-width">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <label for="text-curve-input">Buet tekst / Sirkelbue</label>
-              <span id="text-curve-val-label" style="font-size: 11px; color: #38bdf8; font-weight: 600;">0° (Rett)</span>
-            </div>
-            <input type="range" id="text-curve-input" min="-180" max="180" value="0" step="2" />
-            <div style="display: flex; gap: 4px; margin-top: 4px;">
-              <button type="button" class="btn" data-curve-preset="0" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">Rett (0°)</button>
-              <button type="button" class="btn" data-curve-preset="55" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">⌒ Bue opp</button>
-              <button type="button" class="btn" data-curve-preset="-55" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">⌣ Bue ned</button>
-              <button type="button" class="btn" data-curve-preset="180" style="flex: 1; padding: 2px 4px; font-size: 10.5px;">⭕ Hel sirkel</button>
-            </div>
-          </div>
-
-          <!-- TEXT ALONG ANY SHAPE / CIRCLE / OUTLINE -->
-          <div class="prop-field full-width" style="margin-top: 4px; padding: 8px; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm);">
-            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-              <span style="font-size: 11.5px; font-weight: 700; color: #38bdf8;">🔄 Følg omriss / form (Sirkel, Hjerte, Linje)</span>
-              <span id="text-path-status" style="font-size: 10.5px; color: var(--text-muted);">Ikke festet</span>
-            </div>
-            <div style="display: flex; gap: 6px;">
-              <button type="button" id="btn-bind-text-to-shape" class="btn btn-primary" style="flex: 1; font-size: 11.5px; padding: 5px 8px;" title="Klikk her og velg en sirkel, bue, hjerte eller form på platen som teksten skal følge!">
-                🔗 Fest tekst til form / sirkel...
-              </button>
-              <button type="button" id="btn-unbind-text-path" class="btn btn-danger" style="display: none; font-size: 11px; padding: 5px 8px;" title="Frigjør teksten fra formen">
-                ✕ Frigjør
-              </button>
-            </div>
-            <div id="text-path-controls" style="display: none; margin-top: 8px; padding-top: 7px; border-top: 1px solid var(--border-color);">
-              <div class="prop-field" style="margin-bottom: 6px;">
-                <div style="display: flex; justify-content: space-between;">
-                  <label for="text-path-offset">Plassering langs omriss</label>
-                  <span id="text-path-offset-label" style="font-size: 10.5px; color: #38bdf8;">0%</span>
-                </div>
-                <input type="range" id="text-path-offset" min="-100" max="100" value="0" step="1" />
-              </div>
-              <div class="prop-field" style="margin-bottom: 6px;">
-                <div style="display: flex; justify-content: space-between;">
-                  <label for="text-path-normal-offset">Avstand fra strek/kant (mm)</label>
-                  <span id="text-path-normal-label" style="font-size: 10.5px; color: #38bdf8;">0 mm</span>
-                </div>
-                <input type="range" id="text-path-normal-offset" min="-25" max="25" value="0" step="0.5" />
-              </div>
-              <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11.5px; color: var(--text-main);">
-                <input type="checkbox" id="text-path-flip" />
-                <span>🔄 Vend innside / motsatt retning</span>
-              </label>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 2B. GROUP PROPERTIES & GROUP EDITING (Shown when a group is selected or being edited) -->
-      <section id="group-inspector-section" class="panel-section" style="display: none;">
-        <div class="panel-section-header">
-          <div class="panel-section-title">📦 Gruppe &amp; Endring av gruppe</div>
-          <span id="group-count-badge" style="font-size: 11px; color: #f59e0b; font-weight: 600;">0 deler</span>
-        </div>
-        <div class="prop-grid" style="margin-bottom: 8px;">
-          <div class="prop-field full-width">
-            <label for="group-name-input">Gruppenavn</label>
-            <input type="text" id="group-name-input" class="input-control" value="Gruppe" placeholder="Navn på gruppen..." />
-          </div>
-        </div>
-        <div class="action-grid-2" style="margin-bottom: 8px;">
-          <button id="btn-edit-group-inside" class="btn btn-primary" title="Åpne gruppen slik at du kan flytte, skalere eller endre enkelt-deler inni den uten å løse opp gruppen (Eller dobbeltklikk på gruppen)">
-            ✏️ Rediger inni gruppe
-          </button>
-          <button id="btn-ungroup-inspector" class="btn" title="Løs opp gruppen til frittstående objekter (⇧⌘G)">
-            📤 Løs opp gruppe
-          </button>
-        </div>
-        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">
-          Deler i gruppen (klikk på en del for å redigere den direkte):
-        </div>
-        <button id="btn-edit-puzzle" class="btn" hidden style="width:100%;margin-bottom:8px">🧩 Endre puslespill</button>
-        <div id="group-children-list" class="layer-list" style="max-height: 135px;"></div>
-      </section>
-
-      <!-- 2C. BITMAP / PHOTO ENGRAVING PROPERTIES (Shown when a bitmap image shape is selected) -->
-      <section id="bitmap-inspector-section" class="panel-section" style="display: none;">
-        <div class="panel-section-header">
-          <div class="panel-section-title">🖼️ Foto / Bitmap-gravering</div>
-          <span style="font-size: 10.5px; color: #38bdf8; font-weight: 600;">XCS &amp; SVG</span>
-        </div>
-        <div class="prop-grid">
-          <div class="prop-field full-width">
-            <label for="bmp-preview-select">Visning på arbeidsflaten</label>
-            <select id="bmp-preview-select" class="select-control">
-              <option value="detail">Detaljert – graveringsfilter</option>
-              <option value="original">Original – uten graveringsfilter</option>
-              <option value="fast">Rask – redusert oppløsning</option>
-            </select>
-            <p class="drawing-help">Kun visning. Eksport bruker originalbildet og graveringsinnstillingene. Detaljvisning bruker opptil 4096 px / 8 megapiksler.</p>
-            <p id="bmp-resolution-info" class="drawing-help" aria-live="polite"></p>
-          </div>
-          <div class="prop-field full-width">
-            <label for="bmp-filter-select">Graveringsmodus (xTool Bitmap-modus &amp; Filter)</label>
-            <select id="bmp-filter-select" class="select-control">
-              <option value="inherit">Følg fotomodus i laserinnstillinger</option>
-              <optgroup label="xTool Punktraster / Dithering (Best på tre, MDF, skifer &amp; glass)">
-                <option value="Jarvis" selected>🔹 Jarvis – Standard Punktraster (Anbefalt til tre/MDF)</option>
-                <option value="Stucki">🔹 Stucki – Ekstra skarpe kanter og detaljer</option>
-                <option value="Atkinson">🔹 Atkinson – Høy kontrast &amp; rene lyse partier (Portrett)</option>
-                <option value="Floyd">🔹 Floyd-Steinberg – Klassisk fint punktraster</option>
-                <option value="Sierra">🔹 Sierra – Myke og jevne toneoverganger</option>
-                <option value="Bayer">🔹 Bayer – Strukturert matrise-/kryssrutenett</option>
-              </optgroup>
-              <optgroup label="Gråtoner &amp; Spesialfiltre">
-                <option value="grayscale">🌑 Gråtoner (Grayscale – Dynamisk lasereffekt / Dybde)</option>
-                <option value="threshold">⬛ Sort / Hvitt Terskel (Logo, tekst &amp; stempel)</option>
-                <option value="sketch">✏️ Skisse / Kontur-strek (Linjetegning fra foto)</option>
-                <option value="original">🎨 Original (Uten gråtonefilter)</option>
-              </optgroup>
-            </select>
-          </div>
-          <div class="prop-field full-width">
-            <label for="bmp-mask-select">Klipp bilde i form (Maske)</label>
-            <select id="bmp-mask-select" class="select-control">
-              <option value="rect">▢ Rektangel (Fullt bilde)</option>
-              <option value="rounded">▢ Avrundet ramme</option>
-              <option value="circle">⭕ Sirkel / Medaljong</option>
-              <option value="heart">❤️ Hjerte</option>
-              <option value="star">⭐ Stjerne</option>
-            </select>
-          </div>
-          <div class="prop-field">
-            <div style="display: flex; justify-content: space-between;">
-              <label for="bmp-brightness">Lysstyrke</label>
-              <span id="bmp-brightness-lbl" style="font-size: 10.5px; color: #38bdf8;">0</span>
-            </div>
-            <input type="range" id="bmp-brightness" min="-80" max="80" value="0" step="2" />
-          </div>
-          <div class="prop-field">
-            <div style="display: flex; justify-content: space-between;">
-              <label for="bmp-contrast">Kontrast</label>
-              <span id="bmp-contrast-lbl" style="font-size: 10.5px; color: #38bdf8;">+10</span>
-            </div>
-            <input type="range" id="bmp-contrast" min="-80" max="80" value="10" step="2" />
-          </div>
-          <div class="prop-field full-width">
-            <div style="display: flex; justify-content: space-between;">
-              <label for="bmp-sharpness">Skarphet (Kantforsterkning for laser)</label>
-              <span id="bmp-sharpness-lbl" style="font-size: 10.5px; color: #38bdf8;">55</span>
-            </div>
-            <input type="range" id="bmp-sharpness" min="0" max="100" value="55" step="1" />
-          </div>
-          <div id="bmp-threshold-wrap" class="prop-field full-width" style="display: none;">
-            <div style="display: flex; justify-content: space-between;">
-              <label for="bmp-threshold">Lys-terskel (Sort/hvitt-balanse)</label>
-              <span id="bmp-threshold-lbl" style="font-size: 10.5px; color: #38bdf8;">135</span>
-            </div>
-            <input type="range" id="bmp-threshold" min="15" max="240" value="135" step="1" />
-          </div>
-          <div class="prop-field full-width" style="gap: 4px; margin-top: 2px;">
-            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11.5px; color: var(--text-main);">
-              <input type="checkbox" id="bmp-invert" />
-              <span>🔄 Inverter farger (For mørk skifer / eloksert aluminium)</span>
-            </label>
-            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11.5px; color: var(--text-main);">
-              <input type="checkbox" id="bmp-remove-bg" />
-              <span>🧹 Fjern hvit bakgrunn (Gjør hvitt gjennomsiktig)</span>
-            </label>
-          </div>
-          <div class="prop-field full-width" style="margin-top: 4px;">
-            <button type="button" id="btn-bmp-puzzle" class="btn btn-primary" style="width:100%;margin-bottom:6px">🧩 Lag puslespill av bildet</button>
-            <button type="button" id="btn-bmp-add-cutline" class="btn btn-primary" style="width: 100%;" title="Lager en rød kuttelinje rundt bildet (og grupperer dem gjerne sammen!)">
-              ⭕ + Lag rød kuttelinje rundt bildet
-            </button>
           </div>
         </div>
       </section>

@@ -1355,3 +1355,8 @@ body { display: flex; flex-direction: column; height: 100dvh; }
 .drawing-header .project-menu .header-menu-content { top:76px; right:24px; z-index:20; }
 [hidden] { display:none !important; }
 @media(max-width:640px){.project-identity{order:4;flex-basis:100%;max-width:none}.project-dialog{padding:8px}.project-window{padding:12px;max-height:calc(100dvh - 16px)}.project-cards{grid-template-columns:1fr}.drawing-header .project-menu .header-menu-content{top:110px;right:12px;max-height:calc(100dvh - 125px)}}
+
+/* Persistent shape-tool mode stays beside the tools it controls. */
+.repeat-tool-control { display:flex; flex-direction:column; align-items:center; gap:4px; padding:6px 2px; color:var(--text-muted); font-size:10px; text-align:center; cursor:pointer; }
+.repeat-tool-control:has(input:checked) { color:#7dd3fc; background:var(--accent-soft); border-radius:6px; }
+.repeat-tool-control input { accent-color:#38bdf8; }

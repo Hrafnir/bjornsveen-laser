@@ -1,3 +1,4 @@
+import { FONT_CATALOG } from '../js/fonts.js';
 import { getShapesBBox, buildSmoothSplineLoop, createPathShapeFromPolygons, pathNodesInWorld, parseSvgPathToPolygons } from '../js/geometry.js';
 const frame=document.querySelector('#editor');
 await new Promise(resolve=>frame.addEventListener('load',resolve,{once:true}));
@@ -11,7 +12,8 @@ const near=(a,b,t=.03)=>assert(Math.abs(a-b)<t,`${a} != ${b}`);
 async function test(name,fn){const li=document.createElement('li');document.querySelector('#results').append(li);try{await fn();li.textContent='PASS: '+name;li.className='pass';passed++}catch(e){li.textContent='FAIL: '+name+' — '+e.message;li.className='fail';failed++}}
 const key=(key,extra={})=>{d.activeElement?.blur();w.dispatchEvent(new w.KeyboardEvent('keydown',{key,bubbles:true,...extra}))};
 const tool=t=>d.querySelector(`[data-tool="${t}"]`).click();
-const shapes=()=>[...$('shapes-layer').children].filter(el=>el.dataset.id);
+// Vector objects now wrap their visible path and an editor-only hit stroke.
+const shapes=()=>[...$('shapes-layer').children].filter(el=>el.dataset.id).map(el=>el.dataset.objectId?el.querySelector('path')||el:el);
 const points=el=>parseSvgPathToPolygons(el.getAttribute('d'),.05)[0];
 const point=(x,y)=>{const r=$('canvas-viewport').getBoundingClientRect(),b=$('main-svg').viewBox.baseVal;return{clientX:r.left+(x-b.x)/b.width*r.width,clientY:r.top+(y-b.y)/b.height*r.height}};
 const pointer=(type,x,y,target=$('main-svg'),extra={})=>target.dispatchEvent(new w.PointerEvent(type,{...point(x,y),button:0,buttons:type==='pointerup'?0:1,bubbles:true,...extra}));
@@ -157,7 +159,7 @@ await test('stacked text, numeric tracking and the spacing slider update immedia
 await test('new font families are searchable and show a vector preview',()=>{
  const search=$('text-font-search');search.value='Lato';search.dispatchEvent(new w.Event('input'));assert($('text-font-select').options.length<=2);
  edit('text-font-select','lato');assert(textMeta().fontKey==='lato');assert($('text-font-preview').dataset.font==='lato');assert($('text-font-preview').querySelector('path').getAttribute('d').length>50);
- search.value='';search.dispatchEvent(new w.Event('input'));assert($('text-font-select').options.length===49);
+ search.value='';search.dispatchEvent(new w.Event('input'));assert($('text-font-select').options.length===FONT_CATALOG.length);
 });
 await test('older text can adopt the new rigid layout explicitly and undo restores its saved outlines',()=>{
  reset();addText('Dette er tekst');const data=JSON.parse(clipboard('copy').text);data.shapes[0].textMeta.layoutVersion=1;data.shapes[0].textMeta.curve=55;clipboard('paste',JSON.stringify(data));
@@ -308,7 +310,7 @@ await test('mixed group colors can be changed together and survive copy/paste',(
  reset();tool('rect');drag([30,30],[130,110]);$('btn-shape-fill').click();paint('#a855f7');tool('star');drag([65,55],[95,85]);paint('#22c55e');
  tool('select');key('a',{metaKey:true});assert($('object-color-status').textContent.includes('Flere farger'));key('g',{metaKey:true});
  assert(d.querySelector('#layer-list .layer-dot').style.background.includes('conic-gradient'));paint('#3b82f6');
- assert([...shapes()[0].children].every(el=>el.getAttribute('fill')==='#3b82f6'||el.getAttribute('stroke')==='#3b82f6'));
+ assert([...shapes()[0].querySelectorAll('path:not([data-editor-hit])')].every(el=>el.getAttribute('fill')==='#3b82f6'||el.getAttribute('stroke')==='#3b82f6'));
  clipboard('paste',clipboard('copy').text);assert(copiedShape().children.every(s=>s.displayColor==='#3b82f6'));
 });
 const triangleAndStar=()=>{
