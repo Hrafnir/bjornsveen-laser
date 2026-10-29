@@ -1,4 +1,6 @@
-import { marchingSquaresZeroIsoline, simplifyRdpPolygon } from './geometry.js';
+import { frameNodes } from './puzzle-generator.js';
+import { mapNodes, nodesToPath } from './bezier.js';
+import { marchingSquaresZeroIsoline, simplifyRdpPolygon, parseSvgPathToPolygons } from './geometry.js';
 import { processBitmapElementToDataUrl } from './icons.js';
 
 export function detectPuzzleSilhouette({data,width,height},{widthMm,heightMm,mode='auto',tolerance=35,smoothing=.25}={}) {
@@ -45,4 +47,14 @@ export async function loadPuzzleImagePixels(image) {
   canvas.width=bitmap.naturalWidth;canvas.height=bitmap.naturalHeight;
   const ctx=canvas.getContext('2d',{willReadFrequently:true});ctx.drawImage(bitmap,0,0);
   return ctx.getImageData(0,0,canvas.width,canvas.height);
+}
+
+// Known geometric masks must never be recovered from rasterized alpha edges.
+export function geometricImageBoundary(image, widthMm, heightMm) {
+  const meta=image.imageMeta||{}, mask=meta.maskShape;
+  if(!['rounded','circle'].includes(mask))return null;
+  const w=meta.sourceWidthPx||meta.originWidthPx||image.width;
+  const h=meta.sourceHeightPx||meta.originHeightPx||image.height;
+  const nodes=mapNodes(frameNodes(0,0,w,h,Math.min(w,h)*.16,mask==='circle'),p=>({x:p.x/w*widthMm,y:p.y/h*heightMm}));
+  return {outlineNodes:nodes,outlineLoops:parseSvgPathToPolygons(nodesToPath(nodes,true),.025)};
 }

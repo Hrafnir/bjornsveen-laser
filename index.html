@@ -665,6 +665,16 @@
         </div>
         <div class="prop-grid">
           <div class="prop-field full-width">
+            <label for="bmp-preview-select">Visning på arbeidsflaten</label>
+            <select id="bmp-preview-select" class="select-control">
+              <option value="detail">Detaljert – graveringsfilter</option>
+              <option value="original">Original – uten graveringsfilter</option>
+              <option value="fast">Rask – redusert oppløsning</option>
+            </select>
+            <p class="drawing-help">Kun visning. Eksport bruker originalbildet og graveringsinnstillingene. Detaljvisning bruker opptil 4096 px / 8 megapiksler.</p>
+            <p id="bmp-resolution-info" class="drawing-help" aria-live="polite"></p>
+          </div>
+          <div class="prop-field full-width">
             <label for="bmp-filter-select">Graveringsmodus (xTool Bitmap-modus &amp; Filter)</label>
             <select id="bmp-filter-select" class="select-control">
               <option value="inherit">Følg fotomodus i laserinnstillinger</option>

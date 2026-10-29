@@ -59,7 +59,8 @@ import {
   createBitmapImageShape,
   resolveXcsBitmapMode,
   prepareBitmapExports,
-  refreshBitmapShapeDataUrl
+  refreshBitmapShapeDataUrl,
+  bitmapResolutionInfo
 } from './icons.js';
 
 import {
@@ -1551,6 +1552,8 @@ function renderInspector() {
     }
     bmpSec.style.display = 'block';
     const meta = bmpShape.imageMeta || {};
+    document.getElementById('bmp-preview-select').value=meta.previewMode||'detail';
+    document.getElementById('bmp-resolution-info').textContent=bitmapResolutionInfo(bmpShape,state.laserSettings.bitmap?.dpi||254);
     const fSel = document.getElementById('bmp-filter-select');
     const mSel = document.getElementById('bmp-mask-select');
     if (fSel) fSel.value = meta.filter === 'dither' ? 'Jarvis' : (meta.filter || 'grayscale');
@@ -3567,6 +3570,7 @@ function bindInspectorEvents() {
     const s = sel[0];
     s.imageMeta = {
       ...(s.imageMeta || {}),
+      previewMode: document.getElementById('bmp-preview-select').value,
       filter: document.getElementById('bmp-filter-select').value || 'grayscale',
       maskShape: document.getElementById('bmp-mask-select').value || 'rect',
       sharpness: Number(document.getElementById('bmp-sharpness').value),
@@ -3581,13 +3585,18 @@ function bindInspectorEvents() {
       renderAll();
     }, state.laserSettings.bitmap).catch(error => showToast(error.message));
   };
-  for (const id of ['bmp-sharpness', 'bmp-filter-select', 'bmp-mask-select', 'bmp-brightness', 'bmp-contrast', 'bmp-threshold', 'bmp-invert', 'bmp-remove-bg']) {
+  let bitmapPreviewTimer;
+  for (const id of ['bmp-preview-select', 'bmp-sharpness', 'bmp-filter-select', 'bmp-mask-select', 'bmp-brightness', 'bmp-contrast', 'bmp-threshold', 'bmp-invert', 'bmp-remove-bg']) {
     const el = document.getElementById(id);
     if (el) {
       el.addEventListener('pointerdown', pushUndoSnapshot);
       el.addEventListener('focus', pushUndoSnapshot);
-      el.addEventListener('input', onBitmapMetaUpdate);
-      el.addEventListener('change', onBitmapMetaUpdate);
+      el.addEventListener('input', () => {
+        clearTimeout(bitmapPreviewTimer);
+        const id=getSelectedShapes()[0]?.id;
+        bitmapPreviewTimer=setTimeout(()=>{if(getSelectedShapes()[0]?.id===id)onBitmapMetaUpdate()},180);
+      });
+      el.addEventListener('change', () => {clearTimeout(bitmapPreviewTimer);onBitmapMetaUpdate()});
     }
   }
 
@@ -4944,6 +4953,11 @@ function renderIconsLibraryUI(container) {
 
 // ---- 7. Photo / Bitmap Engraving & Image-to-Vector Tracer Modal UI ----
 function renderImageTraceUI(container) {
+  const suggestedWidth = image => {
+    if(!image)return 75;
+    const ratio=image.naturalHeight/image.naturalWidth;
+    return Math.max(5,Math.min(600,image.naturalWidth*25.4/(state.laserSettings.bitmap?.dpi||254),state.bedWidth-20,(state.bedHeight-20)/ratio)).toFixed(1);
+  };
   container.innerHTML = `
     <div class="generator-controls">
       <div class="info-box">
@@ -4963,7 +4977,7 @@ function renderImageTraceUI(container) {
         </div>
         <div class="prop-field">
           <label>Bredde på platen</label>
-          <div class="input-with-unit"><input type="text" inputmode="decimal" id="trace-width" class="input-control math-input" value="75" /><span class="unit">mm</span></div>
+          <div class="input-with-unit"><input type="text" inputmode="decimal" id="trace-width" class="input-control math-input" value="${suggestedWidth(state.traceImageElement)}" /><span class="unit">mm</span></div>
         </div>
         <div class="prop-field" id="bmp-modal-filter-wrap">
           <label>Graveringsfilter</label>
@@ -5138,7 +5152,7 @@ function renderImageTraceUI(container) {
       const { svgHtml, bbox } = renderShapesPreviewSvg(state.modalPreviewShapes);
       document.getElementById('gen-preview-svg').innerHTML = svgHtml;
       document.getElementById('gen-preview-caption').innerHTML =
-        `<span>🖼️ <strong>Bitmap-gravering${addCutBorder ? ' + Rød kuttelinje (Gruppe)' : ''}</strong></span><span>Mål: ${roundMm(bbox.width, 1)} × ${roundMm(bbox.height, 1)} mm</span>`;
+        `<span>🖼️ <strong>Bitmap-gravering${addCutBorder ? ' + Rød kuttelinje (Gruppe)' : ''}</strong></span><span>Mål: ${roundMm(bbox.width, 1)} × ${roundMm(bbox.height, 1)} mm</span><span>${bitmapResolutionInfo(bmpShape,state.laserSettings.bitmap?.dpi||254)}</span>`;
       return;
     }
 
@@ -5174,6 +5188,7 @@ function renderImageTraceUI(container) {
       const img = new Image();
       img.onload = () => {
         state.traceImageElement = img;
+        document.getElementById('trace-width').value=suggestedWidth(img);
         updatePreview();
       };
       img.src = String(reader.result);

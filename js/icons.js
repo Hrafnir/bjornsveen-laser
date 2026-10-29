@@ -562,7 +562,7 @@ export function createBitmapImageShape(imgElement, {
 } = {}) {
   const natW = Math.max(1, imgElement?.naturalWidth || imgElement?.width || 200);
   const natH = Math.max(1, imgElement?.naturalHeight || imgElement?.height || 200);
-  const maxDimPx = 750;
+  const maxDimPx = bitmapPreviewLimit(natW, natH);
   const scale = Math.min(1, maxDimPx / Math.max(natW, natH));
   const procW = Math.max(16, Math.round(natW * scale));
   const procH = Math.max(16, Math.round(natH * scale));
@@ -570,7 +570,7 @@ export function createBitmapImageShape(imgElement, {
   const w = clamp(Number(widthMm) || 70, 5, 800);
   const h = roundMm(Math.max(5, w * aspect), 2);
 
-  // Keep the uploaded original; only the editor preview is limited to 750 px.
+  // Keep the uploaded original independently of display quality and laser filters.
   const srcDataUrl = /^data:image\/(png|jpeg|webp);base64,/i.test(imgElement.src || '')
     ? imgElement.src : processBitmapElementToDataUrl(imgElement, {
     brightness: 0,
@@ -631,9 +631,22 @@ export function createBitmapImageShape(imgElement, {
   return shape;
 }
 
-/**
- * Re-processes a bitmap shape's `dataUrl` (and `xcsDataUrl`) when its `imageMeta` settings change.
- */
+// Display settings never change the pixels or filters used for laser export.
+export function bitmapPreviewLimit(width, height, mode = 'detail') {
+  return mode === 'fast' ? 750 : Math.min(4096, Math.max(width, height) * Math.min(1, Math.sqrt(8000000 / (width * height))));
+}
+export function bitmapPreviewOptions(meta, width, height) {
+  return {maxDimPx: bitmapPreviewLimit(width, height, meta.previewMode),
+    ...(meta.previewMode === 'original' ? {filter:'original',brightness:0,contrast:0,sharpness:50,invert:false,removeWhiteBg:false} : {})};
+}
+export function bitmapResolutionInfo(shape, dpi = 254) {
+  const meta=shape.imageMeta||{}, w=meta.sourceWidthPx||meta.originWidthPx, h=meta.sourceHeightPx||meta.originHeightPx;
+  if(!w||!h)return 'Originaloppløsning leses når bildet oppdateres.';
+  const scale=Math.min(1,bitmapPreviewLimit(w,h,meta.previewMode)/Math.max(w,h)), size=bitmapExportSize(shape,dpi);
+  const effective=Math.min(w/shape.width,h/shape.height)*25.4;
+  return `Original: ${w} × ${h} px · Visning: ${Math.round(w*scale)} × ${Math.round(h*scale)} px. Ved valgt størrelse: ${Math.round(effective)} DPI. Eksport: ${size.width} × ${size.height} px (valgt ${dpi} DPI).`;
+}
+
 export function bitmapExportSize(shape, dpi = 254) {
   const sourceW = shape.imageMeta?.sourceWidthPx || shape.imageMeta?.originWidthPx || 750;
   const sourceH = shape.imageMeta?.sourceHeightPx || shape.imageMeta?.originHeightPx || 750;
@@ -642,6 +655,7 @@ export function bitmapExportSize(shape, dpi = 254) {
   return { width: Math.max(1, Math.round(sourceW * scale)), height: Math.max(1, Math.round(sourceH * scale)) };
 }
 
+/** Rebuild display or export pixels from the preserved source image. */
 export async function refreshBitmapShapeDataUrl(shape, onDone, { dpi = 254, bitmapMode = 'Jarvis', forExport = false, svg = false } = {}) {
   if (!shape || shape.type !== 'image') return;
   const src = shape.srcDataUrl || shape.dataUrl;
@@ -666,7 +680,7 @@ export async function refreshBitmapShapeDataUrl(shape, onDone, { dpi = 254, bitm
     shape.xcsDataUrl = processBitmapElementToDataUrl(img, { ...meta, filter: hardwareDither ? 'grayscale' : filter, maxDimPx });
     if (svg) shape.exportDataUrl = processBitmapElementToDataUrl(img, { ...meta, filter, maxDimPx });
   } else {
-    shape.dataUrl = processBitmapElementToDataUrl(img, { ...meta, filter, maxDimPx: 750 });
+    shape.dataUrl = processBitmapElementToDataUrl(img, { ...meta, filter, ...bitmapPreviewOptions(meta, img.naturalWidth, img.naturalHeight) });
     delete shape.xcsDataUrl; delete shape.exportDataUrl;
   }
   if (onDone) onDone(shape);

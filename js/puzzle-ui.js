@@ -1,7 +1,7 @@
 import { generateJigsawPuzzle, buildImagePuzzle, imagePuzzlePoint, PUZZLE_STYLES } from './puzzle-generator.js';
-import { detectPuzzleSilhouette, loadPuzzleImagePixels } from './puzzle-image.js';
+import { detectPuzzleSilhouette, loadPuzzleImagePixels, geometricImageBoundary } from './puzzle-image.js';
 import { shapeToWorldPolygons, pathNodesInWorld } from './geometry.js';
-import { refreshBitmapShapeDataUrl, processBitmapElementToDataUrl } from './icons.js';
+import { refreshBitmapShapeDataUrl, processBitmapElementToDataUrl, bitmapPreviewOptions } from './icons.js';
 import { renderShapesPreviewSvg } from './generators.js';
 
 export function renderPuzzleWorkshop(container,{images=[],initialImage=null,customOutline=null,editingGroup=null,parseNumber,onChange,bitmapMode='Jarvis'}={}) {
@@ -52,8 +52,9 @@ export function renderPuzzleWorkshop(container,{images=[],initialImage=null,cust
     if (!imageSelect.isConnected || $('gen-puz-image')!==imageSelect) return;
     const version=++revision;onChange(null);$('gen-puz-error').hidden=true;
     const source=images.find(s=>s.id===$('gen-puz-image').value),mode=$('gen-puz-boundary').value;
-    $('gen-puz-rx').disabled=!['auto','rounded'].includes(mode);
-    $('gen-puz-smooth').disabled=!source||!['auto','silhouette'].includes(mode);
+    const usesGeometricMask=mode==='auto'&&source&&['rounded','circle'].includes(source.imageMeta?.maskShape);
+    $('gen-puz-rx').disabled=!['auto','rounded'].includes(mode)||usesGeometricMask;
+    $('gen-puz-smooth').disabled=!source||!['auto','silhouette'].includes(mode)||usesGeometricMask;
     $('gen-puz-bg-controls').hidden=mode!=='silhouette';$('gen-puz-lock').disabled=!source;
     $('gen-puz-tab').disabled=['straight'].includes($('gen-puz-style').value);
     $('gen-preview-caption').textContent='Beregner forhåndsvisning …';
@@ -73,11 +74,17 @@ export function renderPuzzleWorkshop(container,{images=[],initialImage=null,cust
           options.outlineNodes=pathNodesInWorld(customOutline).map(n=>({...n,...toLocal(n),...(n.in?{in:toLocal(n.in)}:{}),...(n.out?{out:toLocal(n.out)}:{})}));
         }
       } else if(['auto','silhouette'].includes(mode)&&source){
-        if(!cache.has(source.id))cache.set(source.id,loadPuzzleImagePixels(source));
-        const pixels=await cache.get(source.id);
-        const found=detectPuzzleSilhouette(pixels,{widthMm:W,heightMm:H,mode,tolerance:options.tolerance,smoothing:options.smoothing});
-        if(found.loops)options.outlineLoops=found.loops;
-        detection=found.kind==='frame'?'Bildekanten er brukt.':found.kind==='transparency'?'Ytterkontur funnet fra transparens.':'Ytterkontur funnet fra bakgrunnen.';
+        const geometric=mode==='auto'&&geometricImageBoundary(source,W,H);
+        if(geometric){
+          Object.assign(options,geometric);
+          detection='Bildemasken er brukt som en jevn, geometrisk ytterkurve. Velg «Avrundede hjørner» for å angi en annen radius.';
+        }else{
+          if(!cache.has(source.id))cache.set(source.id,loadPuzzleImagePixels(source));
+          const pixels=await cache.get(source.id);
+          const found=detectPuzzleSilhouette(pixels,{widthMm:W,heightMm:H,mode,tolerance:options.tolerance,smoothing:options.smoothing});
+          if(found.loops)options.outlineLoops=found.loops;
+          detection=found.kind==='frame'?'Bildekanten er brukt.':found.kind==='transparency'?'Ytterkontur funnet fra transparens.':'Ytterkontur funnet fra bakgrunnen.';
+        }
       } else if(mode==='silhouette')throw Error('Velg et bilde for å finne motivets silhuett.');
       let shapes,plan=null;
       if(source){
@@ -92,7 +99,7 @@ export function renderPuzzleWorkshop(container,{images=[],initialImage=null,cust
       }else { shapes=generateJigsawPuzzle(options); if(mode==='custom'&&customOutline)plan={replaceId:customOutline.id,removeIds:[]}; }
       if(version!==revision||!imageSelect.isConnected || $('gen-puz-image')!==imageSelect)return;
       const preview=source?JSON.parse(JSON.stringify(shapes)):shapes;
-      if(source){const picture=shapes[0].children[0];preview[0].children[0].dataUrl=processBitmapElementToDataUrl(picture._cachedImg,{...picture.imageMeta,brightness:0,contrast:0,sharpness:50,invert:false,filter:'original',maxDimPx:750})}
+      if(source){const picture=shapes[0].children[0];preview[0].children[0].dataUrl=processBitmapElementToDataUrl(picture._cachedImg,{...picture.imageMeta,brightness:0,contrast:0,sharpness:50,invert:false,filter:'original',...bitmapPreviewOptions({previewMode:'original'},picture._cachedImg.naturalWidth,picture._cachedImg.naturalHeight)})}
       $('gen-preview-svg').innerHTML=renderShapesPreviewSvg(preview).svgHtml;
       $('gen-preview-caption').textContent=`${options.cols} × ${options.rows} rutenett. ${['auto','silhouette','ellipse','custom'].includes(mode)?'Konturen kan gi færre eller avskårne kantbrikker. ':''}${detection} ${source?'Bildet på arbeidsflaten oppdateres ved innsetting.':''}`;
       onChange({shapes,plan});

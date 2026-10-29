@@ -78,7 +78,7 @@ export function clipPuzzleLines(lines,boundary,axis) {
   }).sort((a,b)=>axis==='x'?a[0].y-b[0].y||a[0].x-b[0].x:a[0].x-b[0].x||a[0].y-b[0].y);
 }
 
-function frameNodes(x,y,w,h,r,ellipse) {
+export function frameNodes(x,y,w,h,r,ellipse) {
   const k=0.5522847498307936;
   if(ellipse){
     const a=w/2,b=h/2,cx=x+a,cy=y+b;
